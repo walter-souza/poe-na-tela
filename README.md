@@ -1,6 +1,6 @@
-# 🚀 StreamPulse — Plataforma de Streaming P2P/SFU para Amigos
+# 📺 Põe na Tela! — Streaming de Jogos para Amigos
 
-**StreamPulse** é uma plataforma de streaming de tela, jogos e watch-party de **ultra-baixa latência (< 200ms)** inspirada no estilo *Discord Go Live*, construída sobre tecnologias open-source consolidadas (**LiveKit SFU / WebRTC**, **React 19**, **Tailwind CSS**, **Node.js** e **Docker**).
+**Põe na Tela!** é uma plataforma de streaming de tela, jogos e watch-party de **ultra-baixa latência (< 200ms)** inspirada no estilo *Discord Go Live*, construída sobre tecnologias open-source consolidadas (**LiveKit SFU / WebRTC**, **React 19**, **Tailwind CSS**, **Node.js** e **Docker**).
 
 ---
 

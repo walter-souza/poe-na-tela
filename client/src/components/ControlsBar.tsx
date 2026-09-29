@@ -51,12 +51,12 @@ export const ControlsBar: React.FC<ControlsBarProps> = ({
         </div>
         <div>
           <div className="font-bold text-sm text-white flex items-center gap-1.5">
-            <span>StreamPulse</span>
+            <span>Põe na Tela</span>
             <span className="text-[10px] bg-indigo-500/20 text-indigo-300 font-semibold px-1.5 py-0.2 rounded border border-indigo-500/30">
               60 FPS
             </span>
           </div>
-          <div className="text-[11px] text-gray-400">WebRTC Ultra-Low Latency</div>
+          <div className="text-[11px] text-gray-400">WebRTC Ultra-Baixa Latência</div>
         </div>
       </div>
 

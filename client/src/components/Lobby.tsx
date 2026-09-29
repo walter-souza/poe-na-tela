@@ -112,9 +112,9 @@ export const Lobby: React.FC<LobbyProps> = ({ onJoin, isLoading, error }) => {
           <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-gradient-to-tr from-indigo-600 to-violet-500 shadow-xl shadow-indigo-600/30 mb-4 glow-active">
             <Sparkles className="w-8 h-8 text-white" />
           </div>
-          <h1 className="text-3xl font-black text-white tracking-tight">StreamPulse</h1>
+          <h1 className="text-3xl font-black text-white tracking-tight">Põe na Tela!</h1>
           <p className="text-sm text-gray-400 mt-1">
-            Transmissão de tela e jogos para amigos em 60 FPS com ultra-baixa latência
+            Põe na tela, comandante! Transmissão de jogos para amigos em 60 FPS com ultra-baixa latência
           </p>
         </div>
 

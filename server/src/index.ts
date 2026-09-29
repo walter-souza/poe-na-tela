@@ -135,6 +135,6 @@ app.get('/api/room/:roomName/info', (req: Request, res: Response) => {
 });
 
 app.listen(PORT, () => {
-  console.log(`🚀 StreamPulse Server running on http://localhost:${PORT}`);
-  console.log(`📡 Connected to LiveKit at: ${LIVEKIT_URL}`);
+  console.log(`🚀 Põe na Tela — Servidor rodando em http://localhost:${PORT}`);
+  console.log(`📡 Conectado ao LiveKit em: ${LIVEKIT_URL}`);
 });
