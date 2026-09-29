@@ -1,0 +1,44 @@
+services:
+  # 1. LiveKit WebRTC SFU Server (Go-based ultra low-latency media engine)
+  livekit:
+    image: livekit/livekit-server:v1.8
+    container_name: streampulse-livekit
+    restart: unless-stopped
+    command: --config /etc/livekit.yaml
+    volumes:
+      - ./livekit.yaml:/etc/livekit.yaml:ro
+    ports:
+      - "7880:7880"         # HTTP / WebSocket signaling
+      - "7881:7881"         # TCP fallback for TURN/ICE
+      - "50000-50100:50000-50100/udp" # WebRTC media UDP range
+    environment:
+      LIVEKIT_KEYS: "devkey: secret"
+
+  # 2. StreamPulse Backend (Node.js/Express Token & Room Coordinator)
+  api:
+    build:
+      context: ./server
+      dockerfile: Dockerfile
+    container_name: streampulse-api
+    restart: unless-stopped
+    ports:
+      - "3001:3001"
+    environment:
+      - PORT=3001
+      - LIVEKIT_URL=ws://livekit:7880
+      - LIVEKIT_API_KEY=devkey
+      - LIVEKIT_API_SECRET=secret
+    depends_on:
+      - livekit
+
+  # 3. StreamPulse Frontend Web Client
+  client:
+    build:
+      context: ./client
+      dockerfile: Dockerfile
+    container_name: streampulse-client
+    restart: unless-stopped
+    ports:
+      - "3000:80"
+    depends_on:
+      - api
