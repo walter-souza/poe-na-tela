@@ -7,7 +7,6 @@ import {
   ScreenSharePresets,
   ConnectionState,
   type RemoteParticipant,
-  type TrackPublication,
 } from 'livekit-client';
 import type { StreamQualityConfig, StreamStats, ChatMessage, ReactionEvent, ParticipantInfo } from '../types';
 
@@ -38,7 +37,7 @@ export function useLiveKit({ url, token, onDisconnected }: UseLiveKitOptions) {
   const [hostName, setHostName] = useState<string>('');
 
   const statsIntervalRef = useRef<number | null>(null);
-  const prevBytesRef = useRef<{ bytes: number; timestamp: number } | null>(null);
+  const prevStatsRef = useRef<{ bytes: number; frames: number; timestamp: number } | null>(null);
   const currentVolumeRef = useRef<number>(1);
 
   // Update participant list
@@ -70,31 +69,21 @@ export function useLiveKit({ url, token, onDisconnected }: UseLiveKitOptions) {
     setParticipants(list);
   }, []);
 
-  // WebRTC Real-time Stats Collector
+  // WebRTC Real-time Stats Collector for both Host (publisher) and Viewer (subscriber)
   const collectStats = useCallback(async () => {
     const room = roomRef.current;
     if (!room || room.state !== ConnectionState.Connected) return;
 
     try {
-      let activeTrackPub: TrackPublication | undefined = room.localParticipant.getTrackPublication(Track.Source.ScreenShare);
-      let isLocal = true;
+      const pubPromise = (room.engine as any)?.pcManager?.publisher?.getStats?.();
+      const subPromise = (room.engine as any)?.pcManager?.subscriber?.getStats?.();
 
-      if (!activeTrackPub) {
-        for (const [, p] of room.remoteParticipants) {
-          const pub = p.getTrackPublication(Track.Source.ScreenShare);
-          if (pub && pub.track) {
-            activeTrackPub = pub;
-            isLocal = false;
-            break;
-          }
-        }
-      }
+      const [pubResult, subResult] = await Promise.allSettled([pubPromise, subPromise]);
+      const reports: RTCStatsReport[] = [];
+      if (pubResult.status === 'fulfilled' && pubResult.value) reports.push(pubResult.value);
+      if (subResult.status === 'fulfilled' && subResult.value) reports.push(subResult.value);
 
-      const rtcStatsReport = await (isLocal
-        ? (room.engine as any)?.pcManager?.publisher?.getStats()
-        : (room.engine as any)?.pcManager?.subscriber?.getStats());
-
-      if (!rtcStatsReport) return;
+      if (reports.length === 0) return;
 
       let rtt = 0;
       let packetLoss = 0;
@@ -102,65 +91,114 @@ export function useLiveKit({ url, token, onDisconnected }: UseLiveKitOptions) {
       let width = 0;
       let height = 0;
       let codec = 'VP9';
-      let bitrate = 0;
-      let currentBytes = 0;
+      let totalBytes = 0;
+      let totalFrames = 0;
       const now = Date.now();
 
-      rtcStatsReport.forEach((report: any) => {
-        if (report.type === 'candidate-pair' && report.state === 'succeeded' && report.currentRoundTripTime) {
-          rtt = Math.round(report.currentRoundTripTime * 1000);
-        }
-
-        if (report.type === 'inbound-rtp' && report.kind === 'video') {
-          fps = report.framesPerSecond || fps;
-          width = report.frameWidth || width;
-          height = report.frameHeight || height;
-          if (report.packetsLost !== undefined && report.packetsReceived) {
-            const total = report.packetsLost + report.packetsReceived;
-            packetLoss = total > 0 ? (report.packetsLost / total) * 100 : 0;
-          }
-          currentBytes = report.bytesReceived || 0;
-          if (report.codecId) {
-            const codecReport = rtcStatsReport.get(report.codecId);
-            if (codecReport && codecReport.mimeType) {
-              codec = codecReport.mimeType.replace('video/', '').toUpperCase();
+      reports.forEach((rtcReport) => {
+        rtcReport.forEach((report: any) => {
+          // 1. Connection RTT (Latência)
+          if (report.type === 'candidate-pair' && (report.state === 'succeeded' || report.nominated)) {
+            if (report.currentRoundTripTime !== undefined) {
+              rtt = Math.round(report.currentRoundTripTime * 1000);
             }
           }
-        }
 
-        if (report.type === 'outbound-rtp' && report.kind === 'video') {
-          fps = report.framesPerSecond || fps;
-          width = report.frameWidth || width;
-          height = report.frameHeight || height;
-          currentBytes = report.bytesSent || 0;
-          if (report.codecId) {
-            const codecReport = rtcStatsReport.get(report.codecId);
-            if (codecReport && codecReport.mimeType) {
-              codec = codecReport.mimeType.replace('video/', '').toUpperCase();
+          // 2. Remote Inbound (Packet Loss and RTT from remote feedback)
+          if (report.type === 'remote-inbound-rtp' && (report.kind === 'video' || report.mediaType === 'video')) {
+            if (report.roundTripTime !== undefined && rtt === 0) {
+              rtt = Math.round(report.roundTripTime * 1000);
+            }
+            if (report.fractionLost !== undefined && report.fractionLost > 0) {
+              packetLoss = Math.max(packetLoss, (report.fractionLost / 256) * 100);
+            }
+            if (report.packetsLost !== undefined && report.packetsReceived) {
+              const total = report.packetsLost + report.packetsReceived;
+              if (total > 0) {
+                packetLoss = Math.max(packetLoss, (report.packetsLost / total) * 100);
+              }
             }
           }
-        }
+
+          // 3. Inbound RTP (Viewer receiving video)
+          if (report.type === 'inbound-rtp' && (report.kind === 'video' || report.mediaType === 'video')) {
+            if (report.framesPerSecond) fps = Math.max(fps, Math.round(report.framesPerSecond));
+            if (report.frameWidth) width = Math.max(width, report.frameWidth);
+            if (report.frameHeight) height = Math.max(height, report.frameHeight);
+            if (report.framesDecoded || report.framesReceived) {
+              totalFrames = Math.max(totalFrames, report.framesDecoded || report.framesReceived);
+            }
+            if (report.bytesReceived) {
+              totalBytes = Math.max(totalBytes, report.bytesReceived);
+            }
+            if (report.packetsLost !== undefined && report.packetsReceived) {
+              const total = report.packetsLost + report.packetsReceived;
+              if (total > 0) {
+                packetLoss = Math.max(packetLoss, (report.packetsLost / total) * 100);
+              }
+            }
+            if (report.codecId) {
+              const codecReport = rtcReport.get(report.codecId);
+              if (codecReport && codecReport.mimeType) {
+                codec = codecReport.mimeType.replace('video/', '').toUpperCase();
+              }
+            }
+          }
+
+          // 4. Outbound RTP (Host sending video)
+          if (report.type === 'outbound-rtp' && (report.kind === 'video' || report.mediaType === 'video')) {
+            if (report.framesPerSecond) fps = Math.max(fps, Math.round(report.framesPerSecond));
+            if (report.frameWidth) width = Math.max(width, report.frameWidth);
+            if (report.frameHeight) height = Math.max(height, report.frameHeight);
+            if (report.framesSent || report.framesEncoded) {
+              totalFrames = Math.max(totalFrames, report.framesSent || report.framesEncoded);
+            }
+            if (report.bytesSent) {
+              totalBytes = Math.max(totalBytes, report.bytesSent);
+            }
+            if (report.codecId) {
+              const codecReport = rtcReport.get(report.codecId);
+              if (codecReport && codecReport.mimeType) {
+                codec = codecReport.mimeType.replace('video/', '').toUpperCase();
+              }
+            }
+          }
+        });
       });
 
-      if (prevBytesRef.current && currentBytes > 0) {
-        const timeDiffSec = (now - prevBytesRef.current.timestamp) / 1000;
-        const bytesDiff = currentBytes - prevBytesRef.current.bytes;
-        if (timeDiffSec > 0 && bytesDiff >= 0) {
+      // Calculate Bitrate and FPS from deltas if not directly reported
+      let bitrate = 0;
+      if (prevStatsRef.current && totalBytes > 0) {
+        const timeDiffSec = (now - prevStatsRef.current.timestamp) / 1000;
+        const bytesDiff = totalBytes - prevStatsRef.current.bytes;
+        const framesDiff = totalFrames - prevStatsRef.current.frames;
+
+        if (timeDiffSec > 0.4 && bytesDiff >= 0) {
           bitrate = Math.round((bytesDiff * 8) / timeDiffSec / 1000);
         }
+
+        if (fps === 0 && timeDiffSec > 0.4 && framesDiff > 0) {
+          fps = Math.round(framesDiff / timeDiffSec);
+        }
       }
-      prevBytesRef.current = { bytes: currentBytes, timestamp: now };
+
+      prevStatsRef.current = { bytes: totalBytes, frames: totalFrames, timestamp: now };
+
+      if (width === 0 || height === 0) {
+        width = 1920;
+        height = 1080;
+      }
 
       setStats({
         bitrateKbps: bitrate,
         rttMs: rtt,
         packetLossPercent: parseFloat(packetLoss.toFixed(1)),
-        fps: Math.round(fps) || (activeTrackPub ? 60 : 0),
-        width: width || 1920,
-        height: height || 1080,
+        fps: fps || (totalBytes > 0 ? 60 : 0),
+        width,
+        height,
         codec,
         jitterMs: 0,
-        bytesReceivedOrSent: currentBytes,
+        bytesReceivedOrSent: totalBytes,
       });
     } catch {
       // Ignore stats collection error during renegotiations
