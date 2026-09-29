@@ -252,10 +252,10 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
                 type="range"
                 min="0"
                 max="1"
-                step="0.05"
+                step="0.01"
                 value={isMuted ? 0 : volume}
                 onChange={handleVolumeChange}
-                className="w-16 sm:w-24 h-1.5 bg-white/20 rounded-lg appearance-none cursor-pointer accent-indigo-500"
+                className="w-16 sm:w-28 h-1.5 bg-white/20 rounded-lg appearance-none cursor-pointer accent-indigo-500"
               />
             </div>
           </div>

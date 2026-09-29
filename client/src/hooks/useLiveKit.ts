@@ -39,6 +39,7 @@ export function useLiveKit({ url, token, onDisconnected }: UseLiveKitOptions) {
 
   const statsIntervalRef = useRef<number | null>(null);
   const prevBytesRef = useRef<{ bytes: number; timestamp: number } | null>(null);
+  const currentVolumeRef = useRef<number>(1);
 
   // Update participant list
   const updateParticipantList = useCallback((room: Room) => {
@@ -234,6 +235,13 @@ export function useLiveKit({ url, token, onDisconnected }: UseLiveKitOptions) {
       if (track.kind === Track.Kind.Audio) {
         const el = track.attach();
         el.setAttribute('data-livekit-track', track.sid || track.kind);
+        if ('setVolume' in track) {
+          (track as any).setVolume(currentVolumeRef.current);
+        }
+        if (el) {
+          (el as HTMLAudioElement).volume = currentVolumeRef.current;
+          (el as HTMLAudioElement).muted = currentVolumeRef.current === 0;
+        }
       }
 
       if (track.source === Track.Source.ScreenShare || track.source === Track.Source.ScreenShareAudio) {
@@ -334,17 +342,28 @@ export function useLiveKit({ url, token, onDisconnected }: UseLiveKitOptions) {
 
   // Set global audio volume for all remote participants and audio elements
   const setGlobalVolume = (volume: number) => {
+    const clamped = Math.max(0, Math.min(1, volume));
+    currentVolumeRef.current = clamped;
     const room = roomRef.current;
     if (!room) return;
 
     room.remoteParticipants.forEach((p) => {
-      p.setVolume(volume);
+      // Set volume for both microphone and screen share audio tracks
+      p.setVolume(clamped, Track.Source.Microphone);
+      p.setVolume(clamped, Track.Source.ScreenShareAudio);
+
+      // Also set volume directly on track instances
+      p.audioTrackPublications.forEach((pub) => {
+        if (pub.track && 'setVolume' in pub.track) {
+          (pub.track as any).setVolume(clamped);
+        }
+      });
     });
 
     // Also update attached audio elements in DOM
-    document.querySelectorAll('audio[data-livekit-track]').forEach((el) => {
-      (el as HTMLAudioElement).volume = volume;
-      (el as HTMLAudioElement).muted = volume === 0;
+    document.querySelectorAll('audio').forEach((el) => {
+      (el as HTMLAudioElement).volume = clamped;
+      (el as HTMLAudioElement).muted = clamped === 0;
     });
   };
 
