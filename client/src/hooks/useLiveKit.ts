@@ -28,6 +28,7 @@ export function useLiveKit({ url, token, onDisconnected }: UseLiveKitOptions) {
   const [isScreenSharing, setIsScreenSharing] = useState<boolean>(false);
   const [isMicEnabled, setIsMicEnabled] = useState<boolean>(false);
   const [isDeafened, setIsDeafened] = useState<boolean>(false);
+  const [canPlaybackAudio, setCanPlaybackAudio] = useState<boolean>(true);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [participants, setParticipants] = useState<ParticipantInfo[]>([]);
   const [remoteScreenTrack, setRemoteScreenTrack] = useState<Track | null>(null);
@@ -192,6 +193,10 @@ export function useLiveKit({ url, token, onDisconnected }: UseLiveKitOptions) {
       setConnectionState(ConnectionState.Connected);
       updateParticipantList(room);
 
+      // Attempt unlocking browser audio autoplay
+      room.startAudio().catch(() => {});
+      setCanPlaybackAudio(room.canPlaybackAudio);
+
       if (statsIntervalRef.current) clearInterval(statsIntervalRef.current);
       statsIntervalRef.current = window.setInterval(collectStats, 1000);
     };
@@ -212,12 +217,25 @@ export function useLiveKit({ url, token, onDisconnected }: UseLiveKitOptions) {
     const handleReconnecting = () => setConnectionState(ConnectionState.Reconnecting);
     const handleReconnected = () => setConnectionState(ConnectionState.Connected);
 
+    const handleAudioPlaybackStatusChanged = () => {
+      if (!isSubscribed) return;
+      setCanPlaybackAudio(room.canPlaybackAudio);
+    };
+
+    // ATTACH REMOTE TRACKS (AUDIO & VIDEO)
     const handleTrackSubscribed = (
       track: Track,
       _publication: any,
       participant: RemoteParticipant
     ) => {
       if (!isSubscribed) return;
+
+      // Automatically attach and play remote audio (Microphone & Screen Audio)
+      if (track.kind === Track.Kind.Audio) {
+        const el = track.attach();
+        el.setAttribute('data-livekit-track', track.sid || track.kind);
+      }
+
       if (track.source === Track.Source.ScreenShare || track.source === Track.Source.ScreenShareAudio) {
         if (track.kind === Track.Kind.Video) {
           setRemoteScreenTrack(track);
@@ -229,6 +247,11 @@ export function useLiveKit({ url, token, onDisconnected }: UseLiveKitOptions) {
 
     const handleTrackUnsubscribed = (track: Track) => {
       if (!isSubscribed) return;
+
+      if (track.kind === Track.Kind.Audio) {
+        track.detach();
+      }
+
       if (track.source === Track.Source.ScreenShare && track.kind === Track.Kind.Video) {
         setRemoteScreenTrack(null);
       }
@@ -268,6 +291,7 @@ export function useLiveKit({ url, token, onDisconnected }: UseLiveKitOptions) {
     room.on(RoomEvent.Disconnected, handleDisconnected);
     room.on(RoomEvent.Reconnecting, handleReconnecting);
     room.on(RoomEvent.Reconnected, handleReconnected);
+    room.on(RoomEvent.AudioPlaybackStatusChanged, handleAudioPlaybackStatusChanged);
     room.on(RoomEvent.TrackSubscribed, handleTrackSubscribed);
     room.on(RoomEvent.TrackUnsubscribed, handleTrackUnsubscribed);
     room.on(RoomEvent.ParticipantConnected, () => updateParticipantList(room));
@@ -277,7 +301,6 @@ export function useLiveKit({ url, token, onDisconnected }: UseLiveKitOptions) {
 
     room.connect(url, token).catch((err: any) => {
       if (!isSubscribed) return;
-      // Ignore client initiated disconnects during component unmount
       if (err?.message?.includes('Client initiated disconnect')) {
         return;
       }
@@ -290,22 +313,52 @@ export function useLiveKit({ url, token, onDisconnected }: UseLiveKitOptions) {
       if (statsIntervalRef.current) clearInterval(statsIntervalRef.current);
       room.off(RoomEvent.Connected, handleConnected);
       room.off(RoomEvent.Disconnected, handleDisconnected);
+      room.off(RoomEvent.AudioPlaybackStatusChanged, handleAudioPlaybackStatusChanged);
       room.off(RoomEvent.TrackSubscribed, handleTrackSubscribed);
       room.off(RoomEvent.TrackUnsubscribed, handleTrackUnsubscribed);
       room.disconnect();
     };
   }, [url, token, collectStats, updateParticipantList]);
 
-  // Start Screen Sharing with custom quality
+  // Unlock browser audio autoplay policy
+  const unlockAudio = async () => {
+    const room = roomRef.current;
+    if (!room) return;
+    try {
+      await room.startAudio();
+      setCanPlaybackAudio(room.canPlaybackAudio);
+    } catch (e) {
+      console.error('Failed to unlock audio playback:', e);
+    }
+  };
+
+  // Set global audio volume for all remote participants and audio elements
+  const setGlobalVolume = (volume: number) => {
+    const room = roomRef.current;
+    if (!room) return;
+
+    room.remoteParticipants.forEach((p) => {
+      p.setVolume(volume);
+    });
+
+    // Also update attached audio elements in DOM
+    document.querySelectorAll('audio[data-livekit-track]').forEach((el) => {
+      (el as HTMLAudioElement).volume = volume;
+      (el as HTMLAudioElement).muted = volume === 0;
+    });
+  };
+
+  // Start Screen Sharing with audio capture
   const startScreenShare = async (config?: Partial<StreamQualityConfig>) => {
     const room = roomRef.current;
     if (!room) return;
 
     try {
       const targetFps = config?.frameRate || 60;
+      const shouldIncludeAudio = config?.includeAudio ?? true;
 
       await room.localParticipant.setScreenShareEnabled(true, {
-        audio: config?.includeAudio ?? true,
+        audio: shouldIncludeAudio,
         selfBrowserSurface: 'include',
         surfaceSwitching: 'include',
         systemAudio: 'include',
@@ -369,6 +422,10 @@ export function useLiveKit({ url, token, onDisconnected }: UseLiveKitOptions) {
         }
       });
     });
+
+    document.querySelectorAll('audio[data-livekit-track]').forEach((el) => {
+      (el as HTMLAudioElement).muted = nextDeafen;
+    });
   };
 
   // Send Live Chat Message
@@ -428,6 +485,9 @@ export function useLiveKit({ url, token, onDisconnected }: UseLiveKitOptions) {
     isScreenSharing,
     isMicEnabled,
     isDeafened,
+    canPlaybackAudio,
+    unlockAudio,
+    setGlobalVolume,
     messages,
     participants,
     remoteScreenTrack,

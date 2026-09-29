@@ -120,6 +120,9 @@ function StreamRoom({
     isScreenSharing,
     isMicEnabled,
     isDeafened,
+    canPlaybackAudio,
+    unlockAudio,
+    setGlobalVolume,
     messages,
     participants,
     remoteScreenTrack,
@@ -177,6 +180,9 @@ function StreamRoom({
             reaction={reaction}
             onToggleHUD={() => setIsHUDOpen(!isHUDOpen)}
             isHUDOpen={isHUDOpen}
+            canPlaybackAudio={canPlaybackAudio}
+            onUnlockAudio={unlockAudio}
+            onVolumeChange={setGlobalVolume}
           />
         </div>
 

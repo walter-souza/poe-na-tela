@@ -20,6 +20,9 @@ interface VideoPlayerProps {
   reaction: ReactionEvent | null;
   onToggleHUD: () => void;
   isHUDOpen: boolean;
+  canPlaybackAudio?: boolean;
+  onUnlockAudio?: () => void;
+  onVolumeChange?: (volume: number) => void;
 }
 
 export const VideoPlayer: React.FC<VideoPlayerProps> = ({
@@ -29,6 +32,9 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
   reaction,
   onToggleHUD,
   isHUDOpen,
+  canPlaybackAudio = true,
+  onUnlockAudio,
+  onVolumeChange,
 }) => {
   const videoRef = useRef<HTMLVideoElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -128,18 +134,26 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
   const handleVolumeChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const val = parseFloat(e.target.value);
     setVolume(val);
+    const effectiveMute = val === 0;
+    setIsMuted(effectiveMute);
+
     if (videoRef.current) {
       videoRef.current.volume = val;
-      videoRef.current.muted = val === 0;
+      videoRef.current.muted = effectiveMute;
     }
-    setIsMuted(val === 0);
+
+    onVolumeChange?.(effectiveMute ? 0 : val);
   };
 
   const toggleMute = () => {
-    if (!videoRef.current) return;
     const nextMute = !isMuted;
     setIsMuted(nextMute);
-    videoRef.current.muted = nextMute;
+
+    if (videoRef.current) {
+      videoRef.current.muted = nextMute;
+    }
+
+    onVolumeChange?.(nextMute ? 0 : volume);
   };
 
   return (
@@ -153,7 +167,7 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
           ref={videoRef}
           autoPlay
           playsInline
-          muted={isLocal || isMuted}
+          muted={isLocal}
           className="w-full h-full object-contain bg-black"
         />
       ) : (
@@ -184,6 +198,27 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
           </div>
         ))}
       </div>
+
+      {/* Browser Autoplay Blocked Warning / Unmute Banner */}
+      {!canPlaybackAudio && !isLocal && (
+        <div
+          onClick={onUnlockAudio}
+          className="absolute top-16 inset-x-8 z-40 bg-indigo-600/95 hover:bg-indigo-500 backdrop-blur-md border border-indigo-400/30 text-white px-4 py-3 rounded-2xl shadow-2xl flex items-center justify-between cursor-pointer animate-pulse transition"
+        >
+          <div className="flex items-center gap-3">
+            <div className="p-2 bg-white/20 rounded-xl">
+              <Volume2 className="w-5 h-5" />
+            </div>
+            <div>
+              <div className="font-bold text-sm">Áudio Pausado pelo Navegador</div>
+              <div className="text-xs text-indigo-100">Clique aqui para desbloquear e ouvir o áudio da live</div>
+            </div>
+          </div>
+          <button className="px-4 py-1.5 bg-white text-indigo-700 font-bold text-xs rounded-xl shadow">
+            Ativar Som
+          </button>
+        </div>
+      )}
 
       {/* Top Stream Status Overlay */}
       {track && (
