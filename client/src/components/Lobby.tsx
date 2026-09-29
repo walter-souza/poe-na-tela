@@ -80,12 +80,19 @@ export const Lobby: React.FC<LobbyProps> = ({ onJoin, isLoading, error }) => {
   };
 
   const stopMicTest = () => {
-    if (animFrameRef.current) cancelAnimationFrame(animFrameRef.current);
+    if (animFrameRef.current) {
+      cancelAnimationFrame(animFrameRef.current);
+      animFrameRef.current = null;
+    }
     if (micStreamRef.current) {
       micStreamRef.current.getTracks().forEach((t) => t.stop());
+      micStreamRef.current = null;
     }
     if (audioContextRef.current) {
-      audioContextRef.current.close();
+      if (audioContextRef.current.state !== 'closed') {
+        audioContextRef.current.close().catch(() => {});
+      }
+      audioContextRef.current = null;
     }
     setIsMicTesting(false);
     setMicLevel(0);
