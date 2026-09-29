@@ -53,3 +53,27 @@ body {
 .glow-active {
   animation: pulse-glow 3s infinite ease-in-out;
 }
+
+@keyframes float-up {
+  0% {
+    opacity: 0;
+    transform: translateY(20px) scale(0.8);
+  }
+  15% {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+  80% {
+    opacity: 1;
+    transform: translateY(-10px) scale(1);
+  }
+  100% {
+    opacity: 0;
+    transform: translateY(-30px) scale(0.9);
+  }
+}
+
+.animate-float-up {
+  animation: float-up 2.5s forwards ease-out;
+}
+

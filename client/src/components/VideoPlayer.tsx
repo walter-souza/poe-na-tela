@@ -36,7 +36,7 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
   const [volume, setVolume] = useState<number>(1);
   const [isMuted, setIsMuted] = useState<boolean>(false);
   const [showControls, setShowControls] = useState<boolean>(true);
-  const [activeReactions, setActiveReactions] = useState<{ id: number; emoji: string; sender: string }[]>([]);
+  const [activeReactions, setActiveReactions] = useState<{ id: number; emoji: string; sender: string; createdAt: number }[]>([]);
 
   const hideTimeoutRef = useRef<number | null>(null);
 
@@ -54,11 +54,19 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
     };
   }, [track]);
 
+  // Add new reactions and trigger confetti
   useEffect(() => {
     if (!reaction) return;
 
     const id = Date.now() + Math.random();
-    setActiveReactions((prev) => [...prev.slice(-5), { id, emoji: reaction.emoji, sender: reaction.sender }]);
+    const newReaction = {
+      id,
+      emoji: reaction.emoji,
+      sender: reaction.sender,
+      createdAt: Date.now(),
+    };
+
+    setActiveReactions((prev) => [...prev.slice(-4), newReaction]);
 
     if (reaction.emoji === '🎉' || reaction.emoji === '🚀') {
       confetti({
@@ -67,13 +75,20 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
         origin: { y: 0.8 },
       });
     }
-
-    const timer = setTimeout(() => {
-      setActiveReactions((prev) => prev.filter((r) => r.id !== id));
-    }, 2500);
-
-    return () => clearTimeout(timer);
   }, [reaction]);
+
+  // Clean expired reactions every 400ms
+  useEffect(() => {
+    const interval = setInterval(() => {
+      const now = Date.now();
+      setActiveReactions((prev) => {
+        const next = prev.filter((r) => now - r.createdAt < 2500);
+        return next.length === prev.length ? prev : next;
+      });
+    }, 400);
+
+    return () => clearInterval(interval);
+  }, []);
 
   const handleMouseMove = () => {
     setShowControls(true);
@@ -162,7 +177,7 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
         {activeReactions.map((r) => (
           <div
             key={r.id}
-            className="flex items-center gap-2 bg-black/70 backdrop-blur-md border border-white/10 px-3 py-1.5 rounded-full text-white text-sm shadow-xl animate-bounce"
+            className="flex items-center gap-2 bg-black/80 backdrop-blur-md border border-white/15 px-3 py-1.5 rounded-full text-white text-sm shadow-2xl animate-float-up"
           >
             <span className="text-2xl">{r.emoji}</span>
             <span className="text-xs font-semibold text-indigo-300">{r.sender}</span>
