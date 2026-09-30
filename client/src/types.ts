@@ -46,3 +46,14 @@ export interface ParticipantInfo {
   isMuted: boolean;
   isDeafened?: boolean;
 }
+
+export interface FavoriteRoom {
+  name: string;
+  addedAt: number;
+}
+
+export interface ActiveRoomInfo {
+  name: string;
+  numParticipants: number;
+  hasPasscode?: boolean;
+}

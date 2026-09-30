@@ -122,15 +122,28 @@ app.get('/api/rooms', async (req: Request, res: Response) => {
 });
 
 /**
- * Check if a room requires a password
+ * Check if a room exists, requires a password, or has active viewers
  */
-app.get('/api/room/:roomName/info', (req: Request, res: Response) => {
-  const roomName = req.params.roomName.trim().toLowerCase();
+app.get('/api/room/:roomName/info', async (req: Request, res: Response) => {
+  const roomName = req.params.roomName.trim().toLowerCase().replace(/[^a-z0-9_-]/g, '-');
   const config = roomStore.get(roomName);
+
+  let numParticipants = 0;
+  let isActive = false;
+
+  try {
+    const rooms = await roomService.listRooms([roomName]);
+    if (rooms && rooms.length > 0) {
+      isActive = true;
+      numParticipants = rooms[0].numParticipants;
+    }
+  } catch {}
+
   res.json({
     roomName,
     hasPasscode: Boolean(config?.passcode),
-    isConfigured: Boolean(config)
+    isActive,
+    numParticipants,
   });
 });
 
