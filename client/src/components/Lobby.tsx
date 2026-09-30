@@ -14,9 +14,13 @@ interface LobbyProps {
   error?: string | null;
 }
 
+const USERNAME_STORAGE_KEY = 'poe-na-tela-username';
+
 export const Lobby: React.FC<LobbyProps> = ({ onJoin, isLoading, error }) => {
   const [roomName, setRoomName] = useState('');
-  const [userName, setUserName] = useState('');
+  const [userName, setUserName] = useState(() => {
+    return localStorage.getItem(USERNAME_STORAGE_KEY) || '';
+  });
   const [passcode, setPasscode] = useState('');
   const [isPublisher, setIsPublisher] = useState(true);
   const [micLevel, setMicLevel] = useState(0);
@@ -27,7 +31,7 @@ export const Lobby: React.FC<LobbyProps> = ({ onJoin, isLoading, error }) => {
   const micStreamRef = useRef<MediaStream | null>(null);
   const animFrameRef = useRef<number | null>(null);
 
-  // Parse URL query params for easy friend invite link
+  // Parse URL query params and initialize saved/random username
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const roomParam = params.get('room');
@@ -38,9 +42,15 @@ export const Lobby: React.FC<LobbyProps> = ({ onJoin, isLoading, error }) => {
     if (passParam) setPasscode(passParam);
     if (roleParam === 'viewer') setIsPublisher(false);
 
-    const randomGamers = ['GamerPro', 'PlayerOne', 'CyberKnight', 'PixelHero', 'Falcon', 'Shadow', 'Vortex', 'Neon'];
-    const randomPick = randomGamers[Math.floor(Math.random() * randomGamers.length)] + Math.floor(Math.random() * 90 + 10);
-    setUserName(randomPick);
+    const savedName = localStorage.getItem(USERNAME_STORAGE_KEY);
+    if (savedName && savedName.trim()) {
+      setUserName(savedName.trim());
+    } else if (!userName) {
+      const randomGamers = ['GamerPro', 'PlayerOne', 'CyberKnight', 'PixelHero', 'Falcon', 'Shadow', 'Vortex', 'Neon'];
+      const randomPick = randomGamers[Math.floor(Math.random() * randomGamers.length)] + Math.floor(Math.random() * 90 + 10);
+      setUserName(randomPick);
+      localStorage.setItem(USERNAME_STORAGE_KEY, randomPick);
+    }
   }, []);
 
   const startMicTest = async () => {
@@ -102,9 +112,17 @@ export const Lobby: React.FC<LobbyProps> = ({ onJoin, isLoading, error }) => {
     return () => stopMicTest();
   }, []);
 
+  const handleUserNameChange = (val: string) => {
+    setUserName(val);
+    if (val.trim()) {
+      localStorage.setItem(USERNAME_STORAGE_KEY, val.trim());
+    }
+  };
+
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!roomName.trim() || !userName.trim()) return;
+    localStorage.setItem(USERNAME_STORAGE_KEY, userName.trim());
     stopMicTest();
     onJoin(roomName.trim(), userName.trim(), isPublisher, passcode.trim() || undefined);
   };
@@ -161,7 +179,7 @@ export const Lobby: React.FC<LobbyProps> = ({ onJoin, isLoading, error }) => {
                   required
                   placeholder="Seu nome ou nick"
                   value={userName}
-                  onChange={(e) => setUserName(e.target.value)}
+                  onChange={(e) => handleUserNameChange(e.target.value)}
                   className="w-full bg-black/40 border border-white/10 rounded-xl px-4 py-3 text-sm text-white placeholder-gray-500 focus:outline-none focus:border-indigo-500 transition"
                 />
                 <User className="w-4 h-4 text-gray-500 absolute right-3.5 top-3.5" />
