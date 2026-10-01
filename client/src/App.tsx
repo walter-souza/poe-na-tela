@@ -68,8 +68,8 @@ export function App() {
         isPublisher: data.isPublisher,
       });
 
-      // Update URL search param to reflect active room
-      window.history.replaceState({}, '', `${window.location.pathname}?room=${encodeURIComponent(data.roomName)}`);
+      // Clean URL search params so the address bar stays clean (without ?room=...)
+      window.history.replaceState({}, '', window.location.pathname);
       setInviteRoomName(null);
     } catch (err: any) {
       const msg = err.message || 'Erro ao conectar ao servidor de streaming';
