@@ -47,29 +47,61 @@ app.get('/api/health', (req: Request, res: Response) => {
  */
 app.post('/api/token', async (req: Request, res: Response): Promise<void> => {
   try {
-    const { roomName, participantName, isPublisher, passcode, createIfMissing } = req.body;
+    const { roomName, participantName, isPublisher, passcode } = req.body;
 
     if (!roomName || !participantName) {
-      res.status(400).json({ error: 'roomName and participantName are required' });
+      res.status(400).json({ error: 'roomName e participantName são obrigatórios.' });
       return;
     }
 
     const sanitizedRoom = (roomName as string).trim().toLowerCase().replace(/[^a-z0-9_-]/g, '-');
     const sanitizedParticipant = (participantName as string).trim();
+    const cleanPasscode = typeof passcode === 'string' && passcode.trim() ? passcode.trim() : undefined;
 
-    // Check passcode protection if room exists
-    const existingConfig = roomStore.get(sanitizedRoom);
-    if (existingConfig && existingConfig.passcode) {
-      if (existingConfig.passcode !== passcode) {
-        res.status(403).json({ error: 'Senha incorreta para esta sala.' });
-        return;
+    // 1. Check if room is currently active in LiveKit
+    let isActiveInLiveKit = false;
+    try {
+      const existingLiveRooms = await roomService.listRooms([sanitizedRoom]);
+      if (existingLiveRooms && existingLiveRooms.length > 0 && existingLiveRooms[0].numParticipants > 0) {
+        isActiveInLiveKit = true;
       }
-    } else if (createIfMissing && passcode) {
+    } catch {
+      // If LiveKit is momentarily unreachable, fallback to roomStore state
+    }
+
+    const existingConfig = roomStore.get(sanitizedRoom);
+
+    if (isActiveInLiveKit && existingConfig) {
+      // Room is actively in session
+      if (existingConfig.passcode) {
+        // Room has a passcode
+        if (!cleanPasscode) {
+          res.status(403).json({
+            error: 'Esta sala é protegida por senha. Por favor, insira a senha para entrar.',
+            requiresPasscode: true,
+          });
+          return;
+        }
+        if (existingConfig.passcode !== cleanPasscode) {
+          res.status(403).json({ error: 'Senha incorreta para esta sala.' });
+          return;
+        }
+      } else {
+        // Room is public (no passcode)
+        if (cleanPasscode) {
+          res.status(403).json({
+            error: 'Esta sala já está ativa e é pública (não possui senha). Deixe o campo de senha em branco para entrar.',
+          });
+          return;
+        }
+      }
+    } else {
+      // Room is brand new (or previous session ended and is being recreated)
       roomStore.set(sanitizedRoom, {
         name: sanitizedRoom,
-        passcode,
+        passcode: cleanPasscode,
         hostIdentity: sanitizedParticipant,
-        createdAt: Date.now()
+        createdAt: Date.now(),
       });
     }
 
@@ -98,17 +130,27 @@ app.post('/api/token', async (req: Request, res: Response): Promise<void> => {
     });
   } catch (err: any) {
     console.error('Error generating token:', err);
-    res.status(500).json({ error: 'Failed to generate token', details: err.message });
+    res.status(500).json({ error: 'Falha ao gerar token de acesso', details: err.message });
   }
 });
 
 /**
- * List active rooms
+ * List active rooms with live participant counts and passcode flags
  */
 app.get('/api/rooms', async (req: Request, res: Response) => {
   try {
     const rooms = await roomService.listRooms();
-    const result = rooms.map(r => ({
+    const activeLiveRooms = rooms.filter(r => r.numParticipants > 0);
+    const activeNames = new Set(activeLiveRooms.map(r => r.name));
+
+    // Clean up dead rooms from memory store
+    for (const [name] of roomStore.entries()) {
+      if (!activeNames.has(name)) {
+        roomStore.delete(name);
+      }
+    }
+
+    const result = activeLiveRooms.map(r => ({
       name: r.name,
       numParticipants: r.numParticipants,
       creationTime: Number(r.creationTime),
@@ -116,7 +158,6 @@ app.get('/api/rooms', async (req: Request, res: Response) => {
     }));
     res.json({ rooms: result });
   } catch (err: any) {
-    // If livekit isn't reachable yet, return empty list gracefully
     res.json({ rooms: [], warning: 'LiveKit server might not be running yet' });
   }
 });
@@ -126,22 +167,24 @@ app.get('/api/rooms', async (req: Request, res: Response) => {
  */
 app.get('/api/room/:roomName/info', async (req: Request, res: Response) => {
   const roomName = req.params.roomName.trim().toLowerCase().replace(/[^a-z0-9_-]/g, '-');
-  const config = roomStore.get(roomName);
-
   let numParticipants = 0;
   let isActive = false;
 
   try {
     const rooms = await roomService.listRooms([roomName]);
-    if (rooms && rooms.length > 0) {
+    if (rooms && rooms.length > 0 && rooms[0].numParticipants > 0) {
       isActive = true;
       numParticipants = rooms[0].numParticipants;
+    } else {
+      roomStore.delete(roomName);
     }
   } catch {}
 
+  const config = roomStore.get(roomName);
+
   res.json({
     roomName,
-    hasPasscode: Boolean(config?.passcode),
+    hasPasscode: isActive && Boolean(config?.passcode),
     isActive,
     numParticipants,
   });
