@@ -8,7 +8,7 @@ import {
   ConnectionState,
   type RemoteParticipant,
 } from 'livekit-client';
-import type { StreamQualityConfig, StreamStats, ChatMessage, ReactionEvent, ParticipantInfo } from '../types';
+import type { StreamQualityConfig, StreamStats, ChatMessage, ReactionEvent, ParticipantInfo, ScreenShareItem } from '../types';
 
 export interface UseLiveKitOptions {
   url: string;
@@ -27,9 +27,15 @@ export function useLiveKit({ url, token, onDisconnected }: UseLiveKitOptions) {
   const [isScreenSharing, setIsScreenSharing] = useState<boolean>(false);
   const [isMicEnabled, setIsMicEnabled] = useState<boolean>(false);
   const [isDeafened, setIsDeafened] = useState<boolean>(false);
+  const isDeafenedRef = useRef<boolean>(false);
   const [canPlaybackAudio, setCanPlaybackAudio] = useState<boolean>(true);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [participants, setParticipants] = useState<ParticipantInfo[]>([]);
+  const [screenShares, setScreenShares] = useState<ScreenShareItem[]>([]);
+  const [streamVolumes, setStreamVolumes] = useState<Record<string, number>>({});
+  const streamVolumesRef = useRef<Record<string, number>>({});
+  streamVolumesRef.current = streamVolumes;
+
   const [remoteScreenTrack, setRemoteScreenTrack] = useState<Track | null>(null);
   const [localScreenTrack, setLocalScreenTrack] = useState<Track | null>(null);
   const [stats, setStats] = useState<StreamStats | null>(null);
@@ -39,6 +45,54 @@ export function useLiveKit({ url, token, onDisconnected }: UseLiveKitOptions) {
   const statsIntervalRef = useRef<number | null>(null);
   const prevStatsRef = useRef<{ bytes: number; frames: number; timestamp: number } | null>(null);
   const currentVolumeRef = useRef<number>(1);
+
+  // Update screen shares list from room participants
+  const updateScreenShares = useCallback((room: Room) => {
+    const list: ScreenShareItem[] = [];
+
+    // Local screen share
+    if (room.localParticipant) {
+      const localVideoPub = room.localParticipant.getTrackPublication(Track.Source.ScreenShare);
+      const localAudioPub = room.localParticipant.getTrackPublication(Track.Source.ScreenShareAudio);
+      if (localVideoPub && localVideoPub.track) {
+        list.push({
+          id: room.localParticipant.identity,
+          participantIdentity: room.localParticipant.identity,
+          participantName: room.localParticipant.name || room.localParticipant.identity,
+          videoTrack: localVideoPub.track,
+          audioTrack: localAudioPub?.track,
+          isLocal: true,
+        });
+      }
+    }
+
+    // Remote screen shares
+    room.remoteParticipants.forEach((p) => {
+      const videoPub = p.getTrackPublication(Track.Source.ScreenShare);
+      const audioPub = p.getTrackPublication(Track.Source.ScreenShareAudio);
+      if (videoPub && videoPub.track) {
+        list.push({
+          id: p.identity,
+          participantIdentity: p.identity,
+          participantName: p.name || p.identity,
+          videoTrack: videoPub.track,
+          audioTrack: audioPub?.track,
+          isLocal: false,
+        });
+      }
+    });
+
+    setScreenShares(list);
+
+    // Keep remoteScreenTrack / localScreenTrack synced for backwards compatibility
+    const local = list.find((s) => s.isLocal);
+    const remote = list.find((s) => !s.isLocal);
+    setLocalScreenTrack(local?.videoTrack || null);
+    setRemoteScreenTrack(remote?.videoTrack || null);
+    if (list.length > 0) {
+      setHostName(list[0].participantName);
+    }
+  }, []);
 
   // Update participant list
   const updateParticipantList = useCallback((room: Room) => {
@@ -231,6 +285,7 @@ export function useLiveKit({ url, token, onDisconnected }: UseLiveKitOptions) {
       if (!isSubscribed) return;
       setConnectionState(ConnectionState.Connected);
       updateParticipantList(room);
+      updateScreenShares(room);
 
       // Attempt unlocking browser audio autoplay
       room.startAudio().catch(() => {});
@@ -246,6 +301,7 @@ export function useLiveKit({ url, token, onDisconnected }: UseLiveKitOptions) {
       setIsScreenSharing(false);
       setRemoteScreenTrack(null);
       setLocalScreenTrack(null);
+      setScreenShares([]);
       if (statsIntervalRef.current) clearInterval(statsIntervalRef.current);
 
       if (isExplicitDisconnectRef.current) {
@@ -254,7 +310,11 @@ export function useLiveKit({ url, token, onDisconnected }: UseLiveKitOptions) {
     };
 
     const handleReconnecting = () => setConnectionState(ConnectionState.Reconnecting);
-    const handleReconnected = () => setConnectionState(ConnectionState.Connected);
+    const handleReconnected = () => {
+      setConnectionState(ConnectionState.Connected);
+      updateParticipantList(room);
+      updateScreenShares(room);
+    };
 
     const handleAudioPlaybackStatusChanged = () => {
       if (!isSubscribed) return;
@@ -273,22 +333,23 @@ export function useLiveKit({ url, token, onDisconnected }: UseLiveKitOptions) {
       if (track.kind === Track.Kind.Audio) {
         const el = track.attach();
         el.setAttribute('data-livekit-track', track.sid || track.kind);
+        el.setAttribute('data-participant', participant.identity);
+
+        const currentVol = streamVolumesRef.current[participant.identity] !== undefined
+          ? streamVolumesRef.current[participant.identity]
+          : currentVolumeRef.current;
+
         if ('setVolume' in track) {
-          (track as any).setVolume(currentVolumeRef.current);
+          (track as any).setVolume(currentVol);
         }
         if (el) {
-          (el as HTMLAudioElement).volume = currentVolumeRef.current;
-          (el as HTMLAudioElement).muted = currentVolumeRef.current === 0;
+          (el as HTMLAudioElement).volume = currentVol;
+          (el as HTMLAudioElement).muted = currentVol === 0 || isDeafenedRef.current;
         }
       }
 
-      if (track.source === Track.Source.ScreenShare || track.source === Track.Source.ScreenShareAudio) {
-        if (track.kind === Track.Kind.Video) {
-          setRemoteScreenTrack(track);
-          setHostName(participant.name || participant.identity);
-        }
-      }
       updateParticipantList(room);
+      updateScreenShares(room);
     };
 
     const handleTrackUnsubscribed = (track: Track) => {
@@ -298,10 +359,8 @@ export function useLiveKit({ url, token, onDisconnected }: UseLiveKitOptions) {
         track.detach();
       }
 
-      if (track.source === Track.Source.ScreenShare && track.kind === Track.Kind.Video) {
-        setRemoteScreenTrack(null);
-      }
       updateParticipantList(room);
+      updateScreenShares(room);
     };
 
     const handleDataReceived = (payload: Uint8Array, participant?: RemoteParticipant) => {
@@ -340,8 +399,18 @@ export function useLiveKit({ url, token, onDisconnected }: UseLiveKitOptions) {
     room.on(RoomEvent.AudioPlaybackStatusChanged, handleAudioPlaybackStatusChanged);
     room.on(RoomEvent.TrackSubscribed, handleTrackSubscribed);
     room.on(RoomEvent.TrackUnsubscribed, handleTrackUnsubscribed);
-    room.on(RoomEvent.ParticipantConnected, () => updateParticipantList(room));
-    room.on(RoomEvent.ParticipantDisconnected, () => updateParticipantList(room));
+    room.on(RoomEvent.TrackPublished, () => updateScreenShares(room));
+    room.on(RoomEvent.TrackUnpublished, () => updateScreenShares(room));
+    room.on(RoomEvent.LocalTrackPublished, () => updateScreenShares(room));
+    room.on(RoomEvent.LocalTrackUnpublished, () => updateScreenShares(room));
+    room.on(RoomEvent.ParticipantConnected, () => {
+      updateParticipantList(room);
+      updateScreenShares(room);
+    });
+    room.on(RoomEvent.ParticipantDisconnected, () => {
+      updateParticipantList(room);
+      updateScreenShares(room);
+    });
     room.on(RoomEvent.ActiveSpeakersChanged, () => updateParticipantList(room));
     room.on(RoomEvent.DataReceived, handleDataReceived);
 
@@ -364,7 +433,7 @@ export function useLiveKit({ url, token, onDisconnected }: UseLiveKitOptions) {
       room.off(RoomEvent.TrackUnsubscribed, handleTrackUnsubscribed);
       room.disconnect();
     };
-  }, [url, token, collectStats, updateParticipantList]);
+  }, [url, token, collectStats, updateParticipantList, updateScreenShares]);
 
   // Unlock browser audio autoplay policy
   const unlockAudio = async () => {
@@ -377,6 +446,34 @@ export function useLiveKit({ url, token, onDisconnected }: UseLiveKitOptions) {
       console.error('Failed to unlock audio playback:', e);
     }
   };
+
+  // Set individual stream/participant audio volume
+  const setStreamVolume = useCallback((participantIdentity: string, volume: number) => {
+    const clamped = Math.max(0, Math.min(1, volume));
+    setStreamVolumes((prev) => ({ ...prev, [participantIdentity]: clamped }));
+
+    const room = roomRef.current;
+    if (!room) return;
+
+    // Local participant does not need audio playback adjustment
+    if (room.localParticipant?.identity === participantIdentity) return;
+
+    const participant = room.remoteParticipants.get(participantIdentity);
+    if (participant) {
+      participant.setVolume(clamped, Track.Source.Microphone);
+      participant.setVolume(clamped, Track.Source.ScreenShareAudio);
+      participant.audioTrackPublications.forEach((pub) => {
+        if (pub.track && 'setVolume' in pub.track) {
+          (pub.track as any).setVolume(clamped);
+        }
+      });
+    }
+
+    document.querySelectorAll(`audio[data-participant="${participantIdentity}"]`).forEach((el) => {
+      (el as HTMLAudioElement).volume = clamped;
+      (el as HTMLAudioElement).muted = clamped === 0 || isDeafenedRef.current;
+    });
+  }, []);
 
   // Set global audio volume for all remote participants and audio elements
   const setGlobalVolume = (volume: number) => {
@@ -401,7 +498,7 @@ export function useLiveKit({ url, token, onDisconnected }: UseLiveKitOptions) {
     // Also update attached audio elements in DOM
     document.querySelectorAll('audio').forEach((el) => {
       (el as HTMLAudioElement).volume = clamped;
-      (el as HTMLAudioElement).muted = clamped === 0;
+      (el as HTMLAudioElement).muted = clamped === 0 || isDeafenedRef.current;
     });
   };
 
@@ -434,6 +531,7 @@ export function useLiveKit({ url, token, onDisconnected }: UseLiveKitOptions) {
         setIsScreenSharing(true);
         setHostName(room.localParticipant.name || room.localParticipant.identity);
       }
+      updateScreenShares(room);
     } catch (err) {
       console.error('Failed to start screen share:', err);
       setIsScreenSharing(false);
@@ -447,6 +545,7 @@ export function useLiveKit({ url, token, onDisconnected }: UseLiveKitOptions) {
     await room.localParticipant.setScreenShareEnabled(false);
     setIsScreenSharing(false);
     setLocalScreenTrack(null);
+    updateScreenShares(room);
   };
 
   // Toggle Microphone
@@ -468,6 +567,7 @@ export function useLiveKit({ url, token, onDisconnected }: UseLiveKitOptions) {
   const toggleDeafen = () => {
     const nextDeafen = !isDeafened;
     setIsDeafened(nextDeafen);
+    isDeafenedRef.current = nextDeafen;
 
     const room = roomRef.current;
     if (!room) return;
@@ -480,7 +580,7 @@ export function useLiveKit({ url, token, onDisconnected }: UseLiveKitOptions) {
       });
     });
 
-    document.querySelectorAll('audio[data-livekit-track]').forEach((el) => {
+    document.querySelectorAll('audio').forEach((el) => {
       (el as HTMLAudioElement).muted = nextDeafen;
     });
   };
@@ -545,6 +645,9 @@ export function useLiveKit({ url, token, onDisconnected }: UseLiveKitOptions) {
     canPlaybackAudio,
     unlockAudio,
     setGlobalVolume,
+    setStreamVolume,
+    streamVolumes,
+    screenShares,
     messages,
     participants,
     remoteScreenTrack,

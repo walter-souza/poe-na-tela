@@ -122,14 +122,13 @@ function StreamRoom({
     isDeafened,
     canPlaybackAudio,
     unlockAudio,
-    setGlobalVolume,
+    setStreamVolume,
+    streamVolumes,
+    screenShares,
     messages,
     participants,
-    remoteScreenTrack,
-    localScreenTrack,
     stats,
     reaction,
-    hostName,
     startScreenShare,
     stopScreenShare,
     toggleMic,
@@ -142,9 +141,6 @@ function StreamRoom({
     token: session.token,
     onDisconnected: onLeave,
   });
-
-  const activeVideoTrack = localScreenTrack || remoteScreenTrack;
-  const isLocalActive = Boolean(localScreenTrack);
 
   const handleConfirmScreenShare = (config: StreamQualityConfig) => {
     startScreenShare(config);
@@ -174,15 +170,15 @@ function StreamRoom({
           />
 
           <VideoPlayer
-            track={activeVideoTrack}
-            hostName={hostName || session.userName}
-            isLocal={isLocalActive}
+            screenShares={screenShares}
+            streamVolumes={streamVolumes}
+            onStreamVolumeChange={setStreamVolume}
             reaction={reaction}
             onToggleHUD={() => setIsHUDOpen(!isHUDOpen)}
             isHUDOpen={isHUDOpen}
             canPlaybackAudio={canPlaybackAudio}
             onUnlockAudio={unlockAudio}
-            onVolumeChange={setGlobalVolume}
+            onOpenScreenShareConfig={() => setIsScreenShareModalOpen(true)}
           />
         </div>
 

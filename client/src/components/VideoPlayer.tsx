@@ -1,66 +1,59 @@
-import React, { useEffect, useRef, useState } from 'react';
-import type { Track } from 'livekit-client';
+import React, { useEffect, useState, useMemo } from 'react';
 import {
-  Maximize,
-  Minimize,
-  Volume2,
-  VolumeX,
-  PictureInPicture,
   Tv,
   Radio,
+  Volume2,
+  LayoutGrid,
+  Square,
   Layers,
+  Sparkles,
 } from 'lucide-react';
-import type { ReactionEvent } from '../types';
+import type { ScreenShareItem, ReactionEvent, StreamLayoutMode } from '../types';
+import { StreamTile } from './StreamTile';
 import confetti from 'canvas-confetti';
 
 interface VideoPlayerProps {
-  track: Track | null;
-  hostName?: string;
-  isLocal: boolean;
+  screenShares: ScreenShareItem[];
+  streamVolumes: Record<string, number>;
+  onStreamVolumeChange: (participantIdentity: string, volume: number) => void;
   reaction: ReactionEvent | null;
   onToggleHUD: () => void;
   isHUDOpen: boolean;
   canPlaybackAudio?: boolean;
   onUnlockAudio?: () => void;
-  onVolumeChange?: (volume: number) => void;
+  onOpenScreenShareConfig?: () => void;
 }
 
 export const VideoPlayer: React.FC<VideoPlayerProps> = ({
-  track,
-  hostName,
-  isLocal,
+  screenShares,
+  streamVolumes,
+  onStreamVolumeChange,
   reaction,
   onToggleHUD,
   isHUDOpen,
   canPlaybackAudio = true,
   onUnlockAudio,
-  onVolumeChange,
+  onOpenScreenShareConfig,
 }) => {
-  const videoRef = useRef<HTMLVideoElement>(null);
-  const containerRef = useRef<HTMLDivElement>(null);
-  const [isFullscreen, setIsFullscreen] = useState<boolean>(false);
-  const [volume, setVolume] = useState<number>(1);
-  const [isMuted, setIsMuted] = useState<boolean>(false);
-  const [showControls, setShowControls] = useState<boolean>(true);
-  const [activeReactions, setActiveReactions] = useState<{ id: number; emoji: string; sender: string; createdAt: number }[]>([]);
+  const [layoutMode, setLayoutMode] = useState<StreamLayoutMode>('grid');
+  const [spotlightId, setSpotlightId] = useState<string | null>(null);
+  const [activeReactions, setActiveReactions] = useState<{
+    id: number;
+    emoji: string;
+    sender: string;
+    createdAt: number;
+  }[]>([]);
 
-  const hideTimeoutRef = useRef<number | null>(null);
-
+  // Automatically update spotlightId if current spotlight stream leaves
   useEffect(() => {
-    if (!videoRef.current) return;
-
-    if (track) {
-      track.attach(videoRef.current);
+    if (screenShares.length === 0) {
+      setSpotlightId(null);
+    } else if (!screenShares.some((s) => s.id === spotlightId)) {
+      setSpotlightId(screenShares[0].id);
     }
+  }, [screenShares, spotlightId]);
 
-    return () => {
-      if (track && videoRef.current) {
-        track.detach(videoRef.current);
-      }
-    };
-  }, [track]);
-
-  // Add new reactions and trigger confetti
+  // Floating reactions & confetti triggers
   useEffect(() => {
     if (!reaction) return;
 
@@ -96,111 +89,121 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
     return () => clearInterval(interval);
   }, []);
 
-  const handleMouseMove = () => {
-    setShowControls(true);
-    if (hideTimeoutRef.current) clearTimeout(hideTimeoutRef.current);
-    hideTimeoutRef.current = window.setTimeout(() => {
-      if (isFullscreen) {
-        setShowControls(false);
-      }
-    }, 3000);
-  };
+  const featuredStream = useMemo(() => {
+    if (screenShares.length === 0) return null;
+    return screenShares.find((s) => s.id === spotlightId) || screenShares[0];
+  }, [screenShares, spotlightId]);
 
-  const toggleFullscreen = async () => {
-    if (!containerRef.current) return;
+  const otherStreams = useMemo(() => {
+    return screenShares.filter((s) => s.id !== featuredStream?.id);
+  }, [screenShares, featuredStream]);
 
-    if (!document.fullscreenElement) {
-      await containerRef.current.requestFullscreen();
-      setIsFullscreen(true);
-    } else {
-      await document.exitFullscreen();
-      setIsFullscreen(false);
-    }
-  };
-
-  const togglePiP = async () => {
-    if (!videoRef.current) return;
-    try {
-      if (document.pictureInPictureElement) {
-        await document.exitPictureInPicture();
-      } else {
-        await videoRef.current.requestPictureInPicture();
-      }
-    } catch (err) {
-      console.error('Error toggling PiP:', err);
-    }
-  };
-
-  const handleVolumeChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const val = parseFloat(e.target.value);
-    setVolume(val);
-    const effectiveMute = val === 0;
-    setIsMuted(effectiveMute);
-
-    if (videoRef.current) {
-      videoRef.current.volume = val;
-      videoRef.current.muted = effectiveMute;
-    }
-
-    onVolumeChange?.(effectiveMute ? 0 : val);
-  };
-
-  const toggleMute = () => {
-    const nextMute = !isMuted;
-    setIsMuted(nextMute);
-
-    if (videoRef.current) {
-      videoRef.current.muted = nextMute;
-    }
-
-    onVolumeChange?.(nextMute ? 0 : volume);
-  };
-
-  return (
-    <div
-      ref={containerRef}
-      onMouseMove={handleMouseMove}
-      className="relative flex-1 bg-black rounded-2xl overflow-hidden flex items-center justify-center border border-white/5 shadow-2xl group select-none min-h-[400px]"
-    >
-      {track ? (
-        <video
-          ref={videoRef}
-          autoPlay
-          playsInline
-          muted={isLocal}
-          className="w-full h-full object-contain bg-black"
-        />
-      ) : (
+  // Empty State (0 streams sharing)
+  if (screenShares.length === 0) {
+    return (
+      <div className="relative flex-1 bg-black rounded-2xl overflow-hidden flex items-center justify-center border border-white/5 shadow-2xl group select-none min-h-[400px]">
         <div className="flex flex-col items-center justify-center text-center p-8 max-w-md">
           <div className="w-20 h-20 rounded-2xl bg-indigo-500/10 border border-indigo-500/20 flex items-center justify-center mb-6 text-indigo-400 glow-active">
             <Tv className="w-10 h-10 animate-pulse" />
           </div>
           <h3 className="text-xl font-bold text-white mb-2">Aguardando Transmissão</h3>
           <p className="text-sm text-gray-400 mb-6 leading-relaxed">
-            Ninguém está compartilhando tela no momento. Clique em <span className="text-indigo-400 font-medium">Transmitir Tela</span> abaixo para começar a streamar em 60 FPS com áudio!
+            Ninguém está compartilhando tela no momento. Qualquer participante pode transmitir tela em 60 FPS com áudio simultaneamente!
           </p>
+
+          {onOpenScreenShareConfig && (
+            <button
+              onClick={onOpenScreenShareConfig}
+              className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-500 hover:to-violet-500 text-white font-semibold text-xs shadow-lg shadow-indigo-600/30 transition transform hover:scale-[1.02] active:scale-[0.98] mb-6"
+            >
+              <Sparkles className="w-4 h-4" />
+              <span>Começar a Transmitir</span>
+            </button>
+          )}
+
           <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-white/5 border border-white/10 text-xs text-gray-400">
             <Radio className="w-3.5 h-3.5 text-emerald-400 animate-pulse" />
-            <span>Sala pronta para conexão WebRTC de ultra-baixa latência</span>
+            <span>Sala pronta para múltiplos streams com Dynacast</span>
           </div>
         </div>
-      )}
 
-      {/* Floating Reaction Overlay */}
-      <div className="absolute bottom-20 right-8 z-30 pointer-events-none flex flex-col items-end gap-2">
-        {activeReactions.map((r) => (
-          <div
-            key={r.id}
-            className="flex items-center gap-2 bg-black/80 backdrop-blur-md border border-white/15 px-3 py-1.5 rounded-full text-white text-sm shadow-2xl animate-float-up"
+        {/* Floating Reaction Overlay */}
+        <div className="absolute bottom-6 right-6 z-30 pointer-events-none flex flex-col items-end gap-2">
+          {activeReactions.map((r) => (
+            <div
+              key={r.id}
+              className="flex items-center gap-2 bg-black/80 backdrop-blur-md border border-white/15 px-3 py-1.5 rounded-full text-white text-sm shadow-2xl animate-float-up"
+            >
+              <span className="text-2xl">{r.emoji}</span>
+              <span className="text-xs font-semibold text-indigo-300">{r.sender}</span>
+            </div>
+          ))}
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="relative flex-1 bg-black/40 rounded-2xl overflow-hidden flex flex-col min-h-[400px]">
+      {/* Top Multi-Stream Header Bar */}
+      <div className="absolute top-3 inset-x-3 z-30 flex items-center justify-between pointer-events-none">
+        {/* Left: Stream Count */}
+        <div className="pointer-events-auto flex items-center gap-2 bg-black/60 backdrop-blur-md border border-white/15 px-3 py-1.5 rounded-2xl text-xs text-white shadow-lg">
+          <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+          <span className="font-bold">{screenShares.length}</span>
+          <span className="text-gray-300">
+            {screenShares.length === 1 ? 'tela ao vivo' : 'telas ao vivo'}
+          </span>
+        </div>
+
+        {/* Right: Layout Switcher & HUD Toggle */}
+        <div className="pointer-events-auto flex items-center gap-2 bg-black/60 backdrop-blur-md border border-white/15 p-1 rounded-2xl shadow-lg">
+          {screenShares.length > 1 && (
+            <div className="flex items-center gap-1 border-r border-white/10 pr-1.5 mr-0.5">
+              <button
+                onClick={() => setLayoutMode('grid')}
+                title="Modo Grade (Grid)"
+                className={`p-1.5 rounded-xl text-xs font-medium flex items-center gap-1.5 transition ${
+                  layoutMode === 'grid'
+                    ? 'bg-indigo-600 text-white shadow'
+                    : 'text-gray-400 hover:text-white hover:bg-white/10'
+                }`}
+              >
+                <LayoutGrid className="w-3.5 h-3.5" />
+                <span className="hidden sm:inline">Grade</span>
+              </button>
+
+              <button
+                onClick={() => setLayoutMode('spotlight')}
+                title="Modo Destaque (Spotlight)"
+                className={`p-1.5 rounded-xl text-xs font-medium flex items-center gap-1.5 transition ${
+                  layoutMode === 'spotlight'
+                    ? 'bg-indigo-600 text-white shadow'
+                    : 'text-gray-400 hover:text-white hover:bg-white/10'
+                }`}
+              >
+                <Square className="w-3.5 h-3.5" />
+                <span className="hidden sm:inline">Destaque</span>
+              </button>
+            </div>
+          )}
+
+          <button
+            onClick={onToggleHUD}
+            title="Estatísticas Técnicas (HUD)"
+            className={`p-1.5 rounded-xl transition ${
+              isHUDOpen
+                ? 'bg-indigo-600 text-white shadow'
+                : 'text-gray-400 hover:text-white hover:bg-white/10'
+            }`}
           >
-            <span className="text-2xl">{r.emoji}</span>
-            <span className="text-xs font-semibold text-indigo-300">{r.sender}</span>
-          </div>
-        ))}
+            <Layers className="w-3.5 h-3.5" />
+          </button>
+        </div>
       </div>
 
       {/* Browser Autoplay Blocked Warning / Unmute Banner */}
-      {!canPlaybackAudio && !isLocal && (
+      {!canPlaybackAudio && (
         <div
           onClick={onUnlockAudio}
           className="absolute top-16 inset-x-8 z-40 bg-indigo-600/95 hover:bg-indigo-500 backdrop-blur-md border border-indigo-400/30 text-white px-4 py-3 rounded-2xl shadow-2xl flex items-center justify-between cursor-pointer animate-pulse transition"
@@ -211,7 +214,9 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
             </div>
             <div>
               <div className="font-bold text-sm">Áudio Pausado pelo Navegador</div>
-              <div className="text-xs text-indigo-100">Clique aqui para desbloquear e ouvir o áudio da live</div>
+              <div className="text-xs text-indigo-100">
+                Clique aqui para desbloquear e ouvir o áudio das transmissões
+              </div>
             </div>
           </div>
           <button className="px-4 py-1.5 bg-white text-indigo-700 font-bold text-xs rounded-xl shadow">
@@ -220,77 +225,88 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
         </div>
       )}
 
-      {/* Top Stream Status Overlay */}
-      {track && (
-        <div className="absolute top-4 left-4 z-30 flex items-center gap-3">
-          <div className="flex items-center gap-2 bg-red-600/90 backdrop-blur-md px-3 py-1 rounded-full text-white text-xs font-bold uppercase tracking-wider shadow-lg">
-            <span className="w-2 h-2 rounded-full bg-white animate-ping" />
-            <span>AO VIVO</span>
+      {/* Main Video View Area */}
+      <div className="flex-1 flex flex-col p-2 min-h-0 pt-14">
+        {layoutMode === 'grid' || screenShares.length === 1 ? (
+          // GRID MODE LAYOUT
+          <div
+            className={`flex-1 grid gap-3 min-h-0 ${
+              screenShares.length === 1
+                ? 'grid-cols-1'
+                : screenShares.length === 2
+                ? 'grid-cols-1 md:grid-cols-2'
+                : screenShares.length === 3
+                ? 'grid-cols-1 md:grid-cols-2 lg:grid-cols-3'
+                : 'grid-cols-1 md:grid-cols-2'
+            }`}
+          >
+            {screenShares.map((stream) => (
+              <div key={stream.id} className="min-h-[220px] flex-1 flex">
+                <StreamTile
+                  stream={stream}
+                  volume={streamVolumes[stream.participantIdentity] ?? 1}
+                  onVolumeChange={(vol) => onStreamVolumeChange(stream.participantIdentity, vol)}
+                  isSpotlighted={spotlightId === stream.id && screenShares.length > 1}
+                  onToggleSpotlight={
+                    screenShares.length > 1
+                      ? () => {
+                          setSpotlightId(stream.id);
+                          setLayoutMode('spotlight');
+                        }
+                      : undefined
+                  }
+                />
+              </div>
+            ))}
           </div>
+        ) : (
+          // SPOTLIGHT MODE LAYOUT
+          <div className="flex-1 flex flex-col gap-3 min-h-0">
+            {/* Featured Main Stream */}
+            {featuredStream && (
+              <div className="flex-1 min-h-0 flex">
+                <StreamTile
+                  stream={featuredStream}
+                  volume={streamVolumes[featuredStream.participantIdentity] ?? 1}
+                  onVolumeChange={(vol) =>
+                    onStreamVolumeChange(featuredStream.participantIdentity, vol)
+                  }
+                  isSpotlighted={true}
+                  onToggleSpotlight={() => setLayoutMode('grid')}
+                />
+              </div>
+            )}
 
-          <div className="bg-black/60 backdrop-blur-md border border-white/10 px-3 py-1 rounded-full text-xs text-gray-200 flex items-center gap-2 shadow">
-            <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
-            <span className="font-medium text-white">{hostName || 'Host'}</span>
-            {isLocal && <span className="text-[10px] bg-indigo-500/30 text-indigo-300 px-1.5 py-0.5 rounded">Você</span>}
+            {/* Thumbnail Strip for other streams */}
+            {otherStreams.length > 0 && (
+              <div className="flex items-center gap-3 overflow-x-auto py-1 px-1 custom-scrollbar">
+                {otherStreams.map((stream) => (
+                  <StreamTile
+                    key={stream.id}
+                    stream={stream}
+                    isThumbnail={true}
+                    isSpotlighted={false}
+                    onSelectThumbnail={() => setSpotlightId(stream.id)}
+                  />
+                ))}
+              </div>
+            )}
           </div>
-        </div>
-      )}
+        )}
+      </div>
 
-      {/* Player Overlaid Controls Bar */}
-      {track && (
-        <div
-          className={`absolute bottom-0 inset-x-0 bg-gradient-to-t from-black/90 via-black/40 to-transparent p-4 z-30 transition-opacity duration-300 flex items-center justify-between ${
-            showControls ? 'opacity-100' : 'opacity-0 pointer-events-none'
-          }`}
-        >
-          <div className="flex items-center gap-3">
-            <div className="flex items-center gap-2 bg-white/10 backdrop-blur-md px-3 py-1.5 rounded-xl border border-white/10 text-white">
-              <button onClick={toggleMute} className="hover:text-indigo-400 transition">
-                {isMuted || volume === 0 ? <VolumeX className="w-4 h-4 text-rose-400" /> : <Volume2 className="w-4 h-4" />}
-              </button>
-              <input
-                type="range"
-                min="0"
-                max="1"
-                step="0.01"
-                value={isMuted ? 0 : volume}
-                onChange={handleVolumeChange}
-                className="w-16 sm:w-28 h-1.5 bg-white/20 rounded-lg appearance-none cursor-pointer accent-indigo-500"
-              />
-            </div>
+      {/* Floating Reaction Overlay */}
+      <div className="absolute bottom-6 right-6 z-30 pointer-events-none flex flex-col items-end gap-2">
+        {activeReactions.map((r) => (
+          <div
+            key={r.id}
+            className="flex items-center gap-2 bg-black/80 backdrop-blur-md border border-white/15 px-3 py-1.5 rounded-full text-white text-sm shadow-2xl animate-float-up"
+          >
+            <span className="text-2xl">{r.emoji}</span>
+            <span className="text-xs font-semibold text-indigo-300">{r.sender}</span>
           </div>
-
-          <div className="flex items-center gap-2">
-            <button
-              onClick={onToggleHUD}
-              title="Estatísticas do Stream (HUD)"
-              className={`p-2 rounded-xl border transition ${
-                isHUDOpen
-                  ? 'bg-indigo-600 border-indigo-500 text-white shadow-lg'
-                  : 'bg-white/10 border-white/10 text-gray-300 hover:text-white hover:bg-white/20'
-              }`}
-            >
-              <Layers className="w-4 h-4" />
-            </button>
-
-            <button
-              onClick={togglePiP}
-              title="Picture-in-Picture"
-              className="p-2 rounded-xl bg-white/10 hover:bg-white/20 border border-white/10 text-gray-300 hover:text-white transition"
-            >
-              <PictureInPicture className="w-4 h-4" />
-            </button>
-
-            <button
-              onClick={toggleFullscreen}
-              title="Tela Cheia"
-              className="p-2 rounded-xl bg-white/10 hover:bg-white/20 border border-white/10 text-gray-300 hover:text-white transition"
-            >
-              {isFullscreen ? <Minimize className="w-4 h-4" /> : <Maximize className="w-4 h-4" />}
-            </button>
-          </div>
-        </div>
-      )}
+        ))}
+      </div>
     </div>
   );
 };

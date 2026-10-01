@@ -57,3 +57,14 @@ export interface ActiveRoomInfo {
   numParticipants: number;
   hasPasscode?: boolean;
 }
+
+export type StreamLayoutMode = 'grid' | 'spotlight';
+
+export interface ScreenShareItem {
+  id: string; // participantIdentity
+  participantIdentity: string;
+  participantName: string;
+  videoTrack: any; // Track from livekit-client
+  audioTrack?: any; // Track from livekit-client
+  isLocal: boolean;
+}
