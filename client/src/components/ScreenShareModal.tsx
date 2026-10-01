@@ -136,15 +136,24 @@ export const ScreenShareModal: React.FC<ScreenShareModalProps> = ({
                 <Volume2 className="w-4 h-4" />
               </div>
               <div>
-                <div className="font-medium text-white">Transmitir Áudio do Sistema / Jogo</div>
-                <div className="text-xs text-gray-400">Captura som do jogo, Discord ou navegador</div>
+                <div className="font-medium text-white flex items-center gap-2">
+                  <span>Transmitir Áudio do Sistema / Jogo / Filme</span>
+                  {includeAudio && (
+                    <span className="text-[10px] bg-indigo-500/20 text-indigo-300 font-semibold px-1.5 py-0.2 rounded border border-indigo-500/30">
+                      Estéreo 192 kbps
+                    </span>
+                  )}
+                </div>
+                <div className="text-xs text-gray-400">
+                  Alta fidelidade pura (sem cortes de graves, voz ou supressão de ruído)
+                </div>
               </div>
             </div>
             <input
               type="checkbox"
               checked={includeAudio}
               onChange={() => {}}
-              className="w-4 h-4 accent-indigo-500 rounded"
+              className="w-4 h-4 accent-indigo-500 rounded cursor-pointer"
             />
           </div>
         </div>

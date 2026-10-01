@@ -269,12 +269,23 @@ export function useLiveKit({ url, token, onDisconnected }: UseLiveKitOptions) {
     const room = new Room({
       adaptiveStream: true,
       dynacast: true,
+      audioCaptureDefaults: {
+        autoGainControl: true,
+        noiseSuppression: true,
+        echoCancellation: true,
+      },
       videoCaptureDefaults: {
         resolution: VideoPresets.h1080.resolution,
       },
       publishDefaults: {
         videoCodec: 'vp9',
         screenShareEncoding: ScreenSharePresets.h1080fps30.encoding,
+        audioPreset: {
+          maxBitrate: 192000,
+          priority: 'high',
+        },
+        dtx: false,
+        red: true,
         simulcast: false,
       },
     });
@@ -541,7 +552,7 @@ export function useLiveKit({ url, token, onDisconnected }: UseLiveKitOptions) {
     });
   };
 
-  // Start Screen Sharing with audio capture
+  // Start Screen Sharing with high-fidelity stereo audio capture (Cinema / Gaming / Music mode)
   const startScreenShare = async (config?: Partial<StreamQualityConfig>) => {
     const room = roomRef.current;
     if (!room) return;
@@ -549,23 +560,58 @@ export function useLiveKit({ url, token, onDisconnected }: UseLiveKitOptions) {
     try {
       const targetFps = config?.frameRate || 60;
       const shouldIncludeAudio = config?.includeAudio ?? true;
+      const targetBitrate = config?.bitrateKbps ? config.bitrateKbps * 1000 : 8000000;
 
-      await room.localParticipant.setScreenShareEnabled(true, {
-        audio: shouldIncludeAudio,
-        selfBrowserSurface: 'include',
-        surfaceSwitching: 'include',
-        systemAudio: 'include',
-        resolution: config?.resolution === '4k'
-          ? VideoPresets.h2160.resolution
-          : config?.resolution === '1440p'
-          ? { width: 2560, height: 1440, frameRate: targetFps }
-          : config?.resolution === '720p'
-          ? VideoPresets.h720.resolution
-          : VideoPresets.h1080.resolution,
-      });
+      await room.localParticipant.setScreenShareEnabled(
+        true,
+        {
+          audio: shouldIncludeAudio
+            ? {
+                autoGainControl: false,
+                echoCancellation: false,
+                noiseSuppression: false,
+                channelCount: 2,
+                sampleRate: 48000,
+              }
+            : false,
+          selfBrowserSurface: 'include',
+          surfaceSwitching: 'include',
+          systemAudio: 'include',
+          resolution:
+            config?.resolution === '4k'
+              ? VideoPresets.h2160.resolution
+              : config?.resolution === '1440p'
+              ? { width: 2560, height: 1440, frameRate: targetFps }
+              : config?.resolution === '720p'
+              ? VideoPresets.h720.resolution
+              : VideoPresets.h1080.resolution,
+        },
+        {
+          audioPreset: {
+            maxBitrate: 192000,
+            priority: 'high',
+          },
+          dtx: false,
+          red: true,
+          videoEncoding: {
+            maxBitrate: targetBitrate,
+            maxFramerate: targetFps,
+            priority: 'high',
+          },
+        }
+      );
+
+      // Force 'music' contentHint on screen audio track for full cinema/music dynamic range
+      const audioPub = room.localParticipant.getTrackPublication(Track.Source.ScreenShareAudio);
+      if (audioPub?.track?.mediaStreamTrack) {
+        audioPub.track.mediaStreamTrack.contentHint = 'music';
+      }
 
       const videoTrackPub = room.localParticipant.getTrackPublication(Track.Source.ScreenShare);
       if (videoTrackPub && videoTrackPub.track) {
+        if (videoTrackPub.track.mediaStreamTrack) {
+          videoTrackPub.track.mediaStreamTrack.contentHint = config?.contentHint || 'motion';
+        }
         setLocalScreenTrack(videoTrackPub.track);
         setIsScreenSharing(true);
         setHostName(room.localParticipant.name || room.localParticipant.identity);
