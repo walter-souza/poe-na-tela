@@ -12,6 +12,7 @@ import {
   PlusCircle,
   Loader2,
 } from 'lucide-react';
+import { sanitizeRoomName, sanitizeUserName } from '../utils/sanitize';
 
 interface InviteModalProps {
   isOpen: boolean;
@@ -65,7 +66,7 @@ export const InviteModal: React.FC<InviteModalProps> = ({
     const checkRoom = async () => {
       try {
         const apiBase = (import.meta.env.VITE_API_URL || '/api').replace(/\/$/, '');
-        const cleanRoom = roomName.trim().toLowerCase().replace(/[^a-z0-9_-]/g, '-');
+        const cleanRoom = sanitizeRoomName(roomName);
         const infoUrl = apiBase.endsWith('/api')
           ? `${apiBase}/room/${encodeURIComponent(cleanRoom)}/info`
           : `${apiBase}/api/room/${encodeURIComponent(cleanRoom)}/info`;
@@ -90,7 +91,7 @@ export const InviteModal: React.FC<InviteModalProps> = ({
         }
       } catch {
         setRoomInfo({
-          roomName,
+          roomName: sanitizeRoomName(roomName),
           hasPasscode: false,
           isActive: false,
           numParticipants: 0,
@@ -107,14 +108,14 @@ export const InviteModal: React.FC<InviteModalProps> = ({
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!userName.trim()) {
-      setErrorMessage('Por favor, informe seu nome ou apelido.');
+    const cleanUser = sanitizeUserName(userName);
+    const cleanRoom = sanitizeRoomName(roomName);
+    const cleanPass = passcode.trim() || undefined;
+
+    if (!cleanUser) {
+      setErrorMessage('Por favor, informe um nome de usuário válido.');
       return;
     }
-
-    const cleanUser = userName.trim();
-    const cleanRoom = roomName.trim().toLowerCase().replace(/[^a-z0-9_-]/g, '-');
-    const cleanPass = passcode.trim() || undefined;
 
     if (roomInfo?.isActive && roomInfo?.hasPasscode && !cleanPass) {
       setErrorMessage('Esta sala requer uma senha de acesso.');

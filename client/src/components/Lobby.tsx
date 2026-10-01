@@ -13,6 +13,7 @@ import {
   Play,
 } from 'lucide-react';
 import { PasswordModal } from './PasswordModal';
+import { sanitizeRoomName, sanitizeUserName } from '../utils/sanitize';
 import type { FavoriteRoom, ActiveRoomInfo } from '../types';
 
 interface LobbyProps {
@@ -105,12 +106,12 @@ export const Lobby: React.FC<LobbyProps> = ({ onJoin, isLoading, error }) => {
   };
 
   const toggleFavoriteCurrentRoom = () => {
-    if (!roomName.trim()) return;
-    const sanitized = roomName.trim().toLowerCase().replace(/[^a-z0-9_-]/g, '-');
-    const exists = favorites.some((f) => f.name.toLowerCase() === sanitized);
+    const sanitized = sanitizeRoomName(roomName);
+    if (!sanitized) return;
+    const exists = favorites.some((f) => f.name.toLowerCase() === sanitized.toLowerCase());
 
     if (exists) {
-      saveFavorites(favorites.filter((f) => f.name.toLowerCase() !== sanitized));
+      saveFavorites(favorites.filter((f) => f.name.toLowerCase() !== sanitized.toLowerCase()));
     } else {
       saveFavorites([...favorites, { name: sanitized, addedAt: Date.now() }]);
     }
@@ -118,9 +119,9 @@ export const Lobby: React.FC<LobbyProps> = ({ onJoin, isLoading, error }) => {
 
   const handleAddFavoriteInput = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newFavoriteInput.trim()) return;
-    const sanitized = newFavoriteInput.trim().toLowerCase().replace(/[^a-z0-9_-]/g, '-');
-    if (!favorites.some((f) => f.name.toLowerCase() === sanitized)) {
+    const sanitized = sanitizeRoomName(newFavoriteInput);
+    if (!sanitized) return;
+    if (!favorites.some((f) => f.name.toLowerCase() === sanitized.toLowerCase())) {
       saveFavorites([...favorites, { name: sanitized, addedAt: Date.now() }]);
     }
     setNewFavoriteInput('');
@@ -132,7 +133,7 @@ export const Lobby: React.FC<LobbyProps> = ({ onJoin, isLoading, error }) => {
 
   // Quick join from favorites list
   const handleQuickJoinFavorite = async (favName: string) => {
-    const sanitized = favName.trim().toLowerCase().replace(/[^a-z0-9_-]/g, '-');
+    const sanitized = sanitizeRoomName(favName);
     const activeInfo = activeRooms[sanitized];
 
     if (activeInfo?.hasPasscode) {
@@ -142,7 +143,9 @@ export const Lobby: React.FC<LobbyProps> = ({ onJoin, isLoading, error }) => {
 
     try {
       const apiBase = (import.meta.env.VITE_API_URL || '/api').replace(/\/$/, '');
-      const infoUrl = apiBase.endsWith('/api') ? `${apiBase}/room/${sanitized}/info` : `${apiBase}/api/room/${sanitized}/info`;
+      const infoUrl = apiBase.endsWith('/api')
+        ? `${apiBase}/room/${encodeURIComponent(sanitized)}/info`
+        : `${apiBase}/api/room/${encodeURIComponent(sanitized)}/info`;
       const res = await fetch(infoUrl);
       if (res.ok) {
         const info = await res.json();
@@ -154,22 +157,20 @@ export const Lobby: React.FC<LobbyProps> = ({ onJoin, isLoading, error }) => {
     } catch {}
 
     stopMicTest();
-    if (userName.trim()) {
-      localStorage.setItem(USERNAME_STORAGE_KEY, userName.trim());
-    }
-    onJoin(sanitized, userName.trim() || 'Amigo', true);
+    const cleanUser = sanitizeUserName(userName) || 'Amigo';
+    localStorage.setItem(USERNAME_STORAGE_KEY, cleanUser);
+    onJoin(sanitized, cleanUser, true);
   };
 
   const handlePasswordConfirm = (pwd: string) => {
     if (!passwordPromptRoom) return;
-    const targetRoom = passwordPromptRoom;
+    const targetRoom = sanitizeRoomName(passwordPromptRoom);
     setPasswordPromptRoom(null);
     setPasswordModalError(null);
     stopMicTest();
-    if (userName.trim()) {
-      localStorage.setItem(USERNAME_STORAGE_KEY, userName.trim());
-    }
-    onJoin(targetRoom, userName.trim() || 'Amigo', true, pwd);
+    const cleanUser = sanitizeUserName(userName) || 'Amigo';
+    localStorage.setItem(USERNAME_STORAGE_KEY, cleanUser);
+    onJoin(targetRoom, cleanUser, true, pwd.trim() || undefined);
   };
 
   const startMicTest = async () => {
@@ -240,14 +241,16 @@ export const Lobby: React.FC<LobbyProps> = ({ onJoin, isLoading, error }) => {
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!roomName.trim() || !userName.trim()) return;
-    localStorage.setItem(USERNAME_STORAGE_KEY, userName.trim());
+    const cleanRoom = sanitizeRoomName(roomName);
+    const cleanUser = sanitizeUserName(userName);
+    if (!cleanRoom || !cleanUser) return;
+    localStorage.setItem(USERNAME_STORAGE_KEY, cleanUser);
     stopMicTest();
-    onJoin(roomName.trim(), userName.trim(), true, passcode.trim() || undefined);
+    onJoin(cleanRoom, cleanUser, true, passcode.trim() || undefined);
   };
 
   const isCurrentRoomFavorited = roomName.trim()
-    ? favorites.some((f) => f.name.toLowerCase() === roomName.trim().toLowerCase().replace(/[^a-z0-9_-]/g, '-'))
+    ? favorites.some((f) => f.name.toLowerCase() === sanitizeRoomName(roomName).toLowerCase())
     : false;
 
   return (

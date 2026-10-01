@@ -31,6 +31,31 @@ const roomStore = new Map<string, RoomConfig>();
 const roomService = new RoomServiceClient(LIVEKIT_URL.replace('ws://', 'http://').replace('wss://', 'https://'), LIVEKIT_API_KEY, LIVEKIT_API_SECRET);
 
 /**
+ * Unicode-safe sanitization for room names.
+ * Preserves accented characters (é, ã, ç, etc.), international alphabets, and spaces,
+ * while stripping unsafe URL/control characters and normalizing whitespace.
+ */
+function sanitizeRoomName(name: string): string {
+  if (!name) return '';
+  return name
+    .normalize('NFC')
+    .trim()
+    .replace(/[\/\?\\#%<>"'`\r\n\t\0]/g, '')
+    .replace(/\s+/g, ' ')
+    .slice(0, 64);
+}
+
+function sanitizeUserName(name: string): string {
+  if (!name) return '';
+  return name
+    .normalize('NFC')
+    .trim()
+    .replace(/[\r\n\t\0]/g, '')
+    .replace(/\s+/g, ' ')
+    .slice(0, 32);
+}
+
+/**
  * Health check endpoint
  */
 app.get('/api/health', (req: Request, res: Response) => {
@@ -49,13 +74,14 @@ app.post('/api/token', async (req: Request, res: Response): Promise<void> => {
   try {
     const { roomName, participantName, isPublisher, passcode } = req.body;
 
-    if (!roomName || !participantName) {
-      res.status(400).json({ error: 'roomName e participantName são obrigatórios.' });
+    const sanitizedRoom = sanitizeRoomName(roomName as string);
+    const sanitizedParticipant = sanitizeUserName(participantName as string);
+
+    if (!sanitizedRoom || !sanitizedParticipant) {
+      res.status(400).json({ error: 'Nome da sala e nome do participante são obrigatórios e válidos.' });
       return;
     }
 
-    const sanitizedRoom = (roomName as string).trim().toLowerCase().replace(/[^a-z0-9_-]/g, '-');
-    const sanitizedParticipant = (participantName as string).trim();
     const cleanPasscode = typeof passcode === 'string' && passcode.trim() ? passcode.trim() : undefined;
 
     // 1. Check if room is currently active in LiveKit
@@ -166,7 +192,7 @@ app.get('/api/rooms', async (req: Request, res: Response) => {
  * Check if a room exists, requires a password, or has active viewers
  */
 app.get('/api/room/:roomName/info', async (req: Request, res: Response) => {
-  const roomName = req.params.roomName.trim().toLowerCase().replace(/[^a-z0-9_-]/g, '-');
+  const roomName = sanitizeRoomName(req.params.roomName);
   let numParticipants = 0;
   let isActive = false;
 
