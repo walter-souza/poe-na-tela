@@ -6,6 +6,7 @@ import { ChatPanel } from './components/ChatPanel';
 import { StreamHUD } from './components/StreamHUD';
 import { ScreenShareModal } from './components/ScreenShareModal';
 import { Lobby } from './components/Lobby';
+import { InviteModal } from './components/InviteModal';
 import type { StreamQualityConfig } from './types';
 
 export function App() {
@@ -22,6 +23,12 @@ export function App() {
   const [isChatOpen, setIsChatOpen] = useState(true);
   const [isHUDOpen, setIsHUDOpen] = useState(false);
   const [isScreenShareModalOpen, setIsScreenShareModalOpen] = useState(false);
+
+  // Detect room parameter in URL for invite link auto-redirection
+  const [inviteRoomName, setInviteRoomName] = useState<string | null>(() => {
+    const params = new URLSearchParams(window.location.search);
+    return params.get('room') || params.get('r') || null;
+  });
 
   // Connect to room via token
   const handleJoin = async (
@@ -60,19 +67,44 @@ export function App() {
         userName: data.identity,
         isPublisher: data.isPublisher,
       });
+
+      // Update URL search param to reflect active room
+      window.history.replaceState({}, '', `${window.location.pathname}?room=${encodeURIComponent(data.roomName)}`);
+      setInviteRoomName(null);
     } catch (err: any) {
-      setError(err.message || 'Erro ao conectar ao servidor de streaming');
+      const msg = err.message || 'Erro ao conectar ao servidor de streaming';
+      setError(msg);
+      throw err;
     } finally {
       setIsLoading(false);
     }
   };
 
   const handleLeave = () => {
+    window.history.replaceState({}, '', window.location.pathname);
     setSession(null);
+    setInviteRoomName(null);
+  };
+
+  const handleCancelInvite = () => {
+    window.history.replaceState({}, '', window.location.pathname);
+    setInviteRoomName(null);
   };
 
   if (!session) {
-    return <Lobby onJoin={handleJoin} isLoading={isLoading} error={error} />;
+    return (
+      <>
+        <Lobby onJoin={handleJoin} isLoading={isLoading} error={error} />
+        {inviteRoomName && (
+          <InviteModal
+            isOpen={Boolean(inviteRoomName)}
+            roomName={inviteRoomName}
+            onJoin={handleJoin}
+            onCancel={handleCancelInvite}
+          />
+        )}
+      </>
+    );
   }
 
   return (
@@ -189,6 +221,7 @@ function StreamRoom({
             onSendMessage={sendMessage}
             onSendReaction={sendReaction}
             userName={session.userName}
+            roomName={session.roomName}
           />
         )}
       </div>
@@ -199,6 +232,7 @@ function StreamRoom({
         isScreenSharing={isScreenSharing}
         isChatOpen={isChatOpen}
         isHUDOpen={isHUDOpen}
+        roomName={session.roomName}
         onToggleMic={toggleMic}
         onToggleDeafen={toggleDeafen}
         onToggleScreenShare={handleToggleScreenShare}

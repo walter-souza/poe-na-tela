@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import {
   Mic,
   MicOff,
@@ -11,6 +11,8 @@ import {
   PhoneOff,
   Layers,
   Sparkles,
+  Share2,
+  Check,
 } from 'lucide-react';
 
 interface ControlsBarProps {
@@ -19,6 +21,7 @@ interface ControlsBarProps {
   isScreenSharing: boolean;
   isChatOpen: boolean;
   isHUDOpen: boolean;
+  roomName: string;
   onToggleMic: () => void;
   onToggleDeafen: () => void;
   onToggleScreenShare: () => void;
@@ -34,6 +37,7 @@ export const ControlsBar: React.FC<ControlsBarProps> = ({
   isScreenSharing,
   isChatOpen,
   isHUDOpen,
+  roomName,
   onToggleMic,
   onToggleDeafen,
   onToggleScreenShare,
@@ -42,6 +46,14 @@ export const ControlsBar: React.FC<ControlsBarProps> = ({
   onToggleHUD,
   onLeave,
 }) => {
+  const [copied, setCopied] = useState(false);
+
+  const handleCopyInvite = () => {
+    const inviteUrl = `${window.location.origin}${window.location.pathname}?room=${encodeURIComponent(roomName)}`;
+    navigator.clipboard.writeText(inviteUrl);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
   return (
     <div className="h-20 bg-[#0d0f17] border-t border-white/10 px-6 flex items-center justify-between shadow-2xl select-none">
       {/* Left Info / App branding */}
@@ -116,6 +128,16 @@ export const ControlsBar: React.FC<ControlsBarProps> = ({
 
       {/* Right Controls */}
       <div className="flex items-center gap-2">
+        {/* Convidar Amigos */}
+        <button
+          onClick={handleCopyInvite}
+          title="Copiar Link de Convite da Sala"
+          className="flex items-center gap-1.5 px-3 py-2.5 rounded-2xl bg-white/5 hover:bg-white/10 border border-white/10 text-xs text-gray-300 hover:text-white transition"
+        >
+          {copied ? <Check className="w-4 h-4 text-emerald-400" /> : <Share2 className="w-4 h-4 text-indigo-400" />}
+          <span className="hidden sm:inline font-medium">{copied ? 'Copiado!' : 'Convidar'}</span>
+        </button>
+
         {/* Toggle HUD */}
         <button
           onClick={onToggleHUD}

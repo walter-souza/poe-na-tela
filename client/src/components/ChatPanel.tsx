@@ -19,6 +19,7 @@ interface ChatPanelProps {
   onSendMessage: (text: string) => void;
   onSendReaction: (emoji: string) => void;
   userName: string;
+  roomName: string;
 }
 
 const EMOJI_LIST = ['🔥', '👏', '😂', '❤️', '🎮', '🚀', '🎉', '🍿', '💯', '🤯'];
@@ -29,6 +30,7 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({
   onSendMessage,
   onSendReaction,
   userName,
+  roomName,
 }) => {
   const [activeTab, setActiveTab] = useState<'chat' | 'participants'>('chat');
   const [inputText, setInputText] = useState('');
@@ -53,7 +55,8 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({
   };
 
   const copyRoomLink = () => {
-    navigator.clipboard.writeText(window.location.href);
+    const inviteUrl = `${window.location.origin}${window.location.pathname}?room=${encodeURIComponent(roomName)}`;
+    navigator.clipboard.writeText(inviteUrl);
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
   };
