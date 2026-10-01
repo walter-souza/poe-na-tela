@@ -26,7 +26,12 @@ interface ChatPanelProps {
   onClose?: () => void;
 }
 
-const EMOJI_LIST = ['🔥', '👏', '😂', '❤️', '🎮', '🚀', '🎉', '🍿', '💯', '🤯'];
+const EMOJI_LIST = [
+  '🔥', '👏', '😂', '❤️', '🎮',
+  '🚀', '🎉', '🍿', '💯', '🤯',
+  '😎', '👀', '👍', '🙌', '🥳',
+  '😭', '✨', '⚡', '🏆', '💀'
+];
 
 export const ChatPanel: React.FC<ChatPanelProps> = ({
   messages,
@@ -40,7 +45,9 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({
   const [activeTab, setActiveTab] = useState<'chat' | 'participants'>('chat');
   const [inputText, setInputText] = useState('');
   const [copied, setCopied] = useState(false);
+  const [showEmojiPicker, setShowEmojiPicker] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const emojiPickerRef = useRef<HTMLDivElement>(null);
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -51,6 +58,22 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({
       scrollToBottom();
     }
   }, [messages, activeTab]);
+
+  // Click outside to close emoji picker
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (emojiPickerRef.current && !emojiPickerRef.current.contains(event.target as Node)) {
+        setShowEmojiPicker(false);
+      }
+    };
+
+    if (showEmojiPicker) {
+      document.addEventListener('mousedown', handleClickOutside);
+    }
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, [showEmojiPicker]);
 
   const handleSend = (e: React.FormEvent) => {
     e.preventDefault();
@@ -144,18 +167,16 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({
                 return (
                   <div
                     key={m.id}
-                    className="flex items-start gap-2 py-0.5 px-2 text-xs text-gray-400 select-none animate-fadeIn"
+                    className="py-1 px-2 rounded-lg text-xs leading-relaxed select-none animate-fadeIn flex items-center gap-1.5"
                   >
-                    <span className="text-[11px] text-gray-500 font-mono tabular-nums shrink-0 w-9 pt-0.5 select-none text-left">
+                    <span className="text-gray-500 font-mono tabular-nums text-xs select-none mr-1">
                       {timeString}
                     </span>
-                    <div className="flex-1 min-w-0 flex items-center gap-1.5 leading-relaxed text-xs pt-0.5">
-                      {isJoin && <LogIn className="w-3.5 h-3.5 text-emerald-400 shrink-0" />}
-                      {isLeave && <LogOut className="w-3.5 h-3.5 text-rose-400 shrink-0" />}
-                      <span className={isJoin ? 'text-emerald-300/90 font-medium' : isLeave ? 'text-rose-300/90 font-medium' : 'text-gray-400'}>
-                        {m.text}
-                      </span>
-                    </div>
+                    {isJoin && <LogIn className="w-3.5 h-3.5 text-emerald-400 shrink-0" />}
+                    {isLeave && <LogOut className="w-3.5 h-3.5 text-rose-400 shrink-0" />}
+                    <span className={isJoin ? 'text-emerald-300 font-medium' : isLeave ? 'text-rose-300 font-medium' : 'text-gray-400'}>
+                      {m.text}
+                    </span>
                   </div>
                 );
               }
@@ -164,29 +185,27 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({
               return (
                 <div
                   key={m.id}
-                  className="flex items-start gap-2 py-0.5 px-2 rounded-lg hover:bg-white/[0.04] transition-colors text-sm animate-fadeIn group"
+                  className="py-1 px-2 rounded-lg hover:bg-white/[0.04] transition-colors text-sm leading-relaxed animate-fadeIn"
                 >
-                  <span className="text-[11px] text-gray-500 font-mono tabular-nums shrink-0 w-9 pt-0.5 select-none text-left">
+                  <span className="text-xs text-gray-500 font-mono tabular-nums mr-2 select-none align-baseline">
                     {timeString}
                   </span>
-                  <div className="flex-1 min-w-0 leading-relaxed">
-                    <span
-                      className={`font-semibold mr-1.5 cursor-default ${
-                        isMe ? 'text-indigo-400' : 'text-purple-400'
-                      }`}
-                    >
-                      {m.sender}
-                      {m.isHost && (
-                        <span className="ml-1 bg-red-500/20 text-red-400 text-[10px] px-1.5 py-0.2 rounded font-bold">
-                          HOST
-                        </span>
-                      )}
-                      :
-                    </span>
-                    <span className="text-gray-100 break-words whitespace-pre-wrap selection:bg-indigo-500/30">
-                      {m.text}
-                    </span>
-                  </div>
+                  <span
+                    className={`font-semibold mr-1 cursor-default ${
+                      isMe ? 'text-indigo-400' : 'text-purple-400'
+                    }`}
+                  >
+                    {m.sender}
+                    {m.isHost && (
+                      <span className="ml-1 mr-0.5 inline-block align-baseline bg-red-500/20 text-red-400 text-[10px] px-1.5 py-0.5 rounded font-bold uppercase">
+                        HOST
+                      </span>
+                    )}
+                    :
+                  </span>
+                  <span className="text-gray-100 break-words whitespace-pre-wrap selection:bg-indigo-500/30">
+                    {m.text}
+                  </span>
                 </div>
               );
             })
@@ -248,24 +267,8 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({
         <div ref={messagesEndRef} />
       </div>
 
-      <div className="px-3 py-2 border-t border-white/10 bg-black/30 flex items-center gap-1 overflow-x-auto">
-        <span className="text-xs text-gray-500 mr-1 flex items-center">
-          <Smile className="w-3.5 h-3.5" />
-        </span>
-        {EMOJI_LIST.map((emoji) => (
-          <button
-            key={emoji}
-            onClick={() => onSendReaction(emoji)}
-            className="hover:scale-125 transition-transform text-lg p-1 rounded hover:bg-white/10"
-            title={`Reagir com ${emoji}`}
-          >
-            {emoji}
-          </button>
-        ))}
-      </div>
-
       {activeTab === 'chat' && (
-        <form onSubmit={handleSend} className="p-3 border-t border-white/10 bg-white/5 flex gap-2">
+        <form onSubmit={handleSend} className="p-3 border-t border-white/10 bg-white/5 flex items-center gap-2 relative">
           <input
             type="text"
             placeholder="Conversar com amigos..."
@@ -273,10 +276,55 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({
             onChange={(e) => setInputText(e.target.value)}
             className="flex-1 bg-black/50 border border-white/10 rounded-xl px-3 py-2 text-sm text-white placeholder-gray-500 focus:outline-none focus:border-indigo-500 transition"
           />
+
+          {/* Emoji Reaction Popover */}
+          <div className="relative" ref={emojiPickerRef}>
+            {showEmojiPicker && (
+              <div className="absolute bottom-full right-0 mb-3 p-3 bg-[#151722] border border-white/15 rounded-2xl shadow-2xl backdrop-blur-xl z-50 w-64 animate-fadeIn select-none">
+                <div className="text-[11px] font-semibold text-gray-400 mb-2 px-1 flex items-center justify-between border-b border-white/5 pb-1.5">
+                  <span className="flex items-center gap-1.5">
+                    <Sparkles className="w-3.5 h-3.5 text-indigo-400" />
+                    Reações na Tela
+                  </span>
+                </div>
+                <div className="grid grid-cols-5 gap-1.5 p-0.5">
+                  {EMOJI_LIST.map((emoji) => (
+                    <button
+                      key={emoji}
+                      type="button"
+                      onClick={() => {
+                        onSendReaction(emoji);
+                        setShowEmojiPicker(false);
+                      }}
+                      className="h-9 w-9 flex items-center justify-center text-xl rounded-xl hover:bg-white/10 hover:scale-115 active:scale-95 transition-all cursor-pointer"
+                      title={`Reagir com ${emoji}`}
+                    >
+                      {emoji}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            <button
+              type="button"
+              onClick={() => setShowEmojiPicker((prev) => !prev)}
+              title="Reações e Emojis"
+              className={`p-2 rounded-xl border transition cursor-pointer ${
+                showEmojiPicker
+                  ? 'bg-indigo-600 border-indigo-500 text-white'
+                  : 'bg-white/5 hover:bg-white/10 border-white/10 text-gray-300 hover:text-white'
+              }`}
+            >
+              <Smile className="w-4 h-4" />
+            </button>
+          </div>
+
           <button
             type="submit"
             disabled={!inputText.trim()}
-            className="p-2 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-40 disabled:hover:bg-indigo-600 rounded-xl text-white transition shadow"
+            className="p-2 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-40 disabled:hover:bg-indigo-600 rounded-xl text-white transition shadow cursor-pointer disabled:cursor-not-allowed"
+            title="Enviar mensagem"
           >
             <Send className="w-4 h-4" />
           </button>

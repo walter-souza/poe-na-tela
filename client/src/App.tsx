@@ -1,5 +1,5 @@
 import { useState, type Dispatch, type SetStateAction } from 'react';
-import { MessageSquare } from 'lucide-react';
+import { MessageSquare, Tv } from 'lucide-react';
 import { useLiveKit } from './hooks/useLiveKit';
 import { VideoPlayer } from './components/VideoPlayer';
 import { ControlsBar } from './components/ControlsBar';
@@ -213,6 +213,17 @@ function StreamRoom({
             onUnlockAudio={unlockAudio}
             onOpenScreenShareConfig={() => setIsScreenShareModalOpen(true)}
           />
+
+          {/* Centered Room Name at top */}
+          <div className="absolute top-6 inset-x-0 mx-auto w-fit z-20 pointer-events-none flex items-center justify-center">
+            <div className="pointer-events-auto flex items-center gap-2 px-3.5 py-2 rounded-2xl bg-[#11131c]/90 border border-white/15 text-white text-xs font-semibold shadow-2xl backdrop-blur-md select-none">
+              <Tv className="w-3.5 h-3.5 text-indigo-400" />
+              <span className="text-gray-400 font-medium">Sala:</span>
+              <span className="font-bold text-white tracking-wide max-w-[200px] sm:max-w-xs md:max-w-md truncate">
+                {session.roomName}
+              </span>
+            </div>
+          </div>
 
           {!isChatOpen && (
             <button
