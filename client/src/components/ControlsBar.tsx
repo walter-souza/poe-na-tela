@@ -154,14 +154,15 @@ export const ControlsBar: React.FC<ControlsBarProps> = ({
         {/* Toggle Chat */}
         <button
           onClick={onToggleChat}
-          title="Alternar Chat / Participantes"
-          className={`p-2.5 rounded-2xl border transition ${
+          title={isChatOpen ? 'Ocultar Chat' : 'Exibir Chat'}
+          className={`flex items-center gap-2 px-3.5 py-2.5 rounded-2xl border text-xs font-semibold transition ${
             isChatOpen
-              ? 'bg-indigo-600 border-indigo-500 text-white'
+              ? 'bg-indigo-600 border-indigo-500 text-white shadow-lg shadow-indigo-600/30'
               : 'bg-white/5 hover:bg-white/10 border-white/10 text-gray-300 hover:text-white'
           }`}
         >
           <MessageSquare className="w-4 h-4" />
+          <span className="hidden md:inline">{isChatOpen ? 'Ocultar Chat' : 'Exibir Chat'}</span>
         </button>
 
         {/* Leave Room */}

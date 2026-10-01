@@ -12,6 +12,7 @@ import {
   Smile,
   LogIn,
   LogOut,
+  PanelRightClose,
 } from 'lucide-react';
 import type { ChatMessage, ParticipantInfo } from '../types';
 
@@ -22,6 +23,7 @@ interface ChatPanelProps {
   onSendReaction: (emoji: string) => void;
   userName: string;
   roomName: string;
+  onClose?: () => void;
 }
 
 const EMOJI_LIST = ['🔥', '👏', '😂', '❤️', '🎮', '🚀', '🎉', '🍿', '💯', '🤯'];
@@ -33,6 +35,7 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({
   onSendReaction,
   userName,
   roomName,
+  onClose,
 }) => {
   const [activeTab, setActiveTab] = useState<'chat' | 'participants'>('chat');
   const [inputText, setInputText] = useState('');
@@ -100,26 +103,40 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({
           </button>
         </div>
 
-        <button
-          onClick={copyRoomLink}
-          title="Copiar Link da Sala para Amigos"
-          className="flex items-center gap-1 px-2.5 py-1.5 rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 text-xs text-gray-300 hover:text-white transition"
-        >
-          {copied ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Share2 className="w-3.5 h-3.5" />}
-          <span>{copied ? 'Copiado!' : 'Convidar'}</span>
-        </button>
+        <div className="flex items-center gap-1.5">
+          <button
+            onClick={copyRoomLink}
+            title="Copiar Link da Sala para Amigos"
+            className="flex items-center gap-1 px-2.5 py-1.5 rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 text-xs text-gray-300 hover:text-white transition"
+          >
+            {copied ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Share2 className="w-3.5 h-3.5" />}
+            <span>{copied ? 'Copiado!' : 'Convidar'}</span>
+          </button>
+
+          {onClose && (
+            <button
+              onClick={onClose}
+              title="Ocultar Chat"
+              className="p-1.5 rounded-xl text-gray-400 hover:text-white hover:bg-white/10 border border-transparent hover:border-white/10 transition"
+            >
+              <PanelRightClose className="w-4 h-4" />
+            </button>
+          )}
+        </div>
       </div>
 
-      <div className="flex-1 overflow-y-auto p-3 space-y-0.5">
+      <div className="flex-1 overflow-y-auto p-2.5 space-y-0.5">
         {activeTab === 'chat' ? (
           messages.length === 0 ? (
-            <div className="h-full flex flex-col items-center justify-center text-center text-gray-500 text-xs p-6">
+            <div className="h-full flex flex-col items-center justify-center text-center text-gray-500 text-sm p-6">
               <Sparkles className="w-8 h-8 text-indigo-500/40 mb-2" />
               <p className="font-semibold text-gray-400 mb-1">Nenhuma mensagem ainda</p>
-              <p>Mande um oi ou envie uma reação abaixo para animar a transmissão!</p>
+              <p className="text-xs">Mande um oi ou envie uma reação abaixo para animar a transmissão!</p>
             </div>
           ) : (
             messages.map((m) => {
+              const timeString = new Date(m.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+
               if (m.isSystem) {
                 const isJoin = m.text.includes('entrou');
                 const isLeave = m.text.includes('saiu');
@@ -127,16 +144,18 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({
                 return (
                   <div
                     key={m.id}
-                    className="flex items-center gap-1.5 py-0.5 px-2 text-[11px] text-gray-400 select-none animate-fadeIn"
+                    className="flex items-start gap-2 py-0.5 px-2 text-xs text-gray-400 select-none animate-fadeIn"
                   >
-                    <span className="text-[10px] text-gray-500 font-mono shrink-0">
-                      {new Date(m.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                    <span className="text-[11px] text-gray-500 font-mono tabular-nums shrink-0 w-9 pt-0.5 select-none text-left">
+                      {timeString}
                     </span>
-                    {isJoin && <LogIn className="w-3 h-3 text-emerald-400 shrink-0" />}
-                    {isLeave && <LogOut className="w-3 h-3 text-rose-400 shrink-0" />}
-                    <span className={isJoin ? 'text-emerald-300/90 font-medium' : isLeave ? 'text-rose-300/90 font-medium' : 'text-gray-400'}>
-                      {m.text}
-                    </span>
+                    <div className="flex-1 min-w-0 flex items-center gap-1.5 leading-relaxed text-xs pt-0.5">
+                      {isJoin && <LogIn className="w-3.5 h-3.5 text-emerald-400 shrink-0" />}
+                      {isLeave && <LogOut className="w-3.5 h-3.5 text-rose-400 shrink-0" />}
+                      <span className={isJoin ? 'text-emerald-300/90 font-medium' : isLeave ? 'text-rose-300/90 font-medium' : 'text-gray-400'}>
+                        {m.text}
+                      </span>
+                    </div>
                   </div>
                 );
               }
@@ -145,26 +164,26 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({
               return (
                 <div
                   key={m.id}
-                  className="flex items-baseline gap-1.5 py-1 px-2 rounded-lg hover:bg-white/[0.04] transition-colors leading-relaxed text-xs animate-fadeIn group"
+                  className="flex items-start gap-2 py-0.5 px-2 rounded-lg hover:bg-white/[0.04] transition-colors text-sm animate-fadeIn group"
                 >
-                  <span className="text-[10px] text-gray-500 shrink-0 font-mono select-none">
-                    {new Date(m.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                  <span className="text-[11px] text-gray-500 font-mono tabular-nums shrink-0 w-9 pt-0.5 select-none text-left">
+                    {timeString}
                   </span>
-                  <div className="flex items-baseline gap-1 min-w-0 flex-1 flex-wrap">
+                  <div className="flex-1 min-w-0 leading-relaxed">
                     <span
-                      className={`font-semibold shrink-0 cursor-default ${
+                      className={`font-semibold mr-1.5 cursor-default ${
                         isMe ? 'text-indigo-400' : 'text-purple-400'
                       }`}
                     >
                       {m.sender}
                       {m.isHost && (
-                        <span className="ml-1 bg-red-500/20 text-red-400 text-[9px] px-1 py-0.2 rounded font-bold">
+                        <span className="ml-1 bg-red-500/20 text-red-400 text-[10px] px-1.5 py-0.2 rounded font-bold">
                           HOST
                         </span>
                       )}
                       :
                     </span>
-                    <span className="text-gray-200 break-words whitespace-pre-wrap selection:bg-indigo-500/30">
+                    <span className="text-gray-100 break-words whitespace-pre-wrap selection:bg-indigo-500/30">
                       {m.text}
                     </span>
                   </div>
@@ -252,7 +271,7 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({
             placeholder="Conversar com amigos..."
             value={inputText}
             onChange={(e) => setInputText(e.target.value)}
-            className="flex-1 bg-black/50 border border-white/10 rounded-xl px-3 py-2 text-xs text-white placeholder-gray-500 focus:outline-none focus:border-indigo-500 transition"
+            className="flex-1 bg-black/50 border border-white/10 rounded-xl px-3 py-2 text-sm text-white placeholder-gray-500 focus:outline-none focus:border-indigo-500 transition"
           />
           <button
             type="submit"

@@ -1,4 +1,5 @@
 import { useState, type Dispatch, type SetStateAction } from 'react';
+import { MessageSquare } from 'lucide-react';
 import { useLiveKit } from './hooks/useLiveKit';
 import { VideoPlayer } from './components/VideoPlayer';
 import { ControlsBar } from './components/ControlsBar';
@@ -212,6 +213,22 @@ function StreamRoom({
             onUnlockAudio={unlockAudio}
             onOpenScreenShareConfig={() => setIsScreenShareModalOpen(true)}
           />
+
+          {!isChatOpen && (
+            <button
+              onClick={() => setIsChatOpen(true)}
+              title="Exibir Chat e Participantes"
+              className="absolute top-6 right-6 z-30 flex items-center gap-2 px-3.5 py-2.5 rounded-2xl bg-[#11131c]/90 hover:bg-[#181a26] border border-white/15 text-white text-xs font-semibold shadow-2xl backdrop-blur-md transition-all hover:scale-105 active:scale-95 group cursor-pointer"
+            >
+              <MessageSquare className="w-4 h-4 text-indigo-400 group-hover:text-indigo-300 transition-colors" />
+              <span>Exibir Chat</span>
+              {messages.length > 0 && (
+                <span className="bg-indigo-600 text-[10px] px-1.5 py-0.2 rounded-full font-bold">
+                  {messages.length}
+                </span>
+              )}
+            </button>
+          )}
         </div>
 
         {isChatOpen && (
@@ -222,6 +239,7 @@ function StreamRoom({
             onSendReaction={sendReaction}
             userName={session.userName}
             roomName={session.roomName}
+            onClose={() => setIsChatOpen(false)}
           />
         )}
       </div>
