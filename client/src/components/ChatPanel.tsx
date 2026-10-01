@@ -110,7 +110,7 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({
         </button>
       </div>
 
-      <div className="flex-1 overflow-y-auto p-4 space-y-3">
+      <div className="flex-1 overflow-y-auto p-3 space-y-0.5">
         {activeTab === 'chat' ? (
           messages.length === 0 ? (
             <div className="h-full flex flex-col items-center justify-center text-center text-gray-500 text-xs p-6">
@@ -125,49 +125,48 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({
                 const isLeave = m.text.includes('saiu');
 
                 return (
-                  <div key={m.id} className="flex items-center justify-center my-1.5 animate-fadeIn">
-                    <div
-                      className={`px-3 py-1 rounded-full text-[11px] font-medium flex items-center gap-1.5 shadow-sm border ${
-                        isJoin
-                          ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-300'
-                          : isLeave
-                          ? 'bg-rose-500/10 border-rose-500/20 text-rose-300'
-                          : 'bg-white/5 border-white/5 text-gray-400'
-                      }`}
-                    >
-                      {isJoin && <LogIn className="w-3 h-3 text-emerald-400 shrink-0" />}
-                      {isLeave && <LogOut className="w-3 h-3 text-rose-400 shrink-0" />}
-                      <span>{m.text}</span>
-                      <span className="text-[10px] text-gray-500 ml-0.5">
-                        {new Date(m.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                      </span>
-                    </div>
+                  <div
+                    key={m.id}
+                    className="flex items-center gap-1.5 py-0.5 px-2 text-[11px] text-gray-400 select-none animate-fadeIn"
+                  >
+                    <span className="text-[10px] text-gray-500 font-mono shrink-0">
+                      {new Date(m.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                    </span>
+                    {isJoin && <LogIn className="w-3 h-3 text-emerald-400 shrink-0" />}
+                    {isLeave && <LogOut className="w-3 h-3 text-rose-400 shrink-0" />}
+                    <span className={isJoin ? 'text-emerald-300/90 font-medium' : isLeave ? 'text-rose-300/90 font-medium' : 'text-gray-400'}>
+                      {m.text}
+                    </span>
                   </div>
                 );
               }
 
               const isMe = m.sender === userName;
               return (
-                <div key={m.id} className="flex flex-col text-xs leading-relaxed animate-fadeIn">
-                  <div className="flex items-center gap-1.5 mb-0.5">
+                <div
+                  key={m.id}
+                  className="flex items-baseline gap-1.5 py-1 px-2 rounded-lg hover:bg-white/[0.04] transition-colors leading-relaxed text-xs animate-fadeIn group"
+                >
+                  <span className="text-[10px] text-gray-500 shrink-0 font-mono select-none">
+                    {new Date(m.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                  </span>
+                  <div className="flex items-baseline gap-1 min-w-0 flex-1 flex-wrap">
                     <span
-                      className={`font-semibold ${
+                      className={`font-semibold shrink-0 cursor-default ${
                         isMe ? 'text-indigo-400' : 'text-purple-400'
                       }`}
                     >
                       {m.sender}
+                      {m.isHost && (
+                        <span className="ml-1 bg-red-500/20 text-red-400 text-[9px] px-1 py-0.2 rounded font-bold">
+                          HOST
+                        </span>
+                      )}
+                      :
                     </span>
-                    {m.isHost && (
-                      <span className="bg-red-500/20 text-red-400 text-[10px] px-1.5 py-0.2 rounded font-bold">
-                        HOST
-                      </span>
-                    )}
-                    <span className="text-[10px] text-gray-500">
-                      {new Date(m.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                    <span className="text-gray-200 break-words whitespace-pre-wrap selection:bg-indigo-500/30">
+                      {m.text}
                     </span>
-                  </div>
-                  <div className="bg-white/5 border border-white/5 rounded-xl px-3 py-2 text-gray-200 break-words shadow-sm">
-                    {m.text}
                   </div>
                 </div>
               );
