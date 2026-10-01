@@ -267,21 +267,21 @@ export const Lobby: React.FC<LobbyProps> = ({ onJoin, isLoading, error }) => {
         </p>
       </div>
 
-      {/* Main Container Grid (Split Layout) */}
+      {/* Main Container Grid (Standardized Fixed Height Layout) */}
       <div className="w-full max-w-5xl relative z-10 grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
-        {/* Left Side: Room Entry Form (7 cols) */}
-        <div className="lg:col-span-7 bg-[#11131a]/90 backdrop-blur-xl border border-white/10 rounded-3xl p-6 sm:p-7 shadow-2xl space-y-5">
+        {/* Left Side: Room Entry Form (7 cols - Standard Fixed Height) */}
+        <div className="lg:col-span-7 bg-[#11131a]/90 backdrop-blur-xl border border-white/10 rounded-3xl p-6 sm:p-7 shadow-2xl flex flex-col justify-between lg:h-[510px]">
           {error && (
-            <div className="p-3 bg-rose-500/10 border border-rose-500/30 rounded-xl text-xs text-rose-300 flex items-center gap-2">
+            <div className="p-3 bg-rose-500/10 border border-rose-500/30 rounded-xl text-xs text-rose-300 flex items-center gap-2 mb-2">
               <span className="font-bold">Erro:</span>
               <span>{error}</span>
             </div>
           )}
 
-          <form onSubmit={handleSubmit} className="space-y-4">
+          <form onSubmit={handleSubmit} className="space-y-3.5 flex-1 flex flex-col justify-between">
             {/* Room Name Input with Favorite Star Toggle */}
             <div>
-              <label className="block text-xs font-semibold uppercase tracking-wider text-gray-400 mb-2">
+              <label className="block text-xs font-semibold uppercase tracking-wider text-gray-400 mb-1.5">
                 Nome da Sala / Canal
               </label>
               <div className="relative flex items-center">
@@ -291,7 +291,7 @@ export const Lobby: React.FC<LobbyProps> = ({ onJoin, isLoading, error }) => {
                   placeholder="ex: jogatina-da-noite"
                   value={roomName}
                   onChange={(e) => setRoomName(e.target.value)}
-                  className="w-full bg-black/40 border border-white/10 rounded-xl pl-4 pr-20 py-3 text-sm text-white placeholder-gray-500 focus:outline-none focus:border-indigo-500 transition"
+                  className="w-full bg-black/40 border border-white/10 rounded-xl pl-4 pr-20 py-2.5 text-sm text-white placeholder-gray-500 focus:outline-none focus:border-indigo-500 transition"
                 />
                 <div className="absolute right-2 flex items-center gap-1">
                   {roomName.trim() && (
@@ -317,7 +317,7 @@ export const Lobby: React.FC<LobbyProps> = ({ onJoin, isLoading, error }) => {
 
             {/* Display Name */}
             <div>
-              <label className="block text-xs font-semibold uppercase tracking-wider text-gray-400 mb-2">
+              <label className="block text-xs font-semibold uppercase tracking-wider text-gray-400 mb-1.5">
                 Seu Nome de Exibição
               </label>
               <div className="relative">
@@ -327,15 +327,15 @@ export const Lobby: React.FC<LobbyProps> = ({ onJoin, isLoading, error }) => {
                   placeholder="Seu nome ou nick"
                   value={userName}
                   onChange={(e) => handleUserNameChange(e.target.value)}
-                  className="w-full bg-black/40 border border-white/10 rounded-xl px-4 py-3 text-sm text-white placeholder-gray-500 focus:outline-none focus:border-indigo-500 transition"
+                  className="w-full bg-black/40 border border-white/10 rounded-xl px-4 py-2.5 text-sm text-white placeholder-gray-500 focus:outline-none focus:border-indigo-500 transition"
                 />
-                <User className="w-4 h-4 text-gray-500 absolute right-3.5 top-3.5" />
+                <User className="w-4 h-4 text-gray-500 absolute right-3.5 top-3" />
               </div>
             </div>
 
             {/* Passcode (Optional) */}
             <div>
-              <label className="block text-xs font-semibold uppercase tracking-wider text-gray-400 mb-2">
+              <label className="block text-xs font-semibold uppercase tracking-wider text-gray-400 mb-1.5">
                 Senha da Sala (Opcional)
               </label>
               <div className="relative">
@@ -344,14 +344,14 @@ export const Lobby: React.FC<LobbyProps> = ({ onJoin, isLoading, error }) => {
                   placeholder="Deixe em branco para sala aberta"
                   value={passcode}
                   onChange={(e) => setPasscode(e.target.value)}
-                  className="w-full bg-black/40 border border-white/10 rounded-xl px-4 py-3 text-sm text-white placeholder-gray-500 focus:outline-none focus:border-indigo-500 transition"
+                  className="w-full bg-black/40 border border-white/10 rounded-xl px-4 py-2.5 text-sm text-white placeholder-gray-500 focus:outline-none focus:border-indigo-500 transition"
                 />
-                <Lock className="w-4 h-4 text-gray-500 absolute right-3.5 top-3.5" />
+                <Lock className="w-4 h-4 text-gray-500 absolute right-3.5 top-3" />
               </div>
             </div>
 
             {/* Mic Test */}
-            <div className="p-3 bg-white/5 rounded-2xl border border-white/5 space-y-2">
+            <div className="p-2.5 bg-white/5 rounded-2xl border border-white/5 space-y-1.5">
               <div className="flex items-center justify-between text-xs">
                 <span className="text-gray-400 flex items-center gap-1.5 font-medium">
                   <Mic className="w-3.5 h-3.5 text-indigo-400" />
@@ -367,7 +367,7 @@ export const Lobby: React.FC<LobbyProps> = ({ onJoin, isLoading, error }) => {
               </div>
 
               {isMicTesting && (
-                <div className="w-full bg-black/50 h-2 rounded-full overflow-hidden">
+                <div className="w-full bg-black/50 h-1.5 rounded-full overflow-hidden">
                   <div
                     className="h-full bg-emerald-500 transition-all duration-75"
                     style={{ width: `${micLevel}%` }}
@@ -380,7 +380,7 @@ export const Lobby: React.FC<LobbyProps> = ({ onJoin, isLoading, error }) => {
             <button
               type="submit"
               disabled={isLoading || !roomName.trim() || !userName.trim()}
-              className="w-full py-3.5 px-4 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white font-bold rounded-xl shadow-lg shadow-indigo-600/30 transition flex items-center justify-center gap-2 group cursor-pointer"
+              className="w-full py-3 px-4 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white font-bold rounded-xl shadow-lg shadow-indigo-600/30 transition flex items-center justify-center gap-2 group cursor-pointer"
             >
               {isLoading ? (
                 <span>Conectando à sala...</span>
@@ -394,7 +394,7 @@ export const Lobby: React.FC<LobbyProps> = ({ onJoin, isLoading, error }) => {
           </form>
 
           {/* Tech Badges */}
-          <div className="pt-2 border-t border-white/10 grid grid-cols-3 gap-2 text-center text-[11px] text-gray-400">
+          <div className="pt-3 border-t border-white/10 grid grid-cols-3 gap-2 text-center text-[11px] text-gray-400 mt-2">
             <div className="p-1.5 bg-white/5 rounded-lg border border-white/5">
               <span className="font-bold text-indigo-300 block">WebRTC SFU</span>
               <span>&lt;200ms</span>
@@ -410,8 +410,8 @@ export const Lobby: React.FC<LobbyProps> = ({ onJoin, isLoading, error }) => {
           </div>
         </div>
 
-        {/* Right Side: Favorites List (5 cols, strictly capped to match main container) */}
-        <div className="lg:col-span-5 bg-[#11131a]/90 backdrop-blur-xl border border-white/10 rounded-3xl p-6 shadow-2xl flex flex-col space-y-4 max-h-[420px]">
+        {/* Right Side: Favorites List (5 cols - Standard Fixed Height Matching Left) */}
+        <div className="lg:col-span-5 bg-[#11131a]/90 backdrop-blur-xl border border-white/10 rounded-3xl p-6 shadow-2xl flex flex-col lg:h-[510px] space-y-4">
           {/* Header */}
           <div className="flex items-center justify-between pb-3 border-b border-white/10 flex-shrink-0">
             <div className="flex items-center gap-2">
@@ -447,8 +447,8 @@ export const Lobby: React.FC<LobbyProps> = ({ onJoin, isLoading, error }) => {
             </button>
           </form>
 
-          {/* Favorites List Items (Limited to max-h-[185px] so it never exceeds main container) */}
-          <div className="space-y-2.5 overflow-y-auto max-h-[185px] pr-1">
+          {/* Favorites List Items (Fills the remaining area in standard height card with internal scroll) */}
+          <div className="flex-1 min-h-0 space-y-2.5 overflow-y-auto pr-1">
             {favorites.length === 0 ? (
               <div className="p-6 text-center text-gray-500 text-xs border border-dashed border-white/10 rounded-2xl flex flex-col items-center justify-center space-y-2">
                 <Star className="w-8 h-8 text-amber-500/30 stroke-1" />
