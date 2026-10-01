@@ -410,10 +410,10 @@ export const Lobby: React.FC<LobbyProps> = ({ onJoin, isLoading, error }) => {
           </div>
         </div>
 
-        {/* Right Side: Favorites List (5 cols) */}
-        <div className="lg:col-span-5 bg-[#11131a]/90 backdrop-blur-xl border border-white/10 rounded-3xl p-6 shadow-2xl flex flex-col space-y-4">
+        {/* Right Side: Favorites List (5 cols, strictly capped to match main container) */}
+        <div className="lg:col-span-5 bg-[#11131a]/90 backdrop-blur-xl border border-white/10 rounded-3xl p-6 shadow-2xl flex flex-col space-y-4 max-h-[420px]">
           {/* Header */}
-          <div className="flex items-center justify-between pb-3 border-b border-white/10">
+          <div className="flex items-center justify-between pb-3 border-b border-white/10 flex-shrink-0">
             <div className="flex items-center gap-2">
               <div className="p-2 bg-amber-500/10 text-amber-400 rounded-xl">
                 <Star className="w-4 h-4 fill-amber-400" />
@@ -429,7 +429,7 @@ export const Lobby: React.FC<LobbyProps> = ({ onJoin, isLoading, error }) => {
           </div>
 
           {/* Quick Add Favorite Input */}
-          <form onSubmit={handleAddFavoriteInput} className="flex gap-2">
+          <form onSubmit={handleAddFavoriteInput} className="flex gap-2 flex-shrink-0">
             <input
               type="text"
               placeholder="Adicionar sala favorita..."
@@ -447,8 +447,8 @@ export const Lobby: React.FC<LobbyProps> = ({ onJoin, isLoading, error }) => {
             </button>
           </form>
 
-          {/* Favorites List Items (Limited to max-h-[260px] so scrollbar appears early) */}
-          <div className="space-y-2.5 overflow-y-auto max-h-[260px] pr-1">
+          {/* Favorites List Items (Limited to max-h-[185px] so it never exceeds main container) */}
+          <div className="space-y-2.5 overflow-y-auto max-h-[185px] pr-1">
             {favorites.length === 0 ? (
               <div className="p-6 text-center text-gray-500 text-xs border border-dashed border-white/10 rounded-2xl flex flex-col items-center justify-center space-y-2">
                 <Star className="w-8 h-8 text-amber-500/30 stroke-1" />
