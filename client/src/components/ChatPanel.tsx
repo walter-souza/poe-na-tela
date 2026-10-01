@@ -10,6 +10,8 @@ import {
   Share2,
   Check,
   Smile,
+  LogIn,
+  LogOut,
 } from 'lucide-react';
 import type { ChatMessage, ParticipantInfo } from '../types';
 
@@ -118,6 +120,32 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({
             </div>
           ) : (
             messages.map((m) => {
+              if (m.isSystem) {
+                const isJoin = m.text.includes('entrou');
+                const isLeave = m.text.includes('saiu');
+
+                return (
+                  <div key={m.id} className="flex items-center justify-center my-1.5 animate-fadeIn">
+                    <div
+                      className={`px-3 py-1 rounded-full text-[11px] font-medium flex items-center gap-1.5 shadow-sm border ${
+                        isJoin
+                          ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-300'
+                          : isLeave
+                          ? 'bg-rose-500/10 border-rose-500/20 text-rose-300'
+                          : 'bg-white/5 border-white/5 text-gray-400'
+                      }`}
+                    >
+                      {isJoin && <LogIn className="w-3 h-3 text-emerald-400 shrink-0" />}
+                      {isLeave && <LogOut className="w-3 h-3 text-rose-400 shrink-0" />}
+                      <span>{m.text}</span>
+                      <span className="text-[10px] text-gray-500 ml-0.5">
+                        {new Date(m.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                      </span>
+                    </div>
+                  </div>
+                );
+              }
+
               const isMe = m.sender === userName;
               return (
                 <div key={m.id} className="flex flex-col text-xs leading-relaxed animate-fadeIn">

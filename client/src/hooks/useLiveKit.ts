@@ -287,6 +287,17 @@ export function useLiveKit({ url, token, onDisconnected }: UseLiveKitOptions) {
       updateParticipantList(room);
       updateScreenShares(room);
 
+      setMessages((prev) => [
+        ...prev,
+        {
+          id: `system-welcome-${Date.now()}`,
+          sender: 'Sistema',
+          text: 'Você entrou na sala',
+          timestamp: Date.now(),
+          isSystem: true,
+        },
+      ]);
+
       // Attempt unlocking browser audio autoplay
       room.startAudio().catch(() => {});
       setCanPlaybackAudio(room.canPlaybackAudio);
@@ -392,6 +403,40 @@ export function useLiveKit({ url, token, onDisconnected }: UseLiveKitOptions) {
       }
     };
 
+    const handleParticipantConnected = (participant: RemoteParticipant) => {
+      if (!isSubscribed) return;
+      updateParticipantList(room);
+      updateScreenShares(room);
+      const name = participant.name || participant.identity || 'Um usuário';
+      setMessages((prev) => [
+        ...prev,
+        {
+          id: `system-join-${Date.now()}-${Math.random()}`,
+          sender: 'Sistema',
+          text: `${name} entrou na sala`,
+          timestamp: Date.now(),
+          isSystem: true,
+        },
+      ]);
+    };
+
+    const handleParticipantDisconnected = (participant: RemoteParticipant) => {
+      if (!isSubscribed) return;
+      updateParticipantList(room);
+      updateScreenShares(room);
+      const name = participant.name || participant.identity || 'Um usuário';
+      setMessages((prev) => [
+        ...prev,
+        {
+          id: `system-leave-${Date.now()}-${Math.random()}`,
+          sender: 'Sistema',
+          text: `${name} saiu da sala`,
+          timestamp: Date.now(),
+          isSystem: true,
+        },
+      ]);
+    };
+
     room.on(RoomEvent.Connected, handleConnected);
     room.on(RoomEvent.Disconnected, handleDisconnected);
     room.on(RoomEvent.Reconnecting, handleReconnecting);
@@ -403,14 +448,8 @@ export function useLiveKit({ url, token, onDisconnected }: UseLiveKitOptions) {
     room.on(RoomEvent.TrackUnpublished, () => updateScreenShares(room));
     room.on(RoomEvent.LocalTrackPublished, () => updateScreenShares(room));
     room.on(RoomEvent.LocalTrackUnpublished, () => updateScreenShares(room));
-    room.on(RoomEvent.ParticipantConnected, () => {
-      updateParticipantList(room);
-      updateScreenShares(room);
-    });
-    room.on(RoomEvent.ParticipantDisconnected, () => {
-      updateParticipantList(room);
-      updateScreenShares(room);
-    });
+    room.on(RoomEvent.ParticipantConnected, handleParticipantConnected);
+    room.on(RoomEvent.ParticipantDisconnected, handleParticipantDisconnected);
     room.on(RoomEvent.ActiveSpeakersChanged, () => updateParticipantList(room));
     room.on(RoomEvent.DataReceived, handleDataReceived);
 
