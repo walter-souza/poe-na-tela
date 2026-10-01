@@ -11,7 +11,6 @@ import {
   Trash2,
   Users,
   Play,
-  Flame,
 } from 'lucide-react';
 import { PasswordModal } from './PasswordModal';
 import type { FavoriteRoom, ActiveRoomInfo } from '../types';
@@ -31,7 +30,6 @@ export const Lobby: React.FC<LobbyProps> = ({ onJoin, isLoading, error }) => {
     return localStorage.getItem(USERNAME_STORAGE_KEY) || '';
   });
   const [passcode, setPasscode] = useState('');
-  const [isPublisher, setIsPublisher] = useState(true);
   const [micLevel, setMicLevel] = useState(0);
   const [isMicTesting, setIsMicTesting] = useState(false);
 
@@ -82,11 +80,9 @@ export const Lobby: React.FC<LobbyProps> = ({ onJoin, isLoading, error }) => {
     const params = new URLSearchParams(window.location.search);
     const roomParam = params.get('room');
     const passParam = params.get('pass');
-    const roleParam = params.get('role');
 
     if (roomParam) setRoomName(roomParam);
     if (passParam) setPasscode(passParam);
-    if (roleParam === 'viewer') setIsPublisher(false);
 
     const savedName = localStorage.getItem(USERNAME_STORAGE_KEY);
     if (savedName && savedName.trim()) {
@@ -161,7 +157,7 @@ export const Lobby: React.FC<LobbyProps> = ({ onJoin, isLoading, error }) => {
     if (userName.trim()) {
       localStorage.setItem(USERNAME_STORAGE_KEY, userName.trim());
     }
-    onJoin(sanitized, userName.trim() || 'Amigo', false);
+    onJoin(sanitized, userName.trim() || 'Amigo', true);
   };
 
   const handlePasswordConfirm = (pwd: string) => {
@@ -173,7 +169,7 @@ export const Lobby: React.FC<LobbyProps> = ({ onJoin, isLoading, error }) => {
     if (userName.trim()) {
       localStorage.setItem(USERNAME_STORAGE_KEY, userName.trim());
     }
-    onJoin(targetRoom, userName.trim() || 'Amigo', false, pwd);
+    onJoin(targetRoom, userName.trim() || 'Amigo', true, pwd);
   };
 
   const startMicTest = async () => {
@@ -247,7 +243,7 @@ export const Lobby: React.FC<LobbyProps> = ({ onJoin, isLoading, error }) => {
     if (!roomName.trim() || !userName.trim()) return;
     localStorage.setItem(USERNAME_STORAGE_KEY, userName.trim());
     stopMicTest();
-    onJoin(roomName.trim(), userName.trim(), isPublisher, passcode.trim() || undefined);
+    onJoin(roomName.trim(), userName.trim(), true, passcode.trim() || undefined);
   };
 
   const isCurrentRoomFavorited = roomName.trim()
@@ -351,46 +347,6 @@ export const Lobby: React.FC<LobbyProps> = ({ onJoin, isLoading, error }) => {
                   className="w-full bg-black/40 border border-white/10 rounded-xl px-4 py-3 text-sm text-white placeholder-gray-500 focus:outline-none focus:border-indigo-500 transition"
                 />
                 <Lock className="w-4 h-4 text-gray-500 absolute right-3.5 top-3.5" />
-              </div>
-            </div>
-
-            {/* Objective Role Selection */}
-            <div className="pt-1">
-              <label className="block text-xs font-semibold uppercase tracking-wider text-gray-400 mb-2">
-                Seu Objetivo
-              </label>
-              <div className="grid grid-cols-2 gap-3">
-                <button
-                  type="button"
-                  onClick={() => setIsPublisher(true)}
-                  className={`p-3 rounded-xl border text-left transition cursor-pointer ${
-                    isPublisher
-                      ? 'bg-indigo-600/30 border-indigo-500 text-white shadow-sm'
-                      : 'bg-white/5 border-white/5 text-gray-400 hover:text-white'
-                  }`}
-                >
-                  <div className="font-semibold text-xs text-white flex items-center gap-1.5">
-                    <Flame className="w-3.5 h-3.5 text-indigo-400" />
-                    <span>Vou Transmitir</span>
-                  </div>
-                  <div className="text-[11px] text-gray-400">Compartilhar tela / jogo</div>
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => setIsPublisher(false)}
-                  className={`p-3 rounded-xl border text-left transition cursor-pointer ${
-                    !isPublisher
-                      ? 'bg-indigo-600/30 border-indigo-500 text-white shadow-sm'
-                      : 'bg-white/5 border-white/5 text-gray-400 hover:text-white'
-                  }`}
-                >
-                  <div className="font-semibold text-xs text-white flex items-center gap-1.5">
-                    <Play className="w-3.5 h-3.5 text-emerald-400" />
-                    <span>Vou Assistir</span>
-                  </div>
-                  <div className="text-[11px] text-gray-400">Assistir e conversar</div>
-                </button>
               </div>
             </div>
 

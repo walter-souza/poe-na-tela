@@ -279,7 +279,7 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
 
             {/* Thumbnail Strip for other streams */}
             {otherStreams.length > 0 && (
-              <div className="flex items-center gap-3 overflow-x-auto py-1 px-1 custom-scrollbar">
+              <div className="flex items-center justify-center gap-3 overflow-x-auto py-1 px-1 custom-scrollbar">
                 {otherStreams.map((stream) => (
                   <StreamTile
                     key={stream.id}
