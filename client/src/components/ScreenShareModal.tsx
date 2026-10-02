@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Monitor, Volume2, Gauge, Zap, Check, X, ShieldCheck, Info } from 'lucide-react';
+import { Monitor, Gauge, Zap, Check, X, ShieldCheck, Info } from 'lucide-react';
 import type { StreamQualityConfig, VideoResolution, VideoFrameRate } from '../types';
 
 interface ScreenShareModalProps {
@@ -16,7 +16,6 @@ export const ScreenShareModal: React.FC<ScreenShareModalProps> = ({
   const [resolution, setResolution] = useState<VideoResolution>('1080p');
   const [frameRate, setFrameRate] = useState<VideoFrameRate>(60);
   const [bitrateKbps, setBitrateKbps] = useState<number>(8000); // 8 Mbps
-  const [includeAudio, setIncludeAudio] = useState<boolean>(true);
   const [isolateRoomAudio, setIsolateRoomAudio] = useState<boolean>(true);
   const [contentHint] = useState<'motion' | 'detail'>('motion');
 
@@ -28,7 +27,7 @@ export const ScreenShareModal: React.FC<ScreenShareModalProps> = ({
       frameRate,
       bitrateKbps,
       codec: 'vp9',
-      includeAudio,
+      includeAudio: true,
       contentHint,
       isolateRoomAudio,
     });
@@ -129,74 +128,49 @@ export const ScreenShareModal: React.FC<ScreenShareModalProps> = ({
             </div>
           </div>
 
-          {/* Audio capture controls */}
-          <div className="space-y-2">
-            <div
-              onClick={() => setIncludeAudio(!includeAudio)}
-              className="flex items-center justify-between p-3.5 bg-white/5 hover:bg-white/10 border border-white/5 rounded-xl cursor-pointer transition select-none"
-            >
-              <div className="flex items-center gap-3">
-                <div className={`p-2 rounded-lg ${includeAudio ? 'bg-indigo-500/20 text-indigo-400' : 'bg-white/5 text-gray-500'}`}>
-                  <Volume2 className="w-4 h-4" />
-                </div>
-                <div>
-                  <div className="font-medium text-white flex items-center gap-2">
-                    <span>Transmitir Áudio do Sistema / Jogo / Filme</span>
-                    {includeAudio && (
-                      <span className="text-[10px] bg-indigo-500/20 text-indigo-300 font-semibold px-1.5 py-0.2 rounded border border-indigo-500/30">
-                        Estéreo 192 kbps
-                      </span>
-                    )}
-                  </div>
-                  <div className="text-xs text-gray-400">
-                    Alta fidelidade pura (sem cortes de graves ou supressão de ruído)
-                  </div>
-                </div>
-              </div>
-              <input
-                type="checkbox"
-                checked={includeAudio}
-                onChange={() => {}}
-                className="w-4 h-4 accent-indigo-500 rounded cursor-pointer"
-              />
-            </div>
-
-            {/* Anti-Echo / Isolate Room Voice chat toggle */}
-            {includeAudio && (
+          {/* Anti-Echo / Isolate Room Voice chat toggle */}
+          <div
+            onClick={() => setIsolateRoomAudio(!isolateRoomAudio)}
+            className={`flex items-center justify-between p-3.5 border rounded-xl cursor-pointer transition select-none ${
+              isolateRoomAudio
+                ? 'bg-emerald-950/20 hover:bg-emerald-950/30 border-emerald-500/30 shadow-sm'
+                : 'bg-white/5 hover:bg-white/10 border-white/5'
+            }`}
+          >
+            <div className="flex items-center gap-3">
               <div
-                onClick={() => setIsolateRoomAudio(!isolateRoomAudio)}
-                className="flex items-center justify-between p-3 pl-4 bg-indigo-950/20 hover:bg-indigo-950/30 border border-indigo-500/20 rounded-xl cursor-pointer transition select-none animate-fadeIn"
+                className={`p-2 rounded-lg ${
+                  isolateRoomAudio ? 'bg-emerald-500/20 text-emerald-400' : 'bg-white/5 text-gray-500'
+                }`}
               >
-                <div className="flex items-center gap-2.5">
-                  <ShieldCheck className="w-4 h-4 text-emerald-400 shrink-0" />
-                  <div>
-                    <div className="text-xs font-semibold text-white flex items-center gap-1.5">
-                      <span>Anti-Eco: Isolar Voz dos Amigos da Stream</span>
-                      <span className="text-[9px] bg-emerald-500/20 text-emerald-300 font-bold px-1.5 py-0.2 rounded">
-                        RECOMENDADO
-                      </span>
-                    </div>
-                    <div className="text-[11px] text-gray-400">
-                      Filtra o áudio do chat de voz para que seus amigos não ouçam o próprio retorno
-                    </div>
-                  </div>
-                </div>
-                <input
-                  type="checkbox"
-                  checked={isolateRoomAudio}
-                  onChange={() => {}}
-                  className="w-4 h-4 accent-emerald-500 rounded cursor-pointer"
-                />
+                <ShieldCheck className="w-5 h-5" />
               </div>
-            )}
+              <div>
+                <div className="font-medium text-white flex items-center gap-2">
+                  <span>Anti-Eco: Isolar Voz dos Amigos da Transmissão</span>
+                  <span className="text-[10px] bg-emerald-500/20 text-emerald-300 font-bold px-1.5 py-0.2 rounded border border-emerald-500/30">
+                    RECOMENDADO
+                  </span>
+                </div>
+                <div className="text-xs text-gray-400">
+                  Filtra o áudio do chat de voz para que seus amigos não ouçam o próprio retorno na transmissão
+                </div>
+              </div>
+            </div>
+            <input
+              type="checkbox"
+              checked={isolateRoomAudio}
+              onChange={() => {}}
+              className="w-4 h-4 accent-emerald-500 rounded cursor-pointer"
+            />
           </div>
 
           {/* User tips banner */}
           <div className="p-3 bg-white/5 border border-white/5 rounded-xl flex items-start gap-2.5 text-xs text-gray-400">
             <Info className="w-4 h-4 text-indigo-400 shrink-0 mt-0.5" />
             <div className="leading-relaxed">
-              <span className="font-semibold text-gray-300">Dica para melhor isolamento: </span>
-              Ao clicar em Iniciar, selecione a aba <span className="text-white font-medium">"Janela"</span> ou <span className="text-white font-medium">"Guia"</span> do seu jogo ou filme para transmitir exclusivamente o áudio dele.
+              <span className="font-semibold text-gray-300">Áudio do Jogo / Filme: </span>
+              Na janela seguinte do navegador, certifique-se de marcar a opção <span className="text-white font-medium">"Compartilhar áudio"</span> para transmitir o som em alta fidelidade estéreo (192 kbps).
             </div>
           </div>
         </div>
