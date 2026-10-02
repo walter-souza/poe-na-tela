@@ -37,6 +37,10 @@ export function useLiveKit({ url, token, onDisconnected }: UseLiveKitOptions) {
   const streamVolumesRef = useRef<Record<string, number>>({});
   streamVolumesRef.current = streamVolumes;
 
+  const [userVolumes, setUserVolumes] = useState<Record<string, number>>({});
+  const userVolumesRef = useRef<Record<string, number>>({});
+  userVolumesRef.current = userVolumes;
+
   const [remoteScreenTrack, setRemoteScreenTrack] = useState<Track | null>(null);
   const [localScreenTrack, setLocalScreenTrack] = useState<Track | null>(null);
   const [stats, setStats] = useState<StreamStats | null>(null);
@@ -373,8 +377,11 @@ export function useLiveKit({ url, token, onDisconnected }: UseLiveKitOptions) {
             (el as HTMLAudioElement).muted = streamVol === 0 || isDeafenedRef.current;
           }
         } else {
-          // Voice Microphone track stays at default volume 1 (or global volume)
-          const voiceVol = currentVolumeRef.current;
+          // Voice Microphone track: check individual userVolumesRef or fallback to currentVolumeRef
+          const voiceVol = userVolumesRef.current[participant.identity] !== undefined
+            ? userVolumesRef.current[participant.identity]
+            : currentVolumeRef.current;
+
           if ('setVolume' in track) {
             (track as any).setVolume(voiceVol);
           }
@@ -535,6 +542,35 @@ export function useLiveKit({ url, token, onDisconnected }: UseLiveKitOptions) {
 
     document
       .querySelectorAll(`audio[data-participant="${participantIdentity}"][data-source="screen_share_audio"]`)
+      .forEach((el) => {
+        (el as HTMLAudioElement).volume = clamped;
+        (el as HTMLAudioElement).muted = clamped === 0 || isDeafenedRef.current;
+      });
+  }, []);
+
+  // Set individual participant microphone audio volume (ONLY affects local hearing of that participant's voice)
+  const setUserVolume = useCallback((participantIdentity: string, volume: number) => {
+    const clamped = Math.max(0, Math.min(1, volume));
+    setUserVolumes((prev) => ({ ...prev, [participantIdentity]: clamped }));
+
+    const room = roomRef.current;
+    if (!room) return;
+
+    // Local participant does not need audio playback adjustment
+    if (room.localParticipant?.identity === participantIdentity) return;
+
+    const participant = room.remoteParticipants.get(participantIdentity);
+    if (participant) {
+      participant.setVolume(clamped, Track.Source.Microphone);
+      participant.audioTrackPublications.forEach((pub) => {
+        if (pub.source === Track.Source.Microphone && pub.track && 'setVolume' in pub.track) {
+          (pub.track as any).setVolume(clamped);
+        }
+      });
+    }
+
+    document
+      .querySelectorAll(`audio[data-participant="${participantIdentity}"][data-source="microphone"]`)
       .forEach((el) => {
         (el as HTMLAudioElement).volume = clamped;
         (el as HTMLAudioElement).muted = clamped === 0 || isDeafenedRef.current;
@@ -702,7 +738,20 @@ export function useLiveKit({ url, token, onDisconnected }: UseLiveKitOptions) {
     });
 
     document.querySelectorAll('audio').forEach((el) => {
-      (el as HTMLAudioElement).muted = nextDeafen;
+      const audioElement = el as HTMLAudioElement;
+      if (nextDeafen) {
+        audioElement.muted = true;
+      } else {
+        const participantId = audioElement.getAttribute('data-participant');
+        const source = audioElement.getAttribute('data-source');
+        if (source === 'screen_share_audio') {
+          const vol = participantId ? streamVolumesRef.current[participantId] ?? 1 : 1;
+          audioElement.muted = vol === 0;
+        } else {
+          const vol = participantId ? userVolumesRef.current[participantId] ?? currentVolumeRef.current : 1;
+          audioElement.muted = vol === 0;
+        }
+      }
     });
   };
 
@@ -769,6 +818,8 @@ export function useLiveKit({ url, token, onDisconnected }: UseLiveKitOptions) {
     setGlobalVolume,
     setStreamVolume,
     streamVolumes,
+    setUserVolume,
+    userVolumes,
     screenShares,
     messages,
     participants,

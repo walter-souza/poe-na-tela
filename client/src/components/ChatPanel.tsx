@@ -6,6 +6,8 @@ import {
   Sparkles,
   Mic,
   MicOff,
+  Volume2,
+  VolumeX,
   Monitor,
   Share2,
   Check,
@@ -24,6 +26,8 @@ interface ChatPanelProps {
   userName: string;
   roomName: string;
   onClose?: () => void;
+  userVolumes?: Record<string, number>;
+  onUserVolumeChange?: (participantIdentity: string, volume: number) => void;
 }
 
 const EMOJI_LIST = [
@@ -41,6 +45,8 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({
   userName,
   roomName,
   onClose,
+  userVolumes,
+  onUserVolumeChange,
 }) => {
   const [activeTab, setActiveTab] = useState<'chat' | 'participants'>('chat');
   const [inputText, setInputText] = useState('');
@@ -214,51 +220,93 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({
           <div className="space-y-2">
             {participants.map((p) => {
               const isMe = p.identity === userName || p.name === userName;
+              const userVol = userVolumes?.[p.identity] !== undefined ? userVolumes[p.identity] : 1;
+              const isUserMuted = userVol === 0;
+
               return (
                 <div
                   key={p.identity}
-                  className={`flex items-center justify-between p-2.5 rounded-xl border transition ${
+                  className={`flex flex-col gap-2 p-2.5 rounded-xl border transition ${
                     p.isSpeaking
                       ? 'bg-emerald-950/30 border-emerald-500/50 shadow-sm shadow-emerald-500/10'
                       : 'bg-white/5 border-white/5'
                   }`}
                 >
-                  <div className="flex items-center gap-2.5">
-                    <div className="relative">
-                      <div className="w-8 h-8 rounded-full bg-gradient-to-tr from-indigo-600 to-purple-600 flex items-center justify-center font-bold text-xs text-white uppercase shadow">
-                        {p.name.slice(0, 2)}
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2.5 min-w-0">
+                      <div className="relative shrink-0">
+                        <div className="w-8 h-8 rounded-full bg-gradient-to-tr from-indigo-600 to-purple-600 flex items-center justify-center font-bold text-xs text-white uppercase shadow">
+                          {p.name.slice(0, 2)}
+                        </div>
+                        {p.isSpeaking && (
+                          <span className="absolute -bottom-0.5 -right-0.5 w-3 h-3 bg-emerald-400 border-2 border-[#11131a] rounded-full animate-ping" />
+                        )}
                       </div>
-                      {p.isSpeaking && (
-                        <span className="absolute -bottom-0.5 -right-0.5 w-3 h-3 bg-emerald-400 border-2 border-[#11131a] rounded-full animate-ping" />
-                      )}
+                      <div className="min-w-0">
+                        <div className="text-xs font-semibold text-white flex items-center gap-1.5 truncate">
+                          <span className="truncate">{p.name}</span>
+                          {isMe && <span className="text-[10px] text-indigo-400 font-normal shrink-0">(Você)</span>}
+                        </div>
+                        <div className="text-[10px] text-gray-400">
+                          {p.isScreenSharing ? 'Transmitindo Tela' : 'Assistindo'}
+                        </div>
+                      </div>
                     </div>
-                    <div>
-                      <div className="text-xs font-semibold text-white flex items-center gap-1.5">
-                        <span>{p.name}</span>
-                        {isMe && <span className="text-[10px] text-indigo-400 font-normal">(Você)</span>}
-                      </div>
-                      <div className="text-[10px] text-gray-400">
-                        {p.isScreenSharing ? 'Transmitindo Tela' : 'Assistindo'}
-                      </div>
+
+                    <div className="flex items-center gap-1.5 text-gray-400 shrink-0">
+                      {p.isScreenSharing && (
+                        <span className="p-1 rounded bg-indigo-500/20 text-indigo-400" title="Compartilhando Tela">
+                          <Monitor className="w-3.5 h-3.5" />
+                        </span>
+                      )}
+                      {p.isMuted ? (
+                        <span className="p-1 rounded bg-rose-500/20 text-rose-400" title="Microfone desligado pelo usuário">
+                          <MicOff className="w-3.5 h-3.5" />
+                        </span>
+                      ) : (
+                        <span className="p-1 rounded bg-emerald-500/20 text-emerald-400" title="Microfone ativo">
+                          <Mic className="w-3.5 h-3.5" />
+                        </span>
+                      )}
                     </div>
                   </div>
 
-                  <div className="flex items-center gap-1.5 text-gray-400">
-                    {p.isScreenSharing && (
-                      <span className="p-1 rounded bg-indigo-500/20 text-indigo-400" title="Compartilhando Tela">
-                        <Monitor className="w-3.5 h-3.5" />
+                  {/* Individual Voice Volume Slider for Remote Participants */}
+                  {!isMe && onUserVolumeChange && (
+                    <div className="flex items-center justify-between gap-2 pt-1.5 border-t border-white/5 bg-black/20 px-2 py-1 rounded-lg">
+                      <button
+                        type="button"
+                        onClick={() => onUserVolumeChange(p.identity, isUserMuted ? 1 : 0)}
+                        className="text-gray-400 hover:text-indigo-400 transition shrink-0"
+                        title={
+                          isUserMuted
+                            ? 'Desmutar voz deste amigo (apenas para você)'
+                            : 'Silenciar voz deste amigo (apenas para você)'
+                        }
+                      >
+                        {isUserMuted ? (
+                          <VolumeX className="w-3.5 h-3.5 text-rose-400" />
+                        ) : (
+                          <Volume2 className="w-3.5 h-3.5" />
+                        )}
+                      </button>
+
+                      <input
+                        type="range"
+                        min="0"
+                        max="1"
+                        step="0.01"
+                        value={isUserMuted ? 0 : userVol}
+                        onChange={(e) => onUserVolumeChange(p.identity, parseFloat(e.target.value))}
+                        title="Ajustar volume da voz deste amigo para você"
+                        className="flex-1 h-1.5 bg-white/20 rounded-lg appearance-none cursor-pointer accent-indigo-500"
+                      />
+
+                      <span className="text-[10px] font-mono text-gray-300 min-w-[32px] text-right shrink-0">
+                        {isUserMuted ? 'Mudo' : `${Math.round(userVol * 100)}%`}
                       </span>
-                    )}
-                    {p.isMuted ? (
-                      <span className="p-1 rounded bg-rose-500/20 text-rose-400" title="Microfone Mudo">
-                        <MicOff className="w-3.5 h-3.5" />
-                      </span>
-                    ) : (
-                      <span className="p-1 rounded bg-emerald-500/20 text-emerald-400" title="Microfone Ativo">
-                        <Mic className="w-3.5 h-3.5" />
-                      </span>
-                    )}
-                  </div>
+                    </div>
+                  )}
                 </div>
               );
             })}

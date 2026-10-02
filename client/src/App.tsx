@@ -158,6 +158,8 @@ function StreamRoom({
     unlockAudio,
     setStreamVolume,
     streamVolumes,
+    setUserVolume,
+    userVolumes,
     screenShares,
     messages,
     participants,
@@ -255,6 +257,8 @@ function StreamRoom({
             userName={session.userName}
             roomName={session.roomName}
             onClose={() => setIsChatOpen(false)}
+            userVolumes={userVolumes}
+            onUserVolumeChange={setUserVolume}
           />
         )}
       </div>
