@@ -562,6 +562,8 @@ export function useLiveKit({ url, token, onDisconnected }: UseLiveKitOptions) {
       const shouldIncludeAudio = config?.includeAudio ?? true;
       const targetBitrate = config?.bitrateKbps ? config.bitrateKbps * 1000 : 8000000;
 
+      const shouldIsolateRoomAudio = config?.isolateRoomAudio ?? true;
+
       await room.localParticipant.setScreenShareEnabled(
         true,
         {
@@ -572,11 +574,13 @@ export function useLiveKit({ url, token, onDisconnected }: UseLiveKitOptions) {
                 noiseSuppression: false,
                 channelCount: 2,
                 sampleRate: 48000,
+                restrictOwnAudio: shouldIsolateRoomAudio,
               }
             : false,
-          selfBrowserSurface: 'include',
+          selfBrowserSurface: 'exclude',
           surfaceSwitching: 'include',
           systemAudio: 'include',
+          suppressLocalAudioPlayback: false,
           resolution:
             config?.resolution === '4k'
               ? VideoPresets.h2160.resolution

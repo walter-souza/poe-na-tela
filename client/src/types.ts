@@ -9,6 +9,7 @@ export interface StreamQualityConfig {
   codec: VideoCodecPreference;
   includeAudio: boolean;
   contentHint: 'motion' | 'detail';
+  isolateRoomAudio?: boolean; // WebRTC restrictOwnAudio to prevent voice chat loopback
 }
 
 export interface StreamStats {
