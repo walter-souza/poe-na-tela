@@ -19,6 +19,8 @@ interface StreamTileProps {
   onToggleSpotlight?: () => void;
   isThumbnail?: boolean;
   onSelectThumbnail?: () => void;
+  isLocalScreenAudioMuted?: boolean;
+  onToggleLocalScreenAudio?: () => void;
 }
 
 export const StreamTile: React.FC<StreamTileProps> = ({
@@ -29,6 +31,8 @@ export const StreamTile: React.FC<StreamTileProps> = ({
   onToggleSpotlight,
   isThumbnail = false,
   onSelectThumbnail,
+  isLocalScreenAudioMuted = false,
+  onToggleLocalScreenAudio,
 }) => {
   const videoRef = useRef<HTMLVideoElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -197,11 +201,19 @@ export const StreamTile: React.FC<StreamTileProps> = ({
           showControls ? 'opacity-100' : 'opacity-0 pointer-events-none'
         }`}
       >
-        {/* Left: Volume Slider per stream */}
+        {/* Left: Volume Slider per stream or Local Screen Audio Toggle */}
         <div className="flex items-center gap-2">
           {!stream.isLocal ? (
             <div className="flex items-center gap-2 bg-black/60 backdrop-blur-md px-2.5 py-1.5 rounded-xl border border-white/15 text-white">
-              <button onClick={toggleMute} className="hover:text-indigo-400 transition" title="Mutar/Desmutar">
+              <button
+                onClick={toggleMute}
+                className="hover:text-indigo-400 transition"
+                title={
+                  isMuted || volume === 0
+                    ? 'Ativar som da transmissão'
+                    : 'Silenciar som da transmissão (a voz continuará ativa)'
+                }
+              >
                 {isMuted || volume === 0 ? (
                   <VolumeX className="w-3.5 h-3.5 text-rose-400" />
                 ) : (
@@ -215,6 +227,7 @@ export const StreamTile: React.FC<StreamTileProps> = ({
                 step="0.01"
                 value={isMuted ? 0 : volume}
                 onChange={handleVolumeChange}
+                title="Volume do Som da Transmissão (Jogo/Vídeo)"
                 className="w-14 sm:w-20 h-1.5 bg-white/20 rounded-lg appearance-none cursor-pointer accent-indigo-500"
               />
               <span className="text-[10px] text-gray-300 min-w-[28px]">
@@ -222,9 +235,42 @@ export const StreamTile: React.FC<StreamTileProps> = ({
               </span>
             </div>
           ) : (
-            <div className="flex items-center gap-1.5 bg-indigo-500/20 backdrop-blur-md px-2.5 py-1.5 rounded-xl border border-indigo-500/30 text-indigo-300 text-xs font-medium">
-              <Sparkles className="w-3.5 h-3.5" />
-              <span>Sua Transmissão</span>
+            <div className="flex items-center gap-2">
+              <div className="flex items-center gap-1.5 bg-indigo-500/20 backdrop-blur-md px-2.5 py-1.5 rounded-xl border border-indigo-500/30 text-indigo-300 text-xs font-medium">
+                <Sparkles className="w-3.5 h-3.5" />
+                <span>Sua Transmissão</span>
+              </div>
+
+              {stream.audioTrack && onToggleLocalScreenAudio && (
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onToggleLocalScreenAudio();
+                  }}
+                  className={`flex items-center gap-1.5 backdrop-blur-md px-2.5 py-1.5 rounded-xl border text-xs font-medium transition shadow ${
+                    isLocalScreenAudioMuted
+                      ? 'bg-rose-500/20 border-rose-500/30 text-rose-300 hover:bg-rose-500/30'
+                      : 'bg-emerald-500/20 border-emerald-500/30 text-emerald-300 hover:bg-emerald-500/30'
+                  }`}
+                  title={
+                    isLocalScreenAudioMuted
+                      ? 'Desmutar áudio do compartilhamento'
+                      : 'Silenciar áudio do compartilhamento (seu microfone continuará ativo)'
+                  }
+                >
+                  {isLocalScreenAudioMuted ? (
+                    <>
+                      <VolumeX className="w-3.5 h-3.5 text-rose-400" />
+                      <span className="text-[11px] font-semibold">Áudio da tela mutado</span>
+                    </>
+                  ) : (
+                    <>
+                      <Volume2 className="w-3.5 h-3.5 text-emerald-400" />
+                      <span className="text-[11px] font-semibold">Áudio da tela ativo</span>
+                    </>
+                  )}
+                </button>
+              )}
             </div>
           )}
         </div>

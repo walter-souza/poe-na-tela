@@ -25,6 +25,7 @@ export function useLiveKit({ url, token, onDisconnected }: UseLiveKitOptions) {
 
   const [connectionState, setConnectionState] = useState<ConnectionState>(ConnectionState.Disconnected);
   const [isScreenSharing, setIsScreenSharing] = useState<boolean>(false);
+  const [isLocalScreenAudioMuted, setIsLocalScreenAudioMuted] = useState<boolean>(false);
   const [isMicEnabled, setIsMicEnabled] = useState<boolean>(false);
   const [isDeafened, setIsDeafened] = useState<boolean>(false);
   const isDeafenedRef = useRef<boolean>(false);
@@ -354,19 +355,33 @@ export function useLiveKit({ url, token, onDisconnected }: UseLiveKitOptions) {
       // Automatically attach and play remote audio (Microphone & Screen Audio)
       if (track.kind === Track.Kind.Audio) {
         const el = track.attach();
+        const isScreenAudio = track.source === Track.Source.ScreenShareAudio;
         el.setAttribute('data-livekit-track', track.sid || track.kind);
         el.setAttribute('data-participant', participant.identity);
+        el.setAttribute('data-source', isScreenAudio ? 'screen_share_audio' : 'microphone');
 
-        const currentVol = streamVolumesRef.current[participant.identity] !== undefined
-          ? streamVolumesRef.current[participant.identity]
-          : currentVolumeRef.current;
+        if (isScreenAudio) {
+          const streamVol = streamVolumesRef.current[participant.identity] !== undefined
+            ? streamVolumesRef.current[participant.identity]
+            : 1;
 
-        if ('setVolume' in track) {
-          (track as any).setVolume(currentVol);
-        }
-        if (el) {
-          (el as HTMLAudioElement).volume = currentVol;
-          (el as HTMLAudioElement).muted = currentVol === 0 || isDeafenedRef.current;
+          if ('setVolume' in track) {
+            (track as any).setVolume(streamVol);
+          }
+          if (el) {
+            (el as HTMLAudioElement).volume = streamVol;
+            (el as HTMLAudioElement).muted = streamVol === 0 || isDeafenedRef.current;
+          }
+        } else {
+          // Voice Microphone track stays at default volume 1 (or global volume)
+          const voiceVol = currentVolumeRef.current;
+          if ('setVolume' in track) {
+            (track as any).setVolume(voiceVol);
+          }
+          if (el) {
+            (el as HTMLAudioElement).volume = voiceVol;
+            (el as HTMLAudioElement).muted = voiceVol === 0 || isDeafenedRef.current;
+          }
         }
       }
 
@@ -497,7 +512,7 @@ export function useLiveKit({ url, token, onDisconnected }: UseLiveKitOptions) {
     }
   };
 
-  // Set individual stream/participant audio volume
+  // Set individual stream audio volume (ONLY affects ScreenShareAudio, keeping Microphone voice intact)
   const setStreamVolume = useCallback((participantIdentity: string, volume: number) => {
     const clamped = Math.max(0, Math.min(1, volume));
     setStreamVolumes((prev) => ({ ...prev, [participantIdentity]: clamped }));
@@ -510,19 +525,20 @@ export function useLiveKit({ url, token, onDisconnected }: UseLiveKitOptions) {
 
     const participant = room.remoteParticipants.get(participantIdentity);
     if (participant) {
-      participant.setVolume(clamped, Track.Source.Microphone);
       participant.setVolume(clamped, Track.Source.ScreenShareAudio);
       participant.audioTrackPublications.forEach((pub) => {
-        if (pub.track && 'setVolume' in pub.track) {
+        if (pub.source === Track.Source.ScreenShareAudio && pub.track && 'setVolume' in pub.track) {
           (pub.track as any).setVolume(clamped);
         }
       });
     }
 
-    document.querySelectorAll(`audio[data-participant="${participantIdentity}"]`).forEach((el) => {
-      (el as HTMLAudioElement).volume = clamped;
-      (el as HTMLAudioElement).muted = clamped === 0 || isDeafenedRef.current;
-    });
+    document
+      .querySelectorAll(`audio[data-participant="${participantIdentity}"][data-source="screen_share_audio"]`)
+      .forEach((el) => {
+        (el as HTMLAudioElement).volume = clamped;
+        (el as HTMLAudioElement).muted = clamped === 0 || isDeafenedRef.current;
+      });
   }, []);
 
   // Set global audio volume for all remote participants and audio elements
@@ -618,12 +634,14 @@ export function useLiveKit({ url, token, onDisconnected }: UseLiveKitOptions) {
         }
         setLocalScreenTrack(videoTrackPub.track);
         setIsScreenSharing(true);
+        setIsLocalScreenAudioMuted(false);
         setHostName(room.localParticipant.name || room.localParticipant.identity);
       }
       updateScreenShares(room);
     } catch (err) {
       console.error('Failed to start screen share:', err);
       setIsScreenSharing(false);
+      setIsLocalScreenAudioMuted(false);
     }
   };
 
@@ -633,8 +651,22 @@ export function useLiveKit({ url, token, onDisconnected }: UseLiveKitOptions) {
 
     await room.localParticipant.setScreenShareEnabled(false);
     setIsScreenSharing(false);
+    setIsLocalScreenAudioMuted(false);
     setLocalScreenTrack(null);
     updateScreenShares(room);
+  };
+
+  // Toggle local screen share audio (Host mutes/unmutes outgoing screen sound without muting their mic)
+  const toggleLocalScreenAudio = () => {
+    const room = roomRef.current;
+    if (!room || !room.localParticipant) return;
+
+    const audioPub = room.localParticipant.getTrackPublication(Track.Source.ScreenShareAudio);
+    if (audioPub && audioPub.track && audioPub.track.mediaStreamTrack) {
+      const nextMute = !isLocalScreenAudioMuted;
+      audioPub.track.mediaStreamTrack.enabled = !nextMute;
+      setIsLocalScreenAudioMuted(nextMute);
+    }
   };
 
   // Toggle Microphone
@@ -729,6 +761,7 @@ export function useLiveKit({ url, token, onDisconnected }: UseLiveKitOptions) {
     room: roomRef.current,
     connectionState,
     isScreenSharing,
+    isLocalScreenAudioMuted,
     isMicEnabled,
     isDeafened,
     canPlaybackAudio,
@@ -746,6 +779,7 @@ export function useLiveKit({ url, token, onDisconnected }: UseLiveKitOptions) {
     hostName,
     startScreenShare,
     stopScreenShare,
+    toggleLocalScreenAudio,
     toggleMic,
     toggleDeafen,
     sendMessage,

@@ -22,6 +22,8 @@ interface VideoPlayerProps {
   canPlaybackAudio?: boolean;
   onUnlockAudio?: () => void;
   onOpenScreenShareConfig?: () => void;
+  isLocalScreenAudioMuted?: boolean;
+  onToggleLocalScreenAudio?: () => void;
 }
 
 export const VideoPlayer: React.FC<VideoPlayerProps> = ({
@@ -34,6 +36,8 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
   canPlaybackAudio = true,
   onUnlockAudio,
   onOpenScreenShareConfig,
+  isLocalScreenAudioMuted = false,
+  onToggleLocalScreenAudio,
 }) => {
   const [layoutMode, setLayoutMode] = useState<StreamLayoutMode>('grid');
   const [spotlightId, setSpotlightId] = useState<string | null>(null);
@@ -255,6 +259,8 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
                         }
                       : undefined
                   }
+                  isLocalScreenAudioMuted={isLocalScreenAudioMuted}
+                  onToggleLocalScreenAudio={onToggleLocalScreenAudio}
                 />
               </div>
             ))}
@@ -273,6 +279,8 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
                   }
                   isSpotlighted={true}
                   onToggleSpotlight={() => setLayoutMode('grid')}
+                  isLocalScreenAudioMuted={isLocalScreenAudioMuted}
+                  onToggleLocalScreenAudio={onToggleLocalScreenAudio}
                 />
               </div>
             )}

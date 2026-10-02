@@ -151,6 +151,7 @@ function StreamRoom({
 }: StreamRoomProps) {
   const {
     isScreenSharing,
+    isLocalScreenAudioMuted,
     isMicEnabled,
     isDeafened,
     canPlaybackAudio,
@@ -164,6 +165,7 @@ function StreamRoom({
     reaction,
     startScreenShare,
     stopScreenShare,
+    toggleLocalScreenAudio,
     toggleMic,
     toggleDeafen,
     sendMessage,
@@ -212,6 +214,8 @@ function StreamRoom({
             canPlaybackAudio={canPlaybackAudio}
             onUnlockAudio={unlockAudio}
             onOpenScreenShareConfig={() => setIsScreenShareModalOpen(true)}
+            isLocalScreenAudioMuted={isLocalScreenAudioMuted}
+            onToggleLocalScreenAudio={toggleLocalScreenAudio}
           />
 
           {/* Centered Room Name at top */}
