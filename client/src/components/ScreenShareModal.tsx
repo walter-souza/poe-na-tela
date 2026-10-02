@@ -63,19 +63,22 @@ export const ScreenShareModal: React.FC<ScreenShareModalProps> = ({
                 30 FPS Padrão
               </span>
             </div>
-            <div className="grid grid-cols-4 gap-2">
-              {(['720p', '1080p', '1440p', '4k'] as VideoResolution[]).map((res) => (
+            <div className="grid grid-cols-2 gap-3">
+              {[
+                { res: '720p' as VideoResolution, label: '720p (HD)' },
+                { res: '1080p' as VideoResolution, label: '1080p (Full HD)' },
+              ].map(({ res, label }) => (
                 <button
                   key={res}
                   type="button"
                   onClick={() => setResolution(res)}
-                  className={`py-2 px-3 rounded-xl font-semibold border text-center transition ${
+                  className={`py-2.5 px-3 rounded-xl font-semibold border text-center transition ${
                     resolution === res
                       ? 'bg-indigo-600/30 border-indigo-500 text-white shadow-md'
                       : 'bg-white/5 border-white/5 text-gray-400 hover:bg-white/10 hover:text-white'
                   }`}
                 >
-                  {res.toUpperCase()}
+                  {label}
                 </button>
               ))}
             </div>
