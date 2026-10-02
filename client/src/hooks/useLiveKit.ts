@@ -610,11 +610,28 @@ export function useLiveKit({ url, token, onDisconnected }: UseLiveKitOptions) {
     if (!room) return;
 
     try {
-      const targetFps = config?.frameRate || 60;
+      const targetFps = config?.frameRate || 30;
       const shouldIncludeAudio = config?.includeAudio ?? true;
-      const targetBitrate = config?.bitrateKbps ? config.bitrateKbps * 1000 : 8000000;
-
       const shouldIsolateRoomAudio = config?.isolateRoomAudio ?? true;
+
+      const targetBitrate = config?.bitrateKbps
+        ? config.bitrateKbps * 1000
+        : config?.resolution === '4k'
+        ? 14000000
+        : config?.resolution === '1440p'
+        ? 9000000
+        : config?.resolution === '720p'
+        ? 3500000
+        : 6000000;
+
+      const screenResolution =
+        config?.resolution === '4k'
+          ? { width: 3840, height: 2160, frameRate: targetFps }
+          : config?.resolution === '1440p'
+          ? { width: 2560, height: 1440, frameRate: targetFps }
+          : config?.resolution === '720p'
+          ? { width: 1280, height: 720, frameRate: targetFps }
+          : { width: 1920, height: 1080, frameRate: targetFps };
 
       await room.localParticipant.setScreenShareEnabled(
         true,
@@ -633,14 +650,7 @@ export function useLiveKit({ url, token, onDisconnected }: UseLiveKitOptions) {
           surfaceSwitching: 'include',
           systemAudio: 'include',
           suppressLocalAudioPlayback: false,
-          resolution:
-            config?.resolution === '4k'
-              ? VideoPresets.h2160.resolution
-              : config?.resolution === '1440p'
-              ? { width: 2560, height: 1440, frameRate: targetFps }
-              : config?.resolution === '720p'
-              ? VideoPresets.h720.resolution
-              : VideoPresets.h1080.resolution,
+          resolution: screenResolution,
         },
         {
           audioPreset: {

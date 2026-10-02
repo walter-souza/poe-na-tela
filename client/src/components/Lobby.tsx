@@ -266,7 +266,7 @@ export const Lobby: React.FC<LobbyProps> = ({ onJoin, isLoading, error }) => {
         </div>
         <h1 className="text-3xl sm:text-4xl font-black text-white tracking-tight">Põe na Tela!</h1>
         <p className="text-xs sm:text-sm text-gray-400 mt-1">
-          Põe na tela, comandante! Transmissão de jogos para amigos em 60 FPS com ultra-baixa latência
+          Põe na tela, comandante! Transmissão de tela para amigos com ultra-baixa latência
         </p>
       </div>
 

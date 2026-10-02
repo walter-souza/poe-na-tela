@@ -112,7 +112,7 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
           </div>
           <h3 className="text-xl font-bold text-white mb-2">Aguardando Transmissão</h3>
           <p className="text-sm text-gray-400 mb-6 leading-relaxed">
-            Ninguém está compartilhando tela no momento. Qualquer participante pode transmitir tela em 60 FPS com áudio simultaneamente!
+            Ninguém está compartilhando tela no momento. Qualquer participante pode transmitir tela com áudio simultaneamente!
           </p>
 
           {onOpenScreenShareConfig && (

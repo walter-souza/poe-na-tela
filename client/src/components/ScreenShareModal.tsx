@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
-import { Monitor, Gauge, Zap, Check, X, ShieldCheck, Info } from 'lucide-react';
-import type { StreamQualityConfig, VideoResolution, VideoFrameRate } from '../types';
+import { Monitor, Zap, X, ShieldCheck, Info } from 'lucide-react';
+import type { StreamQualityConfig, VideoResolution } from '../types';
 
 interface ScreenShareModalProps {
   isOpen: boolean;
@@ -14,8 +14,6 @@ export const ScreenShareModal: React.FC<ScreenShareModalProps> = ({
   onConfirm,
 }) => {
   const [resolution, setResolution] = useState<VideoResolution>('1080p');
-  const [frameRate, setFrameRate] = useState<VideoFrameRate>(60);
-  const [bitrateKbps, setBitrateKbps] = useState<number>(8000); // 8 Mbps
   const [isolateRoomAudio, setIsolateRoomAudio] = useState<boolean>(true);
   const [contentHint] = useState<'motion' | 'detail'>('motion');
 
@@ -24,8 +22,8 @@ export const ScreenShareModal: React.FC<ScreenShareModalProps> = ({
   const handleStart = () => {
     onConfirm({
       resolution,
-      frameRate,
-      bitrateKbps,
+      frameRate: 30,
+      bitrateKbps: resolution === '4k' ? 14000 : resolution === '1440p' ? 9000 : resolution === '720p' ? 3500 : 6000,
       codec: 'vp9',
       includeAudio: true,
       contentHint,
@@ -44,7 +42,7 @@ export const ScreenShareModal: React.FC<ScreenShareModalProps> = ({
             </div>
             <div>
               <h3 className="font-bold text-white text-base">Configurações de Transmissão</h3>
-              <p className="text-xs text-gray-400">Otimize a qualidade e a taxa de quadros para seus amigos</p>
+              <p className="text-xs text-gray-400">Qualidade de vídeo e isolamento de som para seus amigos</p>
             </div>
           </div>
           <button
@@ -57,9 +55,14 @@ export const ScreenShareModal: React.FC<ScreenShareModalProps> = ({
 
         <div className="p-6 space-y-5 text-sm">
           <div>
-            <label className="block font-medium text-xs text-gray-400 uppercase tracking-wider mb-2">
-              Resolução de Saída
-            </label>
+            <div className="flex items-center justify-between mb-2">
+              <label className="block font-medium text-xs text-gray-400 uppercase tracking-wider">
+                Resolução de Saída
+              </label>
+              <span className="text-[10px] bg-indigo-500/20 text-indigo-300 font-semibold px-2 py-0.5 rounded-md border border-indigo-500/30">
+                30 FPS Padrão
+              </span>
+            </div>
             <div className="grid grid-cols-4 gap-2">
               {(['720p', '1080p', '1440p', '4k'] as VideoResolution[]).map((res) => (
                 <button
@@ -75,56 +78,6 @@ export const ScreenShareModal: React.FC<ScreenShareModalProps> = ({
                   {res.toUpperCase()}
                 </button>
               ))}
-            </div>
-          </div>
-
-          <div>
-            <label className="block font-medium text-xs text-gray-400 uppercase tracking-wider mb-2">
-              Taxa de Quadros (FPS)
-            </label>
-            <div className="grid grid-cols-2 gap-3">
-              {[
-                { fps: 60 as VideoFrameRate, label: '60 FPS (Super Suave - Jogos / Filmes)' },
-                { fps: 30 as VideoFrameRate, label: '30 FPS (Econômico - Trabalho / Texto)' },
-              ].map((opt) => (
-                <button
-                  key={opt.fps}
-                  type="button"
-                  onClick={() => setFrameRate(opt.fps)}
-                  className={`py-2.5 px-3.5 rounded-xl border text-left transition flex items-center justify-between ${
-                    frameRate === opt.fps
-                      ? 'bg-indigo-600/30 border-indigo-500 text-white'
-                      : 'bg-white/5 border-white/5 text-gray-400 hover:bg-white/10 hover:text-white'
-                  }`}
-                >
-                  <span className="font-semibold">{opt.fps} FPS</span>
-                  {frameRate === opt.fps && <Check className="w-4 h-4 text-indigo-400" />}
-                </button>
-              ))}
-            </div>
-          </div>
-
-          <div className="bg-white/5 p-4 rounded-xl border border-white/5 space-y-2">
-            <div className="flex items-center justify-between">
-              <span className="font-medium text-xs text-gray-400 uppercase tracking-wider flex items-center gap-1.5">
-                <Gauge className="w-4 h-4 text-indigo-400" />
-                Bitrate Alvo (Qualidade de Imagem)
-              </span>
-              <span className="font-bold text-indigo-300">{(bitrateKbps / 1000).toFixed(0)} Mbps</span>
-            </div>
-            <input
-              type="range"
-              min="2000"
-              max="20000"
-              step="1000"
-              value={bitrateKbps}
-              onChange={(e) => setBitrateKbps(parseInt(e.target.value))}
-              className="w-full h-2 bg-white/10 rounded-lg appearance-none cursor-pointer accent-indigo-500"
-            />
-            <div className="flex justify-between text-[11px] text-gray-500">
-              <span>2 Mbps (Low)</span>
-              <span>8 Mbps (Recomendado 1080p60)</span>
-              <span>20 Mbps (Ultra / 4K)</span>
             </div>
           </div>
 
