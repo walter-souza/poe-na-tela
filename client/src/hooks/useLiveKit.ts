@@ -31,6 +31,13 @@ export function useLiveKit({ url, token, onDisconnected, onMigrationSignal, onQu
 
   const isExplicitDisconnectRef = useRef(false);
 
+  // References to preserve ongoing screen share & mic streams across room migrations
+  const savedScreenVideoTrackRef = useRef<MediaStreamTrack | null>(null);
+  const savedScreenAudioTrackRef = useRef<MediaStreamTrack | null>(null);
+  const savedScreenConfigRef = useRef<Partial<StreamQualityConfig> | null>(null);
+  const wasMicEnabledRef = useRef<boolean>(false);
+  const wasScreenSharingRef = useRef<boolean>(false);
+
   const [connectionState, setConnectionState] = useState<ConnectionState>(ConnectionState.Disconnected);
   const [isScreenSharing, setIsScreenSharing] = useState<boolean>(false);
   const [isLocalScreenAudioMuted, setIsLocalScreenAudioMuted] = useState<boolean>(false);
@@ -164,14 +171,12 @@ export function useLiveKit({ url, token, onDisconnected, onMigrationSignal, onQu
 
       reports.forEach((rtcReport) => {
         rtcReport.forEach((report: any) => {
-          // 1. Connection RTT (Latência)
           if (report.type === 'candidate-pair' && (report.state === 'succeeded' || report.nominated)) {
             if (report.currentRoundTripTime !== undefined) {
               rtt = Math.round(report.currentRoundTripTime * 1000);
             }
           }
 
-          // 2. Remote Inbound (Packet Loss and RTT from remote feedback)
           if (report.type === 'remote-inbound-rtp' && (report.kind === 'video' || report.mediaType === 'video')) {
             if (report.roundTripTime !== undefined && rtt === 0) {
               rtt = Math.round(report.roundTripTime * 1000);
@@ -187,7 +192,6 @@ export function useLiveKit({ url, token, onDisconnected, onMigrationSignal, onQu
             }
           }
 
-          // 3. Inbound RTP (Viewer receiving video)
           if (report.type === 'inbound-rtp' && (report.kind === 'video' || report.mediaType === 'video')) {
             if (report.framesPerSecond) fps = Math.max(fps, Math.round(report.framesPerSecond));
             if (report.frameWidth) width = Math.max(width, report.frameWidth);
@@ -212,7 +216,6 @@ export function useLiveKit({ url, token, onDisconnected, onMigrationSignal, onQu
             }
           }
 
-          // 4. Outbound RTP (Host sending video)
           if (report.type === 'outbound-rtp' && (report.kind === 'video' || report.mediaType === 'video')) {
             if (report.framesPerSecond) fps = Math.max(fps, Math.round(report.framesPerSecond));
             if (report.frameWidth) width = Math.max(width, report.frameWidth);
@@ -233,7 +236,6 @@ export function useLiveKit({ url, token, onDisconnected, onMigrationSignal, onQu
         });
       });
 
-      // Calculate Bitrate and FPS from deltas if not directly reported
       let bitrate = 0;
       if (prevStatsRef.current && totalBytes > 0) {
         const timeDiffSec = (now - prevStatsRef.current.timestamp) / 1000;
@@ -305,7 +307,7 @@ export function useLiveKit({ url, token, onDisconnected, onMigrationSignal, onQu
 
     roomRef.current = room;
 
-    const handleConnected = () => {
+    const handleConnected = async () => {
       if (!isSubscribed) return;
       setConnectionState(ConnectionState.Connected);
       updateParticipantList(room);
@@ -328,15 +330,111 @@ export function useLiveKit({ url, token, onDisconnected, onMigrationSignal, onQu
 
       if (statsIntervalRef.current) clearInterval(statsIntervalRef.current);
       statsIntervalRef.current = window.setInterval(collectStats, 1000);
+
+      // RESTORE ACTIVE SCREEN SHARE UPON MIGRATION / RECONNECTION
+      if (
+        savedScreenVideoTrackRef.current &&
+        savedScreenVideoTrackRef.current.readyState === 'live'
+      ) {
+        try {
+          const cfg = savedScreenConfigRef.current;
+          const targetFps = cfg?.frameRate || 30;
+          const targetBitrate = cfg?.bitrateKbps
+            ? cfg.bitrateKbps * 1000
+            : cfg?.resolution === '4k'
+            ? 14000000
+            : cfg?.resolution === '1440p'
+            ? 9000000
+            : cfg?.resolution === '720p'
+            ? 3500000
+            : 6000000;
+
+          const videoPub = await room.localParticipant.publishTrack(
+            savedScreenVideoTrackRef.current,
+            {
+              name: 'screen_share',
+              source: Track.Source.ScreenShare,
+              videoEncoding: {
+                maxBitrate: targetBitrate,
+                maxFramerate: targetFps,
+                priority: 'high',
+              },
+              videoCodec: 'vp9',
+            }
+          );
+
+          if (videoPub?.track?.mediaStreamTrack) {
+            videoPub.track.mediaStreamTrack.contentHint = cfg?.contentHint || 'motion';
+          }
+
+          if (
+            savedScreenAudioTrackRef.current &&
+            savedScreenAudioTrackRef.current.readyState === 'live'
+          ) {
+            const audioPub = await room.localParticipant.publishTrack(
+              savedScreenAudioTrackRef.current,
+              {
+                name: 'screen_share_audio',
+                source: Track.Source.ScreenShareAudio,
+                audioPreset: {
+                  maxBitrate: 192000,
+                  priority: 'high',
+                },
+                dtx: false,
+                red: true,
+              }
+            );
+            if (audioPub?.track?.mediaStreamTrack) {
+              audioPub.track.mediaStreamTrack.contentHint = 'music';
+            }
+          }
+
+          if (videoPub?.track) {
+            setLocalScreenTrack(videoPub.track);
+            setIsScreenSharing(true);
+            wasScreenSharingRef.current = true;
+            setHostName(room.localParticipant.name || room.localParticipant.identity);
+          }
+          updateScreenShares(room);
+        } catch (pubErr) {
+          console.warn('Falha ao restaurar stream salvo na nova sala:', pubErr);
+        }
+      }
+
+      // RESTORE MICROPHONE STATE UPON MIGRATION / RECONNECTION
+      if (wasMicEnabledRef.current) {
+        room.localParticipant
+          .setMicrophoneEnabled(true, {
+            echoCancellation: true,
+            noiseSuppression: true,
+            autoGainControl: true,
+          })
+          .then(() => {
+            setIsMicEnabled(true);
+            updateParticipantList(room);
+          })
+          .catch(() => {});
+      }
     };
 
     const handleDisconnected = (reason?: any) => {
       if (!isSubscribed) return;
       setConnectionState(ConnectionState.Disconnected);
-      setIsScreenSharing(false);
-      setRemoteScreenTrack(null);
-      setLocalScreenTrack(null);
-      setScreenShares([]);
+
+      if (isExplicitDisconnectRef.current) {
+        setIsScreenSharing(false);
+        setRemoteScreenTrack(null);
+        setLocalScreenTrack(null);
+        setScreenShares([]);
+        savedScreenVideoTrackRef.current?.stop();
+        savedScreenAudioTrackRef.current?.stop();
+        savedScreenVideoTrackRef.current = null;
+        savedScreenAudioTrackRef.current = null;
+        savedScreenConfigRef.current = null;
+        wasMicEnabledRef.current = false;
+        wasScreenSharingRef.current = false;
+      }
+
       if (statsIntervalRef.current) clearInterval(statsIntervalRef.current);
 
       const reasonStr = String(reason || '').toLowerCase();
@@ -375,7 +473,6 @@ export function useLiveKit({ url, token, onDisconnected, onMigrationSignal, onQu
     ) => {
       if (!isSubscribed) return;
 
-      // Automatically attach and play remote audio (Microphone & Screen Audio)
       if (track.kind === Track.Kind.Audio) {
         const el = track.attach();
         const isScreenAudio = track.source === Track.Source.ScreenShareAudio;
@@ -396,7 +493,6 @@ export function useLiveKit({ url, token, onDisconnected, onMigrationSignal, onQu
             (el as HTMLAudioElement).muted = streamVol === 0 || isDeafenedRef.current;
           }
         } else {
-          // Voice Microphone track: check individual userVolumesRef or fallback to currentVolumeRef
           const voiceVol = userVolumesRef.current[participant.identity] !== undefined
             ? userVolumesRef.current[participant.identity]
             : currentVolumeRef.current;
@@ -469,7 +565,6 @@ export function useLiveKit({ url, token, onDisconnected, onMigrationSignal, onQu
           sender: 'Sistema',
           text: `${name} entrou na sala`,
           timestamp: Date.now(),
-          isSystem: true,
         },
       ]);
     };
@@ -486,7 +581,6 @@ export function useLiveKit({ url, token, onDisconnected, onMigrationSignal, onQu
           sender: 'Sistema',
           text: `${name} saiu da sala`,
           timestamp: Date.now(),
-          isSystem: true,
         },
       ]);
     };
@@ -536,7 +630,8 @@ export function useLiveKit({ url, token, onDisconnected, onMigrationSignal, onQu
       room.off(RoomEvent.AudioPlaybackStatusChanged, handleAudioPlaybackStatusChanged);
       room.off(RoomEvent.TrackSubscribed, handleTrackSubscribed);
       room.off(RoomEvent.TrackUnsubscribed, handleTrackUnsubscribed);
-      room.disconnect();
+      // Pass stopTracks = isExplicitDisconnectRef.current to keep native media streams alive during room migrations
+      room.disconnect(isExplicitDisconnectRef.current);
     };
   }, [url, token, collectStats, updateParticipantList, updateScreenShares]);
 
@@ -552,7 +647,7 @@ export function useLiveKit({ url, token, onDisconnected, onMigrationSignal, onQu
     }
   };
 
-  // Set individual stream audio volume (ONLY affects ScreenShareAudio, keeping Microphone voice intact)
+  // Set individual stream audio volume
   const setStreamVolume = useCallback((participantIdentity: string, volume: number) => {
     const clamped = Math.max(0, Math.min(1, volume));
     setStreamVolumes((prev) => ({ ...prev, [participantIdentity]: clamped }));
@@ -560,7 +655,6 @@ export function useLiveKit({ url, token, onDisconnected, onMigrationSignal, onQu
     const room = roomRef.current;
     if (!room) return;
 
-    // Local participant does not need audio playback adjustment
     if (room.localParticipant?.identity === participantIdentity) return;
 
     const participant = room.remoteParticipants.get(participantIdentity);
@@ -581,7 +675,7 @@ export function useLiveKit({ url, token, onDisconnected, onMigrationSignal, onQu
       });
   }, []);
 
-  // Set individual participant microphone audio volume (ONLY affects local hearing of that participant's voice)
+  // Set individual participant microphone audio volume
   const setUserVolume = useCallback((participantIdentity: string, volume: number) => {
     const clamped = Math.max(0, Math.min(1, volume));
     setUserVolumes((prev) => ({ ...prev, [participantIdentity]: clamped }));
@@ -589,7 +683,6 @@ export function useLiveKit({ url, token, onDisconnected, onMigrationSignal, onQu
     const room = roomRef.current;
     if (!room) return;
 
-    // Local participant does not need audio playback adjustment
     if (room.localParticipant?.identity === participantIdentity) return;
 
     const participant = room.remoteParticipants.get(participantIdentity);
@@ -618,11 +711,9 @@ export function useLiveKit({ url, token, onDisconnected, onMigrationSignal, onQu
     if (!room) return;
 
     room.remoteParticipants.forEach((p) => {
-      // Set volume for both microphone and screen share audio tracks
       p.setVolume(clamped, Track.Source.Microphone);
       p.setVolume(clamped, Track.Source.ScreenShareAudio);
 
-      // Also set volume directly on track instances
       p.audioTrackPublications.forEach((pub) => {
         if (pub.track && 'setVolume' in pub.track) {
           (pub.track as any).setVolume(clamped);
@@ -630,19 +721,19 @@ export function useLiveKit({ url, token, onDisconnected, onMigrationSignal, onQu
       });
     });
 
-    // Also update attached audio elements in DOM
     document.querySelectorAll('audio').forEach((el) => {
       (el as HTMLAudioElement).volume = clamped;
       (el as HTMLAudioElement).muted = clamped === 0 || isDeafenedRef.current;
     });
   };
 
-  // Start Screen Sharing with high-fidelity stereo audio capture (Cinema / Gaming / Music mode)
+  // Start Screen Sharing with high-fidelity stereo audio capture
   const startScreenShare = async (config?: Partial<StreamQualityConfig>) => {
     const room = roomRef.current;
     if (!room) return;
 
     try {
+      savedScreenConfigRef.current = config || null;
       const targetFps = config?.frameRate || 30;
       const shouldIncludeAudio = config?.includeAudio ?? true;
       const shouldIsolateRoomAudio = config?.isolateRoomAudio ?? true;
@@ -700,19 +791,29 @@ export function useLiveKit({ url, token, onDisconnected, onMigrationSignal, onQu
         }
       );
 
-      // Force 'music' contentHint on screen audio track for full cinema/music dynamic range
       const audioPub = room.localParticipant.getTrackPublication(Track.Source.ScreenShareAudio);
       if (audioPub?.track?.mediaStreamTrack) {
+        savedScreenAudioTrackRef.current = audioPub.track.mediaStreamTrack;
         audioPub.track.mediaStreamTrack.contentHint = 'music';
       }
 
       const videoTrackPub = room.localParticipant.getTrackPublication(Track.Source.ScreenShare);
       if (videoTrackPub && videoTrackPub.track) {
         if (videoTrackPub.track.mediaStreamTrack) {
+          savedScreenVideoTrackRef.current = videoTrackPub.track.mediaStreamTrack;
           videoTrackPub.track.mediaStreamTrack.contentHint = config?.contentHint || 'motion';
+          videoTrackPub.track.mediaStreamTrack.onended = () => {
+            savedScreenVideoTrackRef.current = null;
+            savedScreenAudioTrackRef.current = null;
+            savedScreenConfigRef.current = null;
+            wasScreenSharingRef.current = false;
+            setIsScreenSharing(false);
+            setLocalScreenTrack(null);
+          };
         }
         setLocalScreenTrack(videoTrackPub.track);
         setIsScreenSharing(true);
+        wasScreenSharingRef.current = true;
         setIsLocalScreenAudioMuted(false);
         setHostName(room.localParticipant.name || room.localParticipant.identity);
       }
@@ -721,11 +822,19 @@ export function useLiveKit({ url, token, onDisconnected, onMigrationSignal, onQu
       console.error('Failed to start screen share:', err);
       setIsScreenSharing(false);
       setIsLocalScreenAudioMuted(false);
+      wasScreenSharingRef.current = false;
       throw err;
     }
   };
 
   const stopScreenShare = async () => {
+    savedScreenVideoTrackRef.current?.stop();
+    savedScreenAudioTrackRef.current?.stop();
+    savedScreenVideoTrackRef.current = null;
+    savedScreenAudioTrackRef.current = null;
+    savedScreenConfigRef.current = null;
+    wasScreenSharingRef.current = false;
+
     const room = roomRef.current;
     if (!room) return;
 
@@ -736,7 +845,7 @@ export function useLiveKit({ url, token, onDisconnected, onMigrationSignal, onQu
     updateScreenShares(room);
   };
 
-  // Toggle local screen share audio (Host mutes/unmutes outgoing screen sound without muting their mic)
+  // Toggle local screen share audio
   const toggleLocalScreenAudio = () => {
     const room = roomRef.current;
     if (!room || !room.localParticipant) return;
@@ -761,6 +870,7 @@ export function useLiveKit({ url, token, onDisconnected, onMigrationSignal, onQu
       autoGainControl: true,
     });
     setIsMicEnabled(nextState);
+    wasMicEnabledRef.current = nextState;
     updateParticipantList(room);
   };
 
@@ -863,7 +973,14 @@ export function useLiveKit({ url, token, onDisconnected, onMigrationSignal, onQu
 
   const handleManualDisconnect = () => {
     isExplicitDisconnectRef.current = true;
-    roomRef.current?.disconnect();
+    savedScreenVideoTrackRef.current?.stop();
+    savedScreenAudioTrackRef.current?.stop();
+    savedScreenVideoTrackRef.current = null;
+    savedScreenAudioTrackRef.current = null;
+    savedScreenConfigRef.current = null;
+    wasMicEnabledRef.current = false;
+    wasScreenSharingRef.current = false;
+    roomRef.current?.disconnect(true);
   };
 
   return {
