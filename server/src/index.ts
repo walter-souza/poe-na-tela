@@ -1,3 +1,9 @@
+import { webcrypto } from 'node:crypto';
+if (typeof globalThis.crypto === 'undefined' || !globalThis.crypto.getRandomValues) {
+  // @ts-ignore
+  globalThis.crypto = webcrypto;
+}
+
 import express, { Request, Response } from 'express';
 import cors from 'cors';
 import dotenv from 'dotenv';
