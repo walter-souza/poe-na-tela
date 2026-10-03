@@ -166,7 +166,7 @@ app.post('/api/token', async (req: Request, res: Response): Promise<void> => {
 
 const handleMigrateRoom = async (req: Request, res: Response): Promise<void> => {
   try {
-    const { roomName, targetProjectId, passcode } = req.body;
+    const { roomName, targetProjectId, currentProjectId, passcode } = req.body;
     const sanitizedRoom = sanitizeRoomName(roomName as string);
 
     if (!sanitizedRoom) {
@@ -184,7 +184,7 @@ const handleMigrateRoom = async (req: Request, res: Response): Promise<void> => 
       }
     }
 
-    const nextProject = await pool.migrateRoom(sanitizedRoom, targetProjectId);
+    const nextProject = await pool.migrateRoom(sanitizedRoom, targetProjectId, currentProjectId);
 
     res.json({
       success: true,

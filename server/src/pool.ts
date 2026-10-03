@@ -180,32 +180,74 @@ export class LiveKitPoolManager {
 
   /**
    * Migrate a room to the next available project in the pool.
+   * Cycles through active projects in round-robin order.
    */
-  public async migrateRoom(roomName: string, targetProjectId?: string): Promise<LiveKitProjectConfig> {
-    let targetProject: LiveKitProjectConfig | undefined;
+  public async migrateRoom(
+    roomName: string,
+    targetProjectId?: string,
+    currentProjectId?: string
+  ): Promise<LiveKitProjectConfig> {
+    const activeProjects = this.getSortedActiveProjects();
+    if (activeProjects.length <= 1) {
+      return activeProjects[0] || Array.from(this.projects.values())[0];
+    }
 
+    // 1. Explicit target requested
     if (targetProjectId) {
-      targetProject = this.projects.get(targetProjectId);
+      const explicit = this.projects.get(targetProjectId);
+      if (explicit && explicit.isActive) {
+        this.setRoomMetadata(roomName, {
+          name: roomName,
+          projectId: explicit.id,
+          createdAt: Date.now(),
+        });
+        return explicit;
+      }
     }
 
-    if (!targetProject) {
-      const currentMeta = this.roomMetadataStore.get(roomName);
-      targetProject = await this.findFirstProjectWithCapacity(currentMeta?.projectId);
+    // 2. Identify the current project
+    let detectedCurrentId = currentProjectId || this.roomMetadataStore.get(roomName)?.projectId;
+    if (!detectedCurrentId) {
+      for (const p of activeProjects) {
+        try {
+          const client = this.getRoomServiceClient(p);
+          const liveRooms = await client.listRooms([roomName]);
+          if (liveRooms && liveRooms.length > 0) {
+            detectedCurrentId = p.id;
+            break;
+          }
+        } catch {}
+      }
     }
 
+    // 3. Guaranteed rotation to the next project in cyclic order
+    let nextProject: LiveKitProjectConfig;
+    if (detectedCurrentId) {
+      const currentIndex = activeProjects.findIndex(p => p.id === detectedCurrentId);
+      if (currentIndex >= 0) {
+        const nextIndex = (currentIndex + 1) % activeProjects.length;
+        nextProject = activeProjects[nextIndex];
+      } else {
+        nextProject = activeProjects.find(p => p.id !== detectedCurrentId) || activeProjects[0];
+      }
+    } else {
+      nextProject = activeProjects[1] || activeProjects[0];
+    }
+
+    // Update metadata store
     const currentMeta = this.roomMetadataStore.get(roomName);
     if (currentMeta) {
-      currentMeta.projectId = targetProject.id;
+      currentMeta.projectId = nextProject.id;
     } else {
       this.roomMetadataStore.set(roomName, {
         name: roomName,
-        projectId: targetProject.id,
+        projectId: nextProject.id,
         createdAt: Date.now(),
       });
     }
 
-    console.log(`🔄 [LiveKit Pool] Sala "${roomName}" migrada para [${targetProject.id}] ${targetProject.name}`);
-    return targetProject;
+    console.log(`🔄 [LiveKit Pool] Sala "${roomName}" migrada de [${detectedCurrentId || 'desconhecido'}] para [${nextProject.id}] ${nextProject.name}`);
+    return nextProject;
   }
 
   /**

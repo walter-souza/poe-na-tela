@@ -286,6 +286,7 @@ function StreamRoom({
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           roomName: session.roomName,
+          currentProjectId: session.projectId,
           passcode: session.passcode,
         }),
       });
