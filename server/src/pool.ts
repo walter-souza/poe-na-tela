@@ -186,22 +186,25 @@ export class LiveKitPoolManager {
   }
 
   /**
-   * Get project for a room:
-   * 1. If room already exists in metadata store or active on a server, verify its health.
-   *    If unhealthy (429), immediately auto-migrates to a healthy server!
-   * 2. If new room, route to first healthy project with available capacity.
+   * Get project for a room with bandwidth constraint status.
+   * - If room already exists, lets users connect even if bandwidth is constrained, returning isBandwidthConstrained: true.
+   * - If new room, routes to first healthy project.
    */
-  public async getProjectForRoom(roomName: string): Promise<LiveKitProjectConfig> {
+  public async getProjectAssignmentWithHealth(roomName: string): Promise<{
+    project: LiveKitProjectConfig;
+    isBandwidthConstrained: boolean;
+    quotaReason?: string;
+  }> {
     const existingMeta = this.roomMetadataStore.get(roomName);
     if (existingMeta) {
       const assigned = this.projects.get(existingMeta.projectId);
       if (assigned && assigned.isActive) {
         const health = await this.validateProjectHealth(assigned);
-        if (health.healthy) {
-          return assigned;
-        }
-        console.warn(`🔄 [LiveKit Pool] Sala "${roomName}" estava no [${assigned.id}], mas o servidor está com cota excedida (429). Migrando automaticamente...`);
-        return await this.migrateRoom(roomName, undefined, assigned.id);
+        return {
+          project: assigned,
+          isBandwidthConstrained: !health.healthy,
+          quotaReason: health.reason,
+        };
       }
     }
 
@@ -212,19 +215,31 @@ export class LiveKitPoolManager {
         const liveRooms = await client.listRooms([roomName]);
         if (liveRooms && liveRooms.length > 0 && liveRooms[0].numParticipants > 0) {
           const health = await this.validateProjectHealth(project);
-          if (health.healthy) {
-            if (existingMeta) {
-              existingMeta.projectId = project.id;
-            }
-            return project;
+          if (existingMeta) {
+            existingMeta.projectId = project.id;
           }
+          return {
+            project,
+            isBandwidthConstrained: !health.healthy,
+            quotaReason: health.reason,
+          };
         }
       } catch {}
     }
 
     // New Room: Find the first healthy project with capacity
     const selected = await this.findFirstProjectWithCapacity();
-    return selected;
+    const health = await this.validateProjectHealth(selected);
+    return {
+      project: selected,
+      isBandwidthConstrained: !health.healthy,
+      quotaReason: health.reason,
+    };
+  }
+
+  public async getProjectForRoom(roomName: string): Promise<LiveKitProjectConfig> {
+    const { project } = await this.getProjectAssignmentWithHealth(roomName);
+    return project;
   }
 
   /**

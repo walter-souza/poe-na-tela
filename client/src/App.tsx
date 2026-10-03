@@ -7,6 +7,7 @@ import { ChatPanel } from './components/ChatPanel';
 import { StreamHUD } from './components/StreamHUD';
 import { ScreenShareModal } from './components/ScreenShareModal';
 import { ServerMigrationModal } from './components/ServerMigrationModal';
+import { BandwidthWarningBanner } from './components/BandwidthWarningBanner';
 import { Lobby } from './components/Lobby';
 import { InviteModal } from './components/InviteModal';
 import type { StreamQualityConfig } from './types';
@@ -20,6 +21,8 @@ export function App() {
     isPublisher: boolean;
     projectId?: string;
     projectName?: string;
+    isBandwidthConstrained?: boolean;
+    quotaReason?: string;
     passcode?: string;
   } | null>(null);
 
@@ -76,6 +79,8 @@ export function App() {
         isPublisher: data.isPublisher,
         projectId: data.projectId,
         projectName: data.projectName,
+        isBandwidthConstrained: data.isBandwidthConstrained,
+        quotaReason: data.quotaReason,
         passcode,
       });
 
@@ -148,6 +153,8 @@ interface StreamRoomProps {
     isPublisher: boolean;
     projectId?: string;
     projectName?: string;
+    isBandwidthConstrained?: boolean;
+    quotaReason?: string;
     passcode?: string;
   };
   setSession: Dispatch<SetStateAction<{
@@ -158,6 +165,8 @@ interface StreamRoomProps {
     isPublisher: boolean;
     projectId?: string;
     projectName?: string;
+    isBandwidthConstrained?: boolean;
+    quotaReason?: string;
     passcode?: string;
   } | null>>;
   onLeave: () => void;
@@ -217,6 +226,8 @@ function StreamRoom({
           isPublisher: data.isPublisher,
           projectId: data.projectId,
           projectName: data.projectName,
+          isBandwidthConstrained: data.isBandwidthConstrained,
+          quotaReason: data.quotaReason,
           passcode: session.passcode,
         });
       }
@@ -277,7 +288,13 @@ function StreamRoom({
     if (isScreenSharing) {
       stopScreenShare();
     } else {
-      setIsScreenShareModalOpen(true);
+      if (session.isBandwidthConstrained) {
+        // Recommend migrating before starting video
+        setMigrationReason('limit_reached');
+        setIsMigrationModalOpen(true);
+      } else {
+        setIsScreenShareModalOpen(true);
+      }
     }
   };
 
@@ -340,6 +357,8 @@ function StreamRoom({
         isPublisher: tokenData.isPublisher,
         projectId: tokenData.projectId,
         projectName: tokenData.projectName,
+        isBandwidthConstrained: tokenData.isBandwidthConstrained,
+        quotaReason: tokenData.quotaReason,
         passcode: session.passcode,
       });
 
@@ -358,6 +377,18 @@ function StreamRoom({
 
   return (
     <div className="h-screen w-screen flex flex-col bg-[#090a0f] text-gray-100 overflow-hidden select-none">
+      {/* Non-intrusive Bandwidth Warning Banner when server is constrained */}
+      {session.isBandwidthConstrained && (
+        <BandwidthWarningBanner
+          serverName={session.projectName}
+          onMigrate={() => {
+            setMigrationReason('limit_reached');
+            setIsMigrationModalOpen(true);
+          }}
+          isMigrating={isMigrating}
+        />
+      )}
+
       <div className="flex-1 flex overflow-hidden relative">
         <div className="flex-1 flex flex-col p-3 sm:p-4 min-w-0 relative">
           <StreamHUD
@@ -397,10 +428,19 @@ function StreamRoom({
                   setIsMigrationModalOpen(true);
                 }}
                 title="Clique para alternar o servidor da sala"
-                className="pointer-events-auto hidden sm:flex items-center gap-1.5 px-3 py-2 rounded-2xl bg-[#11131c]/90 hover:bg-amber-500/10 border border-white/15 hover:border-amber-500/30 text-amber-300 text-xs font-semibold shadow-2xl backdrop-blur-md transition cursor-pointer"
+                className={`pointer-events-auto hidden sm:flex items-center gap-1.5 px-3 py-2 rounded-2xl bg-[#11131c]/90 border text-xs font-semibold shadow-2xl backdrop-blur-md transition cursor-pointer ${
+                  session.isBandwidthConstrained
+                    ? 'bg-amber-500/20 border-amber-500/40 text-amber-300 animate-pulse'
+                    : 'hover:bg-amber-500/10 border-white/15 hover:border-amber-500/30 text-amber-300'
+                }`}
               >
                 <Server className="w-3.5 h-3.5 text-amber-400" />
                 <span>{session.projectName}</span>
+                {session.isBandwidthConstrained && (
+                  <span className="text-[10px] bg-amber-500/30 px-1.5 py-0.5 rounded font-bold">
+                    Cota no Limite
+                  </span>
+                )}
               </button>
             )}
           </div>

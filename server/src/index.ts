@@ -91,8 +91,8 @@ app.post('/api/token', async (req: Request, res: Response): Promise<void> => {
 
     const cleanPasscode = typeof passcode === 'string' && passcode.trim() ? passcode.trim() : undefined;
 
-    // 1. Get the project assigned to this room (or route to available project)
-    const project = await pool.getProjectForRoom(sanitizedRoom);
+    // 1. Get the project assigned to this room (with bandwidth health check)
+    const { project, isBandwidthConstrained, quotaReason } = await pool.getProjectAssignmentWithHealth(sanitizedRoom);
 
     // 2. Check if room is active on the assigned project
     let isActiveInLiveKit = false;
@@ -157,6 +157,8 @@ app.post('/api/token', async (req: Request, res: Response): Promise<void> => {
       roomName: sanitizedRoom,
       identity: sanitizedParticipant,
       isPublisher: Boolean(isPublisher),
+      isBandwidthConstrained,
+      quotaReason,
     });
   } catch (err: any) {
     console.error('Error generating token:', err);
