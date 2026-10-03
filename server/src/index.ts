@@ -197,6 +197,16 @@ app.post(['/api/token', '/token'], async (req: Request, res: Response): Promise<
 });
 
 /**
+ * Helper to fetch rooms with a strict 2-second timeout
+ */
+async function listRoomsWithTimeout(names?: string[]): Promise<any[]> {
+  const timeoutPromise = new Promise<any[]>((_, reject) =>
+    setTimeout(() => reject(new Error('LiveKit timeout (2s)')), 2000)
+  );
+  return Promise.race([roomService.listRooms(names), timeoutPromise]);
+}
+
+/**
  * List active rooms with live participant counts and passcode flags
  */
 app.get(['/api/rooms', '/rooms'], async (_req: Request, res: Response) => {
@@ -206,8 +216,8 @@ app.get(['/api/rooms', '/rooms'], async (_req: Request, res: Response) => {
   }
 
   try {
-    const rooms = await roomService.listRooms();
-    const activeLiveRooms = rooms.filter(r => r.numParticipants > 0);
+    const rooms = await listRoomsWithTimeout();
+    const activeLiveRooms = Array.isArray(rooms) ? rooms.filter(r => r.numParticipants > 0) : [];
     const activeNames = new Set(activeLiveRooms.map(r => r.name));
 
     // Clean up dead rooms from memory store
@@ -223,9 +233,10 @@ app.get(['/api/rooms', '/rooms'], async (_req: Request, res: Response) => {
       creationTime: Number(r.creationTime),
       hasPasscode: roomStore.has(r.name) && Boolean(roomStore.get(r.name)?.passcode)
     }));
+    res.json({ rooms: result });
   } catch (err: any) {
-    console.error('Failed to list rooms from LiveKit:', err);
-    res.json({ rooms: [], warning: 'LiveKit server might not be running yet', error: err?.message });
+    console.error('Failed to list rooms from LiveKit:', err?.message || err);
+    res.json({ rooms: [], warning: 'LiveKit server might not be running yet' });
   }
 });
 
@@ -238,7 +249,7 @@ app.get(['/api/room/:roomName/info', '/room/:roomName/info'], async (req: Reques
   let isActive = false;
 
   try {
-    const rooms = await roomService.listRooms([roomName]);
+    const rooms = await listRoomsWithTimeout([roomName]);
     if (rooms && rooms.length > 0 && rooms[0].numParticipants > 0) {
       isActive = true;
       numParticipants = rooms[0].numParticipants;
