@@ -290,10 +290,16 @@ function StreamRoom({
         }),
       });
 
-      const data = await res.json();
       if (!res.ok) {
-        throw new Error(data.error || 'Falha ao migrar sala');
+        let errMessage = `Erro (${res.status}) do servidor ao solicitar migração. Verifique se o deploy do backend foi atualizado no Render.`;
+        try {
+          const errData = await res.json();
+          errMessage = errData.error || errMessage;
+        } catch {}
+        throw new Error(errMessage);
       }
+
+      const data = await res.json();
 
       // Broadcast signal to everyone in the room
       await sendMigrationSignal(data.targetProjectId);
@@ -309,6 +315,16 @@ function StreamRoom({
           passcode: session.passcode,
         }),
       });
+
+      if (!tokenRes.ok) {
+        let errMessage = `Erro (${tokenRes.status}) ao obter novo token de acesso.`;
+        try {
+          const tokenErrData = await tokenRes.json();
+          errMessage = tokenErrData.error || errMessage;
+        } catch {}
+        throw new Error(errMessage);
+      }
+
       const tokenData = await tokenRes.json();
 
       setSession({

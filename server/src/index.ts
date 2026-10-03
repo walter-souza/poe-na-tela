@@ -164,10 +164,7 @@ app.post('/api/token', async (req: Request, res: Response): Promise<void> => {
   }
 });
 
-/**
- * Endpoint to migrate an active room to the next available LiveKit project in the pool
- */
-app.post('/api/room/migrate', async (req: Request, res: Response): Promise<void> => {
+const handleMigrateRoom = async (req: Request, res: Response): Promise<void> => {
   try {
     const { roomName, targetProjectId, passcode } = req.body;
     const sanitizedRoom = sanitizeRoomName(roomName as string);
@@ -200,7 +197,10 @@ app.post('/api/room/migrate', async (req: Request, res: Response): Promise<void>
     console.error('Error migrating room:', err);
     res.status(500).json({ error: 'Falha ao migrar sala', details: err.message });
   }
-});
+};
+
+app.post('/api/room/migrate', handleMigrateRoom);
+app.post('/api/migrate-room', handleMigrateRoom);
 
 /**
  * List active rooms across all LiveKit projects in the pool
