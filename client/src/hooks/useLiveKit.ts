@@ -14,12 +14,16 @@ export interface UseLiveKitOptions {
   url: string;
   token: string;
   onDisconnected?: () => void;
+  onMigrationSignal?: (targetProjectId?: string) => void;
 }
 
-export function useLiveKit({ url, token, onDisconnected }: UseLiveKitOptions) {
+export function useLiveKit({ url, token, onDisconnected, onMigrationSignal }: UseLiveKitOptions) {
   const roomRef = useRef<Room | null>(null);
   const onDisconnectedRef = useRef(onDisconnected);
   onDisconnectedRef.current = onDisconnected;
+
+  const onMigrationSignalRef = useRef(onMigrationSignal);
+  onMigrationSignalRef.current = onMigrationSignal;
 
   const isExplicitDisconnectRef = useRef(false);
 
@@ -430,6 +434,8 @@ export function useLiveKit({ url, token, onDisconnected }: UseLiveKitOptions) {
             sender: participant?.name || participant?.identity || 'Amigo',
             timestamp: Date.now(),
           });
+        } else if (data.type === 'MIGRATE_ROOM') {
+          onMigrationSignalRef.current?.(data.targetProjectId);
         }
       } catch (err) {
         console.error('Failed to parse received data channel payload', err);
@@ -688,6 +694,7 @@ export function useLiveKit({ url, token, onDisconnected }: UseLiveKitOptions) {
       console.error('Failed to start screen share:', err);
       setIsScreenSharing(false);
       setIsLocalScreenAudioMuted(false);
+      throw err;
     }
   };
 
@@ -811,6 +818,22 @@ export function useLiveKit({ url, token, onDisconnected }: UseLiveKitOptions) {
     });
   };
 
+  const sendMigrationSignal = async (targetProjectId?: string) => {
+    const room = roomRef.current;
+    if (!room) return;
+    try {
+      const payload = new TextEncoder().encode(
+        JSON.stringify({
+          type: 'MIGRATE_ROOM',
+          targetProjectId,
+        })
+      );
+      await room.localParticipant.publishData(payload, { reliable: true });
+    } catch (e) {
+      console.warn('Could not broadcast migration signal:', e);
+    }
+  };
+
   const handleManualDisconnect = () => {
     isExplicitDisconnectRef.current = true;
     roomRef.current?.disconnect();
@@ -845,6 +868,7 @@ export function useLiveKit({ url, token, onDisconnected }: UseLiveKitOptions) {
     toggleDeafen,
     sendMessage,
     sendReaction,
+    sendMigrationSignal,
     disconnect: handleManualDisconnect,
   };
 }

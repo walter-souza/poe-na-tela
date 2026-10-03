@@ -13,6 +13,7 @@ import {
   Sparkles,
   Share2,
   Check,
+  Server,
 } from 'lucide-react';
 
 interface ControlsBarProps {
@@ -22,10 +23,12 @@ interface ControlsBarProps {
   isChatOpen: boolean;
   isHUDOpen: boolean;
   roomName: string;
+  projectName?: string;
   onToggleMic: () => void;
   onToggleDeafen: () => void;
   onToggleScreenShare: () => void;
   onOpenScreenShareConfig: () => void;
+  onOpenMigrationModal?: () => void;
   onToggleChat: () => void;
   onToggleHUD: () => void;
   onLeave: () => void;
@@ -38,10 +41,12 @@ export const ControlsBar: React.FC<ControlsBarProps> = ({
   isChatOpen,
   isHUDOpen,
   roomName,
+  projectName,
   onToggleMic,
   onToggleDeafen,
   onToggleScreenShare,
   onOpenScreenShareConfig,
+  onOpenMigrationModal,
   onToggleChat,
   onToggleHUD,
   onLeave,
@@ -128,6 +133,18 @@ export const ControlsBar: React.FC<ControlsBarProps> = ({
 
       {/* Right Controls */}
       <div className="flex items-center gap-2">
+        {/* Servidor / Migração Pool */}
+        {projectName && (
+          <button
+            onClick={onOpenMigrationModal}
+            title={`Servidor atual: ${projectName}. Clique para migrar de servidor.`}
+            className="flex items-center gap-1.5 px-3 py-2 rounded-2xl bg-white/5 hover:bg-amber-500/10 border border-white/10 hover:border-amber-500/30 text-xs text-gray-300 hover:text-amber-300 transition"
+          >
+            <Server className="w-3.5 h-3.5 text-amber-400" />
+            <span className="hidden lg:inline font-medium">{projectName}</span>
+          </button>
+        )}
+
         {/* Convidar Amigos */}
         <button
           onClick={handleCopyInvite}

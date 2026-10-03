@@ -1,16 +1,14 @@
 import express, { Request, Response } from 'express';
 import cors from 'cors';
 import dotenv from 'dotenv';
-import { AccessToken, RoomServiceClient } from 'livekit-server-sdk';
+import { LiveKitPoolManager } from './pool';
 
 dotenv.config();
 
 const app = express();
 const PORT = process.env.PORT || 3001;
 
-const LIVEKIT_URL = process.env.LIVEKIT_URL || 'ws://127.0.0.1:7880';
-const LIVEKIT_API_KEY = process.env.LIVEKIT_API_KEY || 'devkey';
-const LIVEKIT_API_SECRET = process.env.LIVEKIT_API_SECRET || 'secret';
+const pool = new LiveKitPoolManager();
 
 app.use(cors({
   origin: '*',
@@ -19,21 +17,8 @@ app.use(cors({
 }));
 app.use(express.json());
 
-// In-memory room store for passcodes and custom room settings
-interface RoomConfig {
-  name: string;
-  passcode?: string;
-  hostIdentity?: string;
-  createdAt: number;
-}
-const roomStore = new Map<string, RoomConfig>();
-
-const roomService = new RoomServiceClient(LIVEKIT_URL.replace('ws://', 'http://').replace('wss://', 'https://'), LIVEKIT_API_KEY, LIVEKIT_API_SECRET);
-
 /**
  * Unicode-safe sanitization for room names.
- * Preserves accented characters (é, ã, ç, etc.), international alphabets, and spaces,
- * while stripping unsafe URL/control characters and normalizing whitespace.
  */
 function sanitizeRoomName(name: string): string {
   if (!name) return '';
@@ -56,15 +41,37 @@ function sanitizeUserName(name: string): string {
 }
 
 /**
- * Health check endpoint
+ * Health check endpoint - lists loaded projects (without secrets)
  */
-app.get('/api/health', (req: Request, res: Response) => {
+app.get('/api/health', (_req: Request, res: Response) => {
+  const projects = pool.getProjects().map(p => ({
+    id: p.id,
+    name: p.name,
+    url: p.url,
+    priority: p.priority,
+    maxParticipants: p.maxParticipants,
+    isActive: p.isActive,
+  }));
+
   res.json({
     status: 'ok',
-    livekitUrl: LIVEKIT_URL,
     timestamp: new Date().toISOString(),
-    version: '1.0.0'
+    version: '2.0.0',
+    totalProjects: projects.length,
+    projects,
   });
+});
+
+/**
+ * List available projects in the pool for display
+ */
+app.get('/api/projects', (_req: Request, res: Response) => {
+  const projects = pool.getSortedActiveProjects().map(p => ({
+    id: p.id,
+    name: p.name,
+    priority: p.priority,
+  }));
+  res.json({ projects });
 });
 
 /**
@@ -84,23 +91,26 @@ app.post('/api/token', async (req: Request, res: Response): Promise<void> => {
 
     const cleanPasscode = typeof passcode === 'string' && passcode.trim() ? passcode.trim() : undefined;
 
-    // 1. Check if room is currently active in LiveKit
+    // 1. Get the project assigned to this room (or route to available project)
+    const project = await pool.getProjectForRoom(sanitizedRoom);
+
+    // 2. Check if room is active on the assigned project
     let isActiveInLiveKit = false;
     try {
-      const existingLiveRooms = await roomService.listRooms([sanitizedRoom]);
+      const client = pool.getRoomServiceClient(project);
+      const existingLiveRooms = await client.listRooms([sanitizedRoom]);
       if (existingLiveRooms && existingLiveRooms.length > 0 && existingLiveRooms[0].numParticipants > 0) {
         isActiveInLiveKit = true;
       }
     } catch {
-      // If LiveKit is momentarily unreachable, fallback to roomStore state
+      // Fallback to in-memory metadata
     }
 
-    const existingConfig = roomStore.get(sanitizedRoom);
+    const existingMeta = pool.getRoomMetadata(sanitizedRoom);
 
-    if (isActiveInLiveKit && existingConfig) {
-      // Room is actively in session
-      if (existingConfig.passcode) {
-        // Room has a passcode
+    if (isActiveInLiveKit && existingMeta) {
+      // Room has existing session
+      if (existingMeta.passcode) {
         if (!cleanPasscode) {
           res.status(403).json({
             error: 'Esta sala é protegida por senha. Por favor, insira a senha para entrar.',
@@ -108,12 +118,11 @@ app.post('/api/token', async (req: Request, res: Response): Promise<void> => {
           });
           return;
         }
-        if (existingConfig.passcode !== cleanPasscode) {
+        if (existingMeta.passcode !== cleanPasscode) {
           res.status(403).json({ error: 'Senha incorreta para esta sala.' });
           return;
         }
       } else {
-        // Room is public (no passcode)
         if (cleanPasscode) {
           res.status(403).json({
             error: 'Esta sala já está ativa e é pública (não possui senha). Deixe o campo de senha em branco para entrar.',
@@ -122,34 +131,29 @@ app.post('/api/token', async (req: Request, res: Response): Promise<void> => {
         }
       }
     } else {
-      // Room is brand new (or previous session ended and is being recreated)
-      roomStore.set(sanitizedRoom, {
+      // Create fresh room metadata
+      pool.setRoomMetadata(sanitizedRoom, {
         name: sanitizedRoom,
         passcode: cleanPasscode,
         hostIdentity: sanitizedParticipant,
+        projectId: project.id,
         createdAt: Date.now(),
       });
     }
 
-    const at = new AccessToken(LIVEKIT_API_KEY, LIVEKIT_API_SECRET, {
-      identity: sanitizedParticipant,
-      name: sanitizedParticipant,
-      ttl: '6h',
-    });
-
-    at.addGrant({
-      roomJoin: true,
-      room: sanitizedRoom,
-      canPublish: true,
-      canPublishData: true,
-      canSubscribe: true,
-    });
-
-    const token = await at.toJwt();
+    // 3. Generate token using project credentials
+    const token = await pool.createAccessToken(
+      project,
+      sanitizedRoom,
+      sanitizedParticipant,
+      Boolean(isPublisher)
+    );
 
     res.json({
       token,
-      livekitUrl: LIVEKIT_URL,
+      livekitUrl: project.url,
+      projectId: project.id,
+      projectName: project.name,
       roomName: sanitizedRoom,
       identity: sanitizedParticipant,
       isPublisher: Boolean(isPublisher),
@@ -161,30 +165,52 @@ app.post('/api/token', async (req: Request, res: Response): Promise<void> => {
 });
 
 /**
- * List active rooms with live participant counts and passcode flags
+ * Endpoint to migrate an active room to the next available LiveKit project in the pool
  */
-app.get('/api/rooms', async (req: Request, res: Response) => {
+app.post('/api/room/migrate', async (req: Request, res: Response): Promise<void> => {
   try {
-    const rooms = await roomService.listRooms();
-    const activeLiveRooms = rooms.filter(r => r.numParticipants > 0);
-    const activeNames = new Set(activeLiveRooms.map(r => r.name));
+    const { roomName, targetProjectId, passcode } = req.body;
+    const sanitizedRoom = sanitizeRoomName(roomName as string);
 
-    // Clean up dead rooms from memory store
-    for (const [name] of roomStore.entries()) {
-      if (!activeNames.has(name)) {
-        roomStore.delete(name);
+    if (!sanitizedRoom) {
+      res.status(400).json({ error: 'Nome da sala inválido' });
+      return;
+    }
+
+    // Verify passcode if room is protected
+    const existingMeta = pool.getRoomMetadata(sanitizedRoom);
+    if (existingMeta && existingMeta.passcode) {
+      const cleanPasscode = typeof passcode === 'string' ? passcode.trim() : undefined;
+      if (existingMeta.passcode !== cleanPasscode) {
+        res.status(403).json({ error: 'Senha incorreta para migrar esta sala' });
+        return;
       }
     }
 
-    const result = activeLiveRooms.map(r => ({
-      name: r.name,
-      numParticipants: r.numParticipants,
-      creationTime: Number(r.creationTime),
-      hasPasscode: roomStore.has(r.name) && Boolean(roomStore.get(r.name)?.passcode)
-    }));
-    res.json({ rooms: result });
+    const nextProject = await pool.migrateRoom(sanitizedRoom, targetProjectId);
+
+    res.json({
+      success: true,
+      roomName: sanitizedRoom,
+      targetProjectId: nextProject.id,
+      targetProjectName: nextProject.name,
+      targetWsUrl: nextProject.url,
+    });
   } catch (err: any) {
-    res.json({ rooms: [], warning: 'LiveKit server might not be running yet' });
+    console.error('Error migrating room:', err);
+    res.status(500).json({ error: 'Falha ao migrar sala', details: err.message });
+  }
+});
+
+/**
+ * List active rooms across all LiveKit projects in the pool
+ */
+app.get('/api/rooms', async (_req: Request, res: Response) => {
+  try {
+    const rooms = await pool.listAllActiveRooms();
+    res.json({ rooms });
+  } catch (err: any) {
+    res.json({ rooms: [], warning: 'Erro ao consultar projetos LiveKit', details: err.message });
   }
 });
 
@@ -195,28 +221,32 @@ app.get('/api/room/:roomName/info', async (req: Request, res: Response) => {
   const roomName = sanitizeRoomName(req.params.roomName);
   let numParticipants = 0;
   let isActive = false;
+  let currentProjectName = '';
 
   try {
-    const rooms = await roomService.listRooms([roomName]);
+    const project = await pool.getProjectForRoom(roomName);
+    currentProjectName = project.name;
+    const client = pool.getRoomServiceClient(project);
+    const rooms = await client.listRooms([roomName]);
     if (rooms && rooms.length > 0 && rooms[0].numParticipants > 0) {
       isActive = true;
       numParticipants = rooms[0].numParticipants;
     } else {
-      roomStore.delete(roomName);
+      pool.deleteRoomMetadata(roomName);
     }
   } catch {}
 
-  const config = roomStore.get(roomName);
+  const meta = pool.getRoomMetadata(roomName);
 
   res.json({
     roomName,
-    hasPasscode: isActive && Boolean(config?.passcode),
+    hasPasscode: isActive && Boolean(meta?.passcode),
     isActive,
     numParticipants,
+    projectName: currentProjectName,
   });
 });
 
 app.listen(PORT, () => {
   console.log(`🚀 Põe na Tela — Servidor rodando em http://localhost:${PORT}`);
-  console.log(`📡 Conectado ao LiveKit em: ${LIVEKIT_URL}`);
 });

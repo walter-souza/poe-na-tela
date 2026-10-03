@@ -1,11 +1,12 @@
 import { useState, type Dispatch, type SetStateAction } from 'react';
-import { MessageSquare, Tv } from 'lucide-react';
+import { MessageSquare, Tv, Server } from 'lucide-react';
 import { useLiveKit } from './hooks/useLiveKit';
 import { VideoPlayer } from './components/VideoPlayer';
 import { ControlsBar } from './components/ControlsBar';
 import { ChatPanel } from './components/ChatPanel';
 import { StreamHUD } from './components/StreamHUD';
 import { ScreenShareModal } from './components/ScreenShareModal';
+import { ServerMigrationModal } from './components/ServerMigrationModal';
 import { Lobby } from './components/Lobby';
 import { InviteModal } from './components/InviteModal';
 import type { StreamQualityConfig } from './types';
@@ -17,6 +18,9 @@ export function App() {
     roomName: string;
     userName: string;
     isPublisher: boolean;
+    projectId?: string;
+    projectName?: string;
+    passcode?: string;
   } | null>(null);
 
   const [isLoading, setIsLoading] = useState(false);
@@ -24,6 +28,9 @@ export function App() {
   const [isChatOpen, setIsChatOpen] = useState(true);
   const [isHUDOpen, setIsHUDOpen] = useState(false);
   const [isScreenShareModalOpen, setIsScreenShareModalOpen] = useState(false);
+  const [isMigrationModalOpen, setIsMigrationModalOpen] = useState(false);
+  const [migrationReason, setMigrationReason] = useState<'limit_reached' | 'manual'>('limit_reached');
+  const [isMigrating, setIsMigrating] = useState(false);
 
   // Detect room parameter in URL for invite link auto-redirection
   const [inviteRoomName, setInviteRoomName] = useState<string | null>(() => {
@@ -67,6 +74,9 @@ export function App() {
         roomName: data.roomName,
         userName: data.identity,
         isPublisher: data.isPublisher,
+        projectId: data.projectId,
+        projectName: data.projectName,
+        passcode,
       });
 
       // Clean URL search params so the address bar stays clean (without ?room=...)
@@ -111,6 +121,7 @@ export function App() {
   return (
     <StreamRoom
       session={session}
+      setSession={setSession}
       onLeave={handleLeave}
       isChatOpen={isChatOpen}
       setIsChatOpen={setIsChatOpen}
@@ -118,6 +129,12 @@ export function App() {
       setIsHUDOpen={setIsHUDOpen}
       isScreenShareModalOpen={isScreenShareModalOpen}
       setIsScreenShareModalOpen={setIsScreenShareModalOpen}
+      isMigrationModalOpen={isMigrationModalOpen}
+      setIsMigrationModalOpen={setIsMigrationModalOpen}
+      migrationReason={migrationReason}
+      setMigrationReason={setMigrationReason}
+      isMigrating={isMigrating}
+      setIsMigrating={setIsMigrating}
     />
   );
 }
@@ -129,7 +146,20 @@ interface StreamRoomProps {
     roomName: string;
     userName: string;
     isPublisher: boolean;
+    projectId?: string;
+    projectName?: string;
+    passcode?: string;
   };
+  setSession: Dispatch<SetStateAction<{
+    token: string;
+    livekitUrl: string;
+    roomName: string;
+    userName: string;
+    isPublisher: boolean;
+    projectId?: string;
+    projectName?: string;
+    passcode?: string;
+  } | null>>;
   onLeave: () => void;
   isChatOpen: boolean;
   setIsChatOpen: Dispatch<SetStateAction<boolean>>;
@@ -137,10 +167,17 @@ interface StreamRoomProps {
   setIsHUDOpen: Dispatch<SetStateAction<boolean>>;
   isScreenShareModalOpen: boolean;
   setIsScreenShareModalOpen: Dispatch<SetStateAction<boolean>>;
+  isMigrationModalOpen: boolean;
+  setIsMigrationModalOpen: Dispatch<SetStateAction<boolean>>;
+  migrationReason: 'limit_reached' | 'manual';
+  setMigrationReason: Dispatch<SetStateAction<'limit_reached' | 'manual'>>;
+  isMigrating: boolean;
+  setIsMigrating: Dispatch<SetStateAction<boolean>>;
 }
 
 function StreamRoom({
   session,
+  setSession,
   onLeave,
   isChatOpen,
   setIsChatOpen,
@@ -148,7 +185,48 @@ function StreamRoom({
   setIsHUDOpen,
   isScreenShareModalOpen,
   setIsScreenShareModalOpen,
+  isMigrationModalOpen,
+  setIsMigrationModalOpen,
+  migrationReason,
+  setMigrationReason,
+  isMigrating,
+  setIsMigrating,
 }: StreamRoomProps) {
+  // Re-join when migration signal is received from other participants or backend
+  const handleMigrationSignal = async () => {
+    try {
+      setIsMigrating(true);
+      const apiBase = (import.meta.env.VITE_API_URL || '/api').replace(/\/$/, '');
+      const res = await fetch(`${apiBase}/token`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          roomName: session.roomName,
+          participantName: session.userName,
+          isPublisher: session.isPublisher,
+          passcode: session.passcode,
+        }),
+      });
+      const data = await res.json();
+      if (res.ok) {
+        setSession({
+          token: data.token,
+          livekitUrl: data.livekitUrl,
+          roomName: data.roomName,
+          userName: data.identity,
+          isPublisher: data.isPublisher,
+          projectId: data.projectId,
+          projectName: data.projectName,
+          passcode: session.passcode,
+        });
+      }
+    } catch (err) {
+      console.error('Falha ao reconectar após sinal de migração:', err);
+    } finally {
+      setIsMigrating(false);
+    }
+  };
+
   const {
     isScreenSharing,
     isLocalScreenAudioMuted,
@@ -172,15 +250,23 @@ function StreamRoom({
     toggleDeafen,
     sendMessage,
     sendReaction,
+    sendMigrationSignal,
     disconnect,
   } = useLiveKit({
     url: session.livekitUrl,
     token: session.token,
     onDisconnected: onLeave,
+    onMigrationSignal: handleMigrationSignal,
   });
 
-  const handleConfirmScreenShare = (config: StreamQualityConfig) => {
-    startScreenShare(config);
+  const handleConfirmScreenShare = async (config: StreamQualityConfig) => {
+    try {
+      await startScreenShare(config);
+    } catch (err) {
+      // If sharing fails (e.g. quota/bandwidth/permission limits), prompt migration modal
+      setMigrationReason('limit_reached');
+      setIsMigrationModalOpen(true);
+    }
   };
 
   const handleToggleScreenShare = () => {
@@ -188,6 +274,59 @@ function StreamRoom({
       stopScreenShare();
     } else {
       setIsScreenShareModalOpen(true);
+    }
+  };
+
+  const handleExecuteMigration = async () => {
+    setIsMigrating(true);
+    try {
+      const apiBase = (import.meta.env.VITE_API_URL || '/api').replace(/\/$/, '');
+      const res = await fetch(`${apiBase}/room/migrate`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          roomName: session.roomName,
+          passcode: session.passcode,
+        }),
+      });
+
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.error || 'Falha ao migrar sala');
+      }
+
+      // Broadcast signal to everyone in the room
+      await sendMigrationSignal(data.targetProjectId);
+
+      // Fetch new token for self on the target project
+      const tokenRes = await fetch(`${apiBase}/token`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          roomName: session.roomName,
+          participantName: session.userName,
+          isPublisher: session.isPublisher,
+          passcode: session.passcode,
+        }),
+      });
+      const tokenData = await tokenRes.json();
+
+      setSession({
+        token: tokenData.token,
+        livekitUrl: tokenData.livekitUrl,
+        roomName: tokenData.roomName,
+        userName: tokenData.identity,
+        isPublisher: tokenData.isPublisher,
+        projectId: tokenData.projectId,
+        projectName: tokenData.projectName,
+        passcode: session.passcode,
+      });
+
+      setIsMigrationModalOpen(false);
+    } catch (err: any) {
+      alert(`Erro na migração: ${err.message}`);
+    } finally {
+      setIsMigrating(false);
     }
   };
 
@@ -220,15 +359,29 @@ function StreamRoom({
             onToggleLocalScreenAudio={toggleLocalScreenAudio}
           />
 
-          {/* Centered Room Name at top */}
-          <div className="absolute top-6 inset-x-0 mx-auto w-fit z-20 pointer-events-none flex items-center justify-center">
+          {/* Centered Room Name & Server Badge at top */}
+          <div className="absolute top-6 inset-x-0 mx-auto w-fit z-20 pointer-events-none flex items-center justify-center gap-2">
             <div className="pointer-events-auto flex items-center gap-2 px-3.5 py-2 rounded-2xl bg-[#11131c]/90 border border-white/15 text-white text-xs font-semibold shadow-2xl backdrop-blur-md select-none">
               <Tv className="w-3.5 h-3.5 text-indigo-400" />
               <span className="text-gray-400 font-medium">Sala:</span>
-              <span className="font-bold text-white tracking-wide max-w-[200px] sm:max-w-xs md:max-w-md truncate">
+              <span className="font-bold text-white tracking-wide max-w-[180px] sm:max-w-xs truncate">
                 {session.roomName}
               </span>
             </div>
+
+            {session.projectName && (
+              <button
+                onClick={() => {
+                  setMigrationReason('manual');
+                  setIsMigrationModalOpen(true);
+                }}
+                title="Clique para alternar o servidor da sala"
+                className="pointer-events-auto hidden sm:flex items-center gap-1.5 px-3 py-2 rounded-2xl bg-[#11131c]/90 hover:bg-amber-500/10 border border-white/15 hover:border-amber-500/30 text-amber-300 text-xs font-semibold shadow-2xl backdrop-blur-md transition cursor-pointer"
+              >
+                <Server className="w-3.5 h-3.5 text-amber-400" />
+                <span>{session.projectName}</span>
+              </button>
+            )}
           </div>
 
           {!isChatOpen && (
@@ -270,10 +423,15 @@ function StreamRoom({
         isChatOpen={isChatOpen}
         isHUDOpen={isHUDOpen}
         roomName={session.roomName}
+        projectName={session.projectName}
         onToggleMic={toggleMic}
         onToggleDeafen={toggleDeafen}
         onToggleScreenShare={handleToggleScreenShare}
         onOpenScreenShareConfig={() => setIsScreenShareModalOpen(true)}
+        onOpenMigrationModal={() => {
+          setMigrationReason('manual');
+          setIsMigrationModalOpen(true);
+        }}
         onToggleChat={() => setIsChatOpen(!isChatOpen)}
         onToggleHUD={() => setIsHUDOpen(!isHUDOpen)}
         onLeave={handleExitRoom}
@@ -283,6 +441,15 @@ function StreamRoom({
         isOpen={isScreenShareModalOpen}
         onClose={() => setIsScreenShareModalOpen(false)}
         onConfirm={handleConfirmScreenShare}
+      />
+
+      <ServerMigrationModal
+        isOpen={isMigrationModalOpen}
+        onClose={() => setIsMigrationModalOpen(false)}
+        onConfirm={handleExecuteMigration}
+        isLoading={isMigrating}
+        currentServerName={session.projectName || 'Servidor Atual'}
+        reason={migrationReason}
       />
     </div>
   );
