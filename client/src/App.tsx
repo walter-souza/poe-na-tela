@@ -266,6 +266,7 @@ function StreamRoom({
   } = useLiveKit({
     url: session.livekitUrl,
     token: session.token,
+    projectName: session.projectName,
     onDisconnected: onLeave,
     onMigrationSignal: handleMigrationSignal,
     onQuotaExceeded: () => {
@@ -323,8 +324,12 @@ function StreamRoom({
 
       const data = await res.json();
 
-      // Broadcast signal to everyone in the room
-      await sendMigrationSignal(data.targetProjectId);
+      // Broadcast signal to everyone in the room with source and destination server names
+      await sendMigrationSignal({
+        targetProjectId: data.targetProjectId,
+        fromProjectName: session.projectName,
+        toProjectName: data.targetProjectName,
+      });
 
       // Fetch new token for self on the target project
       const tokenRes = await fetch(`${apiBase}/token`, {

@@ -13,12 +13,13 @@ import type { StreamQualityConfig, StreamStats, ChatMessage, ReactionEvent, Part
 export interface UseLiveKitOptions {
   url: string;
   token: string;
+  projectName?: string;
   onDisconnected?: () => void;
-  onMigrationSignal?: (targetProjectId?: string) => void;
+  onMigrationSignal?: (targetProjectId?: string, fromProjectName?: string, toProjectName?: string) => void;
   onQuotaExceeded?: (reason?: string) => void;
 }
 
-export function useLiveKit({ url, token, onDisconnected, onMigrationSignal, onQuotaExceeded }: UseLiveKitOptions) {
+export function useLiveKit({ url, token, projectName, onDisconnected, onMigrationSignal, onQuotaExceeded }: UseLiveKitOptions) {
   const roomRef = useRef<Room | null>(null);
   const onDisconnectedRef = useRef(onDisconnected);
   onDisconnectedRef.current = onDisconnected;
@@ -42,6 +43,8 @@ export function useLiveKit({ url, token, onDisconnected, onMigrationSignal, onQu
   const hasShownInitialWelcomeRef = useRef<boolean>(false);
   const knownParticipantsRef = useRef<Set<string>>(new Set());
   const isMigratingRef = useRef<boolean>(false);
+  const previousProjectNameRef = useRef<string | undefined>(projectName);
+  const lastMigrationInfoRef = useRef<{ fromProjectName?: string; toProjectName?: string } | null>(null);
 
   const [connectionState, setConnectionState] = useState<ConnectionState>(ConnectionState.Disconnected);
   const [isScreenSharing, setIsScreenSharing] = useState<boolean>(false);
@@ -331,16 +334,29 @@ export function useLiveKit({ url, token, onDisconnected, onMigrationSignal, onQu
           },
         ]);
       } else {
+        const fromName = lastMigrationInfoRef.current?.fromProjectName || previousProjectNameRef.current;
+        const toName = lastMigrationInfoRef.current?.toProjectName || projectName;
+
+        const migrationText = fromName && toName && fromName !== toName
+          ? `🔄 Sala transferida de ${fromName} para ${toName} com sucesso`
+          : toName
+          ? `🔄 Sala conectada a ${toName} com sucesso`
+          : '🔄 Sala transferida para o novo servidor com sucesso';
+
         setMessages((prev) => [
           ...prev,
           {
             id: `system-migrated-${Date.now()}`,
             sender: 'Sistema',
-            text: '🔄 Sala conectada ao servidor com sucesso',
+            text: migrationText,
             timestamp: Date.now(),
             isSystem: true,
           },
         ]);
+
+        lastMigrationInfoRef.current = null;
+        previousProjectNameRef.current = projectName;
+
         setTimeout(() => {
           isMigratingRef.current = false;
         }, 3000);
@@ -569,7 +585,13 @@ export function useLiveKit({ url, token, onDisconnected, onMigrationSignal, onQu
           });
         } else if (data.type === 'MIGRATE_ROOM') {
           isMigratingRef.current = true;
-          onMigrationSignalRef.current?.(data.targetProjectId);
+          if (data.fromProjectName || data.toProjectName) {
+            lastMigrationInfoRef.current = {
+              fromProjectName: data.fromProjectName,
+              toProjectName: data.toProjectName,
+            };
+          }
+          onMigrationSignalRef.current?.(data.targetProjectId, data.fromProjectName, data.toProjectName);
         }
       } catch (err) {
         console.error('Failed to parse received data channel payload', err);
@@ -991,16 +1013,29 @@ export function useLiveKit({ url, token, onDisconnected, onMigrationSignal, onQu
     });
   };
 
-  const sendMigrationSignal = async (targetProjectId?: string) => {
+  const sendMigrationSignal = async (
+    payloadData?: string | { targetProjectId?: string; fromProjectName?: string; toProjectName?: string }
+  ) => {
     const room = roomRef.current;
     if (!room) return;
     try {
-      const payload = new TextEncoder().encode(
-        JSON.stringify({
-          type: 'MIGRATE_ROOM',
-          targetProjectId,
-        })
-      );
+      const dataObj = typeof payloadData === 'string'
+        ? { type: 'MIGRATE_ROOM', targetProjectId: payloadData }
+        : {
+            type: 'MIGRATE_ROOM',
+            targetProjectId: payloadData?.targetProjectId,
+            fromProjectName: payloadData?.fromProjectName,
+            toProjectName: payloadData?.toProjectName,
+          };
+
+      if (dataObj.fromProjectName || dataObj.toProjectName) {
+        lastMigrationInfoRef.current = {
+          fromProjectName: dataObj.fromProjectName,
+          toProjectName: dataObj.toProjectName,
+        };
+      }
+
+      const payload = new TextEncoder().encode(JSON.stringify(dataObj));
       await room.localParticipant.publishData(payload, { reliable: true });
     } catch (e) {
       console.warn('Could not broadcast migration signal:', e);
