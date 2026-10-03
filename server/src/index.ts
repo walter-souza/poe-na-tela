@@ -9,6 +9,11 @@ const app = express();
 const PORT = process.env.PORT || 3001;
 
 const LIVEKIT_URL = process.env.LIVEKIT_URL || 'ws://127.0.0.1:7880';
+const LIVEKIT_INTERNAL_URL =
+  process.env.LIVEKIT_INTERNAL_URL ||
+  (LIVEKIT_URL.startsWith('ws://127.0.0.1') || LIVEKIT_URL.startsWith('http://127.0.0.1')
+    ? 'http://127.0.0.1:7880'
+    : 'http://127.0.0.1:7880');
 const LIVEKIT_API_KEY = process.env.LIVEKIT_API_KEY || 'devkey';
 const LIVEKIT_API_SECRET = process.env.LIVEKIT_API_SECRET || 'secret';
 
@@ -37,7 +42,7 @@ interface RoomConfig {
 const roomStore = new Map<string, RoomConfig>();
 
 const roomService = new RoomServiceClient(
-  LIVEKIT_URL.replace('ws://', 'http://').replace('wss://', 'https://'),
+  LIVEKIT_INTERNAL_URL,
   LIVEKIT_API_KEY,
   LIVEKIT_API_SECRET
 );
@@ -212,9 +217,9 @@ app.get(['/api/rooms', '/rooms'], async (_req: Request, res: Response) => {
       creationTime: Number(r.creationTime),
       hasPasscode: roomStore.has(r.name) && Boolean(roomStore.get(r.name)?.passcode)
     }));
-    res.json({ rooms: result });
   } catch (err: any) {
-    res.json({ rooms: [], warning: 'LiveKit server might not be running yet' });
+    console.error('Failed to list rooms from LiveKit:', err);
+    res.json({ rooms: [], warning: 'LiveKit server might not be running yet', error: err?.message });
   }
 });
 
