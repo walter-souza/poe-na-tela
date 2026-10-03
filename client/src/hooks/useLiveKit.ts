@@ -38,6 +38,11 @@ export function useLiveKit({ url, token, onDisconnected, onMigrationSignal, onQu
   const wasMicEnabledRef = useRef<boolean>(false);
   const wasScreenSharingRef = useRef<boolean>(false);
 
+  // Suppress duplicate welcome and participant spam across server migrations
+  const hasShownInitialWelcomeRef = useRef<boolean>(false);
+  const knownParticipantsRef = useRef<Set<string>>(new Set());
+  const isMigratingRef = useRef<boolean>(false);
+
   const [connectionState, setConnectionState] = useState<ConnectionState>(ConnectionState.Disconnected);
   const [isScreenSharing, setIsScreenSharing] = useState<boolean>(false);
   const [isLocalScreenAudioMuted, setIsLocalScreenAudioMuted] = useState<boolean>(false);
@@ -313,16 +318,33 @@ export function useLiveKit({ url, token, onDisconnected, onMigrationSignal, onQu
       updateParticipantList(room);
       updateScreenShares(room);
 
-      setMessages((prev) => [
-        ...prev,
-        {
-          id: `system-welcome-${Date.now()}`,
-          sender: 'Sistema',
-          text: 'Você entrou na sala',
-          timestamp: Date.now(),
-          isSystem: true,
-        },
-      ]);
+      if (!hasShownInitialWelcomeRef.current) {
+        hasShownInitialWelcomeRef.current = true;
+        setMessages((prev) => [
+          ...prev,
+          {
+            id: `system-welcome-${Date.now()}`,
+            sender: 'Sistema',
+            text: 'Você entrou na sala',
+            timestamp: Date.now(),
+            isSystem: true,
+          },
+        ]);
+      } else {
+        setMessages((prev) => [
+          ...prev,
+          {
+            id: `system-migrated-${Date.now()}`,
+            sender: 'Sistema',
+            text: '🔄 Sala conectada ao servidor com sucesso',
+            timestamp: Date.now(),
+            isSystem: true,
+          },
+        ]);
+        setTimeout(() => {
+          isMigratingRef.current = false;
+        }, 3000);
+      }
 
       // Attempt unlocking browser audio autoplay
       room.startAudio().catch(() => {});
@@ -546,6 +568,7 @@ export function useLiveKit({ url, token, onDisconnected, onMigrationSignal, onQu
             timestamp: Date.now(),
           });
         } else if (data.type === 'MIGRATE_ROOM') {
+          isMigratingRef.current = true;
           onMigrationSignalRef.current?.(data.targetProjectId);
         }
       } catch (err) {
@@ -557,32 +580,45 @@ export function useLiveKit({ url, token, onDisconnected, onMigrationSignal, onQu
       if (!isSubscribed) return;
       updateParticipantList(room);
       updateScreenShares(room);
-      const name = participant.name || participant.identity || 'Um usuário';
-      setMessages((prev) => [
-        ...prev,
-        {
-          id: `system-join-${Date.now()}-${Math.random()}`,
-          sender: 'Sistema',
-          text: `${name} entrou na sala`,
-          timestamp: Date.now(),
-        },
-      ]);
+
+      const identity = participant.identity;
+      const isAlreadyKnown = knownParticipantsRef.current.has(identity);
+      knownParticipantsRef.current.add(identity);
+
+      if (!isAlreadyKnown && !isMigratingRef.current) {
+        const name = participant.name || participant.identity || 'Um usuário';
+        setMessages((prev) => [
+          ...prev,
+          {
+            id: `system-join-${Date.now()}-${Math.random()}`,
+            sender: 'Sistema',
+            text: `${name} entrou na sala`,
+            timestamp: Date.now(),
+            isSystem: true,
+          },
+        ]);
+      }
     };
 
     const handleParticipantDisconnected = (participant: RemoteParticipant) => {
       if (!isSubscribed) return;
       updateParticipantList(room);
       updateScreenShares(room);
-      const name = participant.name || participant.identity || 'Um usuário';
-      setMessages((prev) => [
-        ...prev,
-        {
-          id: `system-leave-${Date.now()}-${Math.random()}`,
-          sender: 'Sistema',
-          text: `${name} saiu da sala`,
-          timestamp: Date.now(),
-        },
-      ]);
+
+      if (!isMigratingRef.current) {
+        knownParticipantsRef.current.delete(participant.identity);
+        const name = participant.name || participant.identity || 'Um usuário';
+        setMessages((prev) => [
+          ...prev,
+          {
+            id: `system-leave-${Date.now()}-${Math.random()}`,
+            sender: 'Sistema',
+            text: `${name} saiu da sala`,
+            timestamp: Date.now(),
+            isSystem: true,
+          },
+        ]);
+      }
     };
 
     room.on(RoomEvent.Connected, handleConnected);
@@ -973,6 +1009,9 @@ export function useLiveKit({ url, token, onDisconnected, onMigrationSignal, onQu
 
   const handleManualDisconnect = () => {
     isExplicitDisconnectRef.current = true;
+    hasShownInitialWelcomeRef.current = false;
+    knownParticipantsRef.current.clear();
+    isMigratingRef.current = false;
     savedScreenVideoTrackRef.current?.stop();
     savedScreenAudioTrackRef.current?.stop();
     savedScreenVideoTrackRef.current = null;
