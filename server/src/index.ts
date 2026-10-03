@@ -68,7 +68,7 @@ function sanitizeUserName(name: string): string {
 /**
  * Health check & status endpoint (reports maintenance status)
  */
-app.get(['/api/health', '/api/status'], (_req: Request, res: Response) => {
+app.get(['/api/health', '/api/status', '/health', '/status'], (_req: Request, res: Response) => {
   const maintenance = isMaintenanceMode();
   res.json({
     status: maintenance ? 'maintenance' : 'ok',
@@ -83,7 +83,7 @@ app.get(['/api/health', '/api/status'], (_req: Request, res: Response) => {
 /**
  * Generate a secure JWT AccessToken to join a LiveKit room
  */
-app.post('/api/token', async (req: Request, res: Response): Promise<void> => {
+app.post(['/api/token', '/token'], async (req: Request, res: Response): Promise<void> => {
   try {
     const { roomName, participantName, isPublisher, passcode, bypassToken } = req.body;
 
@@ -188,7 +188,7 @@ app.post('/api/token', async (req: Request, res: Response): Promise<void> => {
 /**
  * List active rooms with live participant counts and passcode flags
  */
-app.get('/api/rooms', async (_req: Request, res: Response) => {
+app.get(['/api/rooms', '/rooms'], async (_req: Request, res: Response) => {
   if (isMaintenanceMode()) {
     res.json({ rooms: [], maintenance: true });
     return;
@@ -221,7 +221,7 @@ app.get('/api/rooms', async (_req: Request, res: Response) => {
 /**
  * Check if a room exists, requires a password, or has active viewers
  */
-app.get('/api/room/:roomName/info', async (req: Request, res: Response) => {
+app.get(['/api/room/:roomName/info', '/room/:roomName/info'], async (req: Request, res: Response) => {
   const roomName = sanitizeRoomName(req.params.roomName);
   let numParticipants = 0;
   let isActive = false;
