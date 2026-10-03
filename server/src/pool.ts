@@ -22,9 +22,18 @@ export interface RoomMetadata {
   createdAt: number;
 }
 
+interface ProjectHealthStatus {
+  healthy: boolean;
+  checkedAt: number;
+  statusCode?: number;
+  reason?: string;
+}
+
 export class LiveKitPoolManager {
   private projects: Map<string, LiveKitProjectConfig> = new Map();
   private roomMetadataStore: Map<string, RoomMetadata> = new Map();
+  private healthCache: Map<string, ProjectHealthStatus> = new Map();
+  private static HEALTH_CACHE_TTL_MS = 30_000; // 30 seconds cache
 
   constructor() {
     this.loadProjectsFromEnv();
@@ -32,16 +41,11 @@ export class LiveKitPoolManager {
 
   /**
    * Load projects dynamically from environment variables.
-   * Supports:
-   * 1. Indexed: LIVEKIT_1_URL, LIVEKIT_1_API_KEY, LIVEKIT_1_API_SECRET, LIVEKIT_1_NAME, LIVEKIT_1_MAX_PARTICIPANTS
-   *             LIVEKIT_2_URL, LIVEKIT_2_API_KEY, ...
-   * 2. Single/Legacy fallback: LIVEKIT_URL, LIVEKIT_API_KEY, LIVEKIT_API_SECRET
    */
   public loadProjectsFromEnv(): void {
     this.projects.clear();
     let index = 1;
 
-    // Check for indexed projects LIVEKIT_1_..., LIVEKIT_2_...
     while (true) {
       const url = process.env[`LIVEKIT_${index}_URL`];
       const apiKey = process.env[`LIVEKIT_${index}_API_KEY`];
@@ -114,53 +118,132 @@ export class LiveKitPoolManager {
   }
 
   /**
+   * Fast proactive health & quota validation via LiveKit Cloud /rtc/v1/validate.
+   * Catches HTTP 429 (Bandwidth/usage exceeded), rate limits, or connection errors in milliseconds.
+   */
+  public async validateProjectHealth(
+    project: LiveKitProjectConfig,
+    force = false
+  ): Promise<{ healthy: boolean; reason?: string }> {
+    const cached = this.healthCache.get(project.id);
+    const now = Date.now();
+    if (!force && cached && now - cached.checkedAt < LiveKitPoolManager.HEALTH_CACHE_TTL_MS) {
+      return { healthy: cached.healthy, reason: cached.reason };
+    }
+
+    try {
+      // 1. Generate quick validation token
+      const probeToken = await this.createAccessToken(project, '__health_probe__', '__probe_user__', false);
+
+      // 2. Call LiveKit /rtc/v1/validate endpoint
+      const httpBase = project.url.replace('ws://', 'http://').replace('wss://', 'https://').replace(/\/$/, '');
+      const validateUrl = `${httpBase}/rtc/v1/validate?access_token=${encodeURIComponent(probeToken)}`;
+
+      const response = await fetch(validateUrl, {
+        method: 'GET',
+        signal: AbortSignal.timeout(2500),
+      });
+
+      const responseText = await response.text().catch(() => '');
+
+      if (response.status === 200) {
+        this.healthCache.set(project.id, {
+          healthy: true,
+          checkedAt: now,
+          statusCode: 200,
+        });
+        return { healthy: true };
+      }
+
+      // Check if 429 or quota limit
+      const isQuotaExceeded =
+        response.status === 429 ||
+        response.status === 402 ||
+        responseText.toLowerCase().includes('bandwidth') ||
+        responseText.toLowerCase().includes('exceeded') ||
+        responseText.toLowerCase().includes('quota') ||
+        responseText.toLowerCase().includes('limit');
+
+      const reason = responseText || `HTTP ${response.status} ${response.statusText}`;
+
+      this.healthCache.set(project.id, {
+        healthy: !isQuotaExceeded && response.status < 500,
+        checkedAt: now,
+        statusCode: response.status,
+        reason,
+      });
+
+      if (isQuotaExceeded) {
+        console.warn(`⚠️ [LiveKit Pool] Projeto [${project.id}] "${project.name}" atingiu limite/cota (429): ${reason}`);
+        return { healthy: false, reason };
+      }
+
+      return { healthy: true };
+    } catch (err: any) {
+      console.warn(`⚠️ [LiveKit Pool] Falha na sonda de validação do projeto [${project.id}] "${project.name}":`, err.message);
+      return { healthy: true, reason: err.message };
+    }
+  }
+
+  /**
    * Get project for a room:
-   * 1. If room already exists in metadata store or active on a server, reuse that project.
-   * 2. If new room, route to first project with available capacity.
+   * 1. If room already exists in metadata store or active on a server, verify its health.
+   *    If unhealthy (429), immediately auto-migrates to a healthy server!
+   * 2. If new room, route to first healthy project with available capacity.
    */
   public async getProjectForRoom(roomName: string): Promise<LiveKitProjectConfig> {
-    // Check if room metadata already has an assigned project
     const existingMeta = this.roomMetadataStore.get(roomName);
     if (existingMeta) {
       const assigned = this.projects.get(existingMeta.projectId);
       if (assigned && assigned.isActive) {
-        return assigned;
+        const health = await this.validateProjectHealth(assigned);
+        if (health.healthy) {
+          return assigned;
+        }
+        console.warn(`🔄 [LiveKit Pool] Sala "${roomName}" estava no [${assigned.id}], mas o servidor está com cota excedida (429). Migrando automaticamente...`);
+        return await this.migrateRoom(roomName, undefined, assigned.id);
       }
     }
 
-    // Check if room is active on any of our LiveKit projects
+    // Check if room is active on any LiveKit project
     for (const project of this.getSortedActiveProjects()) {
       try {
         const client = this.getRoomServiceClient(project);
         const liveRooms = await client.listRooms([roomName]);
         if (liveRooms && liveRooms.length > 0 && liveRooms[0].numParticipants > 0) {
-          if (existingMeta) {
-            existingMeta.projectId = project.id;
+          const health = await this.validateProjectHealth(project);
+          if (health.healthy) {
+            if (existingMeta) {
+              existingMeta.projectId = project.id;
+            }
+            return project;
           }
-          return project;
         }
-      } catch {
-        // Continue checking other projects
-      }
+      } catch {}
     }
 
-    // New Room: Find the first project with capacity
+    // New Room: Find the first healthy project with capacity
     const selected = await this.findFirstProjectWithCapacity();
     return selected;
   }
 
   /**
-   * Finds the first project with available participant slots.
+   * Finds the first healthy project with available participant slots.
    */
   public async findFirstProjectWithCapacity(excludeProjectId?: string): Promise<LiveKitProjectConfig> {
     const sorted = this.getSortedActiveProjects().filter(p => p.id !== excludeProjectId);
 
     if (sorted.length === 0) {
-      // If no other projects, return default
       return this.getSortedActiveProjects()[0] || Array.from(this.projects.values())[0];
     }
 
+    // 1. First pass: find project that is BOTH healthy (not 429) and has capacity
     for (const project of sorted) {
+      const health = await this.validateProjectHealth(project);
+      if (!health.healthy) {
+        continue; // Skip exhausted project
+      }
+
       try {
         const client = this.getRoomServiceClient(project);
         const rooms = await client.listRooms();
@@ -170,17 +253,26 @@ export class LiveKitPoolManager {
           return project;
         }
       } catch (err) {
-        console.warn(`[LiveKit Pool] Erro ao checar cota do projeto ${project.id}:`, err);
+        console.warn(`[LiveKit Pool] Erro ao consultar salas no projeto ${project.id}:`, err);
+        return project;
       }
     }
 
-    // Fallback if all are at/over limit: return the next available project in priority
+    // 2. Second pass: find any project that is healthy
+    for (const project of sorted) {
+      const health = await this.validateProjectHealth(project);
+      if (health.healthy) {
+        return project;
+      }
+    }
+
+    // Fallback: return the first candidate
     return sorted[0];
   }
 
   /**
-   * Migrate a room to the next available project in the pool.
-   * Cycles through active projects in round-robin order.
+   * Migrate a room to the next available healthy project in the pool.
+   * Cycles through active projects in round-robin order, skipping any with 429 / quota exceeded.
    */
   public async migrateRoom(
     roomName: string,
@@ -220,34 +312,47 @@ export class LiveKitPoolManager {
       }
     }
 
-    // 3. Guaranteed rotation to the next project in cyclic order
-    let nextProject: LiveKitProjectConfig;
-    if (detectedCurrentId) {
-      const currentIndex = activeProjects.findIndex(p => p.id === detectedCurrentId);
-      if (currentIndex >= 0) {
-        const nextIndex = (currentIndex + 1) % activeProjects.length;
-        nextProject = activeProjects[nextIndex];
-      } else {
-        nextProject = activeProjects.find(p => p.id !== detectedCurrentId) || activeProjects[0];
+    // 3. Find next HEALTHY project in cyclic sequence
+    const startIndex = detectedCurrentId
+      ? activeProjects.findIndex(p => p.id === detectedCurrentId)
+      : -1;
+
+    let selectedProject: LiveKitProjectConfig | undefined;
+
+    for (let i = 1; i <= activeProjects.length; i++) {
+      const candidateIndex = (Math.max(0, startIndex) + i) % activeProjects.length;
+      const candidate = activeProjects[candidateIndex];
+
+      if (candidate.id === detectedCurrentId && activeProjects.length > 1) {
+        continue;
       }
-    } else {
-      nextProject = activeProjects[1] || activeProjects[0];
+
+      const health = await this.validateProjectHealth(candidate);
+      if (health.healthy) {
+        selectedProject = candidate;
+        break;
+      }
+    }
+
+    if (!selectedProject) {
+      const nextIndex = (Math.max(0, startIndex) + 1) % activeProjects.length;
+      selectedProject = activeProjects[nextIndex];
     }
 
     // Update metadata store
     const currentMeta = this.roomMetadataStore.get(roomName);
     if (currentMeta) {
-      currentMeta.projectId = nextProject.id;
+      currentMeta.projectId = selectedProject.id;
     } else {
       this.roomMetadataStore.set(roomName, {
         name: roomName,
-        projectId: nextProject.id,
+        projectId: selectedProject.id,
         createdAt: Date.now(),
       });
     }
 
-    console.log(`🔄 [LiveKit Pool] Sala "${roomName}" migrada de [${detectedCurrentId || 'desconhecido'}] para [${nextProject.id}] ${nextProject.name}`);
-    return nextProject;
+    console.log(`🔄 [LiveKit Pool] Sala "${roomName}" migrada de [${detectedCurrentId || 'desconhecido'}] para [${selectedProject.id}] ${selectedProject.name}`);
+    return selectedProject;
   }
 
   /**

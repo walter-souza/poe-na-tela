@@ -15,15 +15,19 @@ export interface UseLiveKitOptions {
   token: string;
   onDisconnected?: () => void;
   onMigrationSignal?: (targetProjectId?: string) => void;
+  onQuotaExceeded?: (reason?: string) => void;
 }
 
-export function useLiveKit({ url, token, onDisconnected, onMigrationSignal }: UseLiveKitOptions) {
+export function useLiveKit({ url, token, onDisconnected, onMigrationSignal, onQuotaExceeded }: UseLiveKitOptions) {
   const roomRef = useRef<Room | null>(null);
   const onDisconnectedRef = useRef(onDisconnected);
   onDisconnectedRef.current = onDisconnected;
 
   const onMigrationSignalRef = useRef(onMigrationSignal);
   onMigrationSignalRef.current = onMigrationSignal;
+
+  const onQuotaExceededRef = useRef(onQuotaExceeded);
+  onQuotaExceededRef.current = onQuotaExceeded;
 
   const isExplicitDisconnectRef = useRef(false);
 
@@ -326,7 +330,7 @@ export function useLiveKit({ url, token, onDisconnected, onMigrationSignal }: Us
       statsIntervalRef.current = window.setInterval(collectStats, 1000);
     };
 
-    const handleDisconnected = () => {
+    const handleDisconnected = (reason?: any) => {
       if (!isSubscribed) return;
       setConnectionState(ConnectionState.Disconnected);
       setIsScreenSharing(false);
@@ -334,6 +338,17 @@ export function useLiveKit({ url, token, onDisconnected, onMigrationSignal }: Us
       setLocalScreenTrack(null);
       setScreenShares([]);
       if (statsIntervalRef.current) clearInterval(statsIntervalRef.current);
+
+      const reasonStr = String(reason || '').toLowerCase();
+      if (
+        reasonStr.includes('429') ||
+        reasonStr.includes('bandwidth') ||
+        reasonStr.includes('quota') ||
+        reasonStr.includes('exceeded') ||
+        reasonStr.includes('rate limit')
+      ) {
+        onQuotaExceededRef.current?.(reasonStr);
+      }
 
       if (isExplicitDisconnectRef.current) {
         onDisconnectedRef.current?.();
@@ -499,6 +514,18 @@ export function useLiveKit({ url, token, onDisconnected, onMigrationSignal }: Us
       }
       console.error('Error connecting to LiveKit room:', err);
       setConnectionState(ConnectionState.Disconnected);
+
+      const errText = (err?.message || '').toLowerCase();
+      if (
+        errText.includes('429') ||
+        errText.includes('bandwidth') ||
+        errText.includes('quota') ||
+        errText.includes('exceeded') ||
+        errText.includes('rate limit') ||
+        errText.includes('could not connect')
+      ) {
+        onQuotaExceededRef.current?.(err.message);
+      }
     });
 
     return () => {

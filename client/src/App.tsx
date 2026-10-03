@@ -257,6 +257,10 @@ function StreamRoom({
     token: session.token,
     onDisconnected: onLeave,
     onMigrationSignal: handleMigrationSignal,
+    onQuotaExceeded: () => {
+      setMigrationReason('limit_reached');
+      setIsMigrationModalOpen(true);
+    },
   });
 
   const handleConfirmScreenShare = async (config: StreamQualityConfig) => {
