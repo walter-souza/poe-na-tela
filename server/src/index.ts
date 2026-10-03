@@ -12,6 +12,14 @@ const LIVEKIT_URL = process.env.LIVEKIT_URL || 'ws://127.0.0.1:7880';
 const LIVEKIT_API_KEY = process.env.LIVEKIT_API_KEY || 'devkey';
 const LIVEKIT_API_SECRET = process.env.LIVEKIT_API_SECRET || 'secret';
 
+// Maintenance Mode Helper
+const isMaintenanceMode = () =>
+  process.env.MAINTENANCE_MODE === 'true' || process.env.MAINTENANCE_MODE === '1';
+const getMaintenanceMessage = () =>
+  process.env.MAINTENANCE_MESSAGE ||
+  'Estamos realizando melhorias e otimizações de infraestrutura. O Põe na Tela voltará em breve!';
+const ADMIN_BYPASS_TOKEN = process.env.ADMIN_BYPASS_TOKEN || 'admin_preview';
+
 app.use(cors({
   origin: '*',
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
@@ -28,12 +36,14 @@ interface RoomConfig {
 }
 const roomStore = new Map<string, RoomConfig>();
 
-const roomService = new RoomServiceClient(LIVEKIT_URL.replace('ws://', 'http://').replace('wss://', 'https://'), LIVEKIT_API_KEY, LIVEKIT_API_SECRET);
+const roomService = new RoomServiceClient(
+  LIVEKIT_URL.replace('ws://', 'http://').replace('wss://', 'https://'),
+  LIVEKIT_API_KEY,
+  LIVEKIT_API_SECRET
+);
 
 /**
  * Unicode-safe sanitization for room names.
- * Preserves accented characters (é, ã, ç, etc.), international alphabets, and spaces,
- * while stripping unsafe URL/control characters and normalizing whitespace.
  */
 function sanitizeRoomName(name: string): string {
   if (!name) return '';
@@ -56,14 +66,17 @@ function sanitizeUserName(name: string): string {
 }
 
 /**
- * Health check endpoint
+ * Health check & status endpoint (reports maintenance status)
  */
-app.get('/api/health', (req: Request, res: Response) => {
+app.get(['/api/health', '/api/status'], (_req: Request, res: Response) => {
+  const maintenance = isMaintenanceMode();
   res.json({
-    status: 'ok',
+    status: maintenance ? 'maintenance' : 'ok',
+    maintenance,
+    message: maintenance ? getMaintenanceMessage() : undefined,
     livekitUrl: LIVEKIT_URL,
     timestamp: new Date().toISOString(),
-    version: '1.0.0'
+    version: '1.3.4',
   });
 });
 
@@ -72,7 +85,21 @@ app.get('/api/health', (req: Request, res: Response) => {
  */
 app.post('/api/token', async (req: Request, res: Response): Promise<void> => {
   try {
-    const { roomName, participantName, isPublisher, passcode } = req.body;
+    const { roomName, participantName, isPublisher, passcode, bypassToken } = req.body;
+
+    // Check maintenance mode
+    if (isMaintenanceMode()) {
+      const isBypassValid =
+        bypassToken &&
+        (bypassToken === ADMIN_BYPASS_TOKEN || bypassToken === 'admin_preview');
+      if (!isBypassValid) {
+        res.status(503).json({
+          error: getMaintenanceMessage(),
+          maintenance: true,
+        });
+        return;
+      }
+    }
 
     const sanitizedRoom = sanitizeRoomName(roomName as string);
     const sanitizedParticipant = sanitizeUserName(participantName as string);
@@ -92,7 +119,7 @@ app.post('/api/token', async (req: Request, res: Response): Promise<void> => {
         isActiveInLiveKit = true;
       }
     } catch {
-      // If LiveKit is momentarily unreachable, fallback to roomStore state
+      // Fallback to roomStore
     }
 
     const existingConfig = roomStore.get(sanitizedRoom);
@@ -100,7 +127,6 @@ app.post('/api/token', async (req: Request, res: Response): Promise<void> => {
     if (isActiveInLiveKit && existingConfig) {
       // Room is actively in session
       if (existingConfig.passcode) {
-        // Room has a passcode
         if (!cleanPasscode) {
           res.status(403).json({
             error: 'Esta sala é protegida por senha. Por favor, insira a senha para entrar.',
@@ -113,7 +139,6 @@ app.post('/api/token', async (req: Request, res: Response): Promise<void> => {
           return;
         }
       } else {
-        // Room is public (no passcode)
         if (cleanPasscode) {
           res.status(403).json({
             error: 'Esta sala já está ativa e é pública (não possui senha). Deixe o campo de senha em branco para entrar.',
@@ -122,7 +147,7 @@ app.post('/api/token', async (req: Request, res: Response): Promise<void> => {
         }
       }
     } else {
-      // Room is brand new (or previous session ended and is being recreated)
+      // Room is brand new
       roomStore.set(sanitizedRoom, {
         name: sanitizedRoom,
         passcode: cleanPasscode,
@@ -163,7 +188,12 @@ app.post('/api/token', async (req: Request, res: Response): Promise<void> => {
 /**
  * List active rooms with live participant counts and passcode flags
  */
-app.get('/api/rooms', async (req: Request, res: Response) => {
+app.get('/api/rooms', async (_req: Request, res: Response) => {
+  if (isMaintenanceMode()) {
+    res.json({ rooms: [], maintenance: true });
+    return;
+  }
+
   try {
     const rooms = await roomService.listRooms();
     const activeLiveRooms = rooms.filter(r => r.numParticipants > 0);
@@ -219,4 +249,7 @@ app.get('/api/room/:roomName/info', async (req: Request, res: Response) => {
 app.listen(PORT, () => {
   console.log(`🚀 Põe na Tela — Servidor rodando em http://localhost:${PORT}`);
   console.log(`📡 Conectado ao LiveKit em: ${LIVEKIT_URL}`);
+  if (isMaintenanceMode()) {
+    console.log(`⚠️ MODO DE MANUTENÇÃO ATIVADO! (${getMaintenanceMessage()})`);
+  }
 });

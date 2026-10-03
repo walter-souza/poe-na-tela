@@ -1,4 +1,4 @@
-import { useState, type Dispatch, type SetStateAction } from 'react';
+import { useState, useEffect, type Dispatch, type SetStateAction } from 'react';
 import { MessageSquare, Tv } from 'lucide-react';
 import { useLiveKit } from './hooks/useLiveKit';
 import { VideoPlayer } from './components/VideoPlayer';
@@ -6,6 +6,7 @@ import { ControlsBar } from './components/ControlsBar';
 import { ChatPanel } from './components/ChatPanel';
 import { StreamHUD } from './components/StreamHUD';
 import { ScreenShareModal } from './components/ScreenShareModal';
+import { MaintenanceScreen } from './components/MaintenanceScreen';
 import { Lobby } from './components/Lobby';
 import { InviteModal } from './components/InviteModal';
 import type { StreamQualityConfig } from './types';
@@ -24,6 +25,53 @@ export function App() {
   const [isChatOpen, setIsChatOpen] = useState(true);
   const [isHUDOpen, setIsHUDOpen] = useState(false);
   const [isScreenShareModalOpen, setIsScreenShareModalOpen] = useState(false);
+
+  // Maintenance Mode States
+  const [isMaintenance, setIsMaintenance] = useState<boolean>(() => {
+    return import.meta.env.VITE_MAINTENANCE_MODE === 'true' || import.meta.env.VITE_MAINTENANCE_MODE === '1';
+  });
+  const [maintenanceMessage, setMaintenanceMessage] = useState<string>('');
+  const [isCheckingMaintenance, setIsCheckingMaintenance] = useState(false);
+
+  // Admin bypass token check (URL query param ?bypass=... or ?admin=... or sessionStorage)
+  const [adminBypassToken, setAdminBypassToken] = useState<string | null>(() => {
+    const params = new URLSearchParams(window.location.search);
+    const urlBypass = params.get('bypass') || params.get('admin');
+    if (urlBypass) {
+      sessionStorage.setItem('admin_bypass_token', urlBypass);
+      return urlBypass;
+    }
+    return sessionStorage.getItem('admin_bypass_token') || null;
+  });
+
+  // Check health and maintenance mode from API
+  const checkMaintenanceStatus = async () => {
+    setIsCheckingMaintenance(true);
+    try {
+      const apiBase = (import.meta.env.VITE_API_URL || '/api').replace(/\/$/, '');
+      const res = await fetch(`${apiBase}/health`);
+      if (res.ok) {
+        const data = await res.json();
+        if (data.maintenance) {
+          setIsMaintenance(true);
+          if (data.message) setMaintenanceMessage(data.message);
+        } else {
+          // If env var is not forcefully true, set false
+          if (import.meta.env.VITE_MAINTENANCE_MODE !== 'true') {
+            setIsMaintenance(false);
+          }
+        }
+      }
+    } catch {
+      // If backend is completely down or unreachable
+    } finally {
+      setIsCheckingMaintenance(false);
+    }
+  };
+
+  useEffect(() => {
+    checkMaintenanceStatus();
+  }, []);
 
   // Detect room parameter in URL for invite link auto-redirection
   const [inviteRoomName, setInviteRoomName] = useState<string | null>(() => {
@@ -51,6 +99,7 @@ export function App() {
           participantName: userName,
           isPublisher,
           passcode,
+          bypassToken: adminBypassToken,
           createIfMissing: true,
         }),
       });
@@ -58,6 +107,10 @@ export function App() {
       const data = await res.json();
 
       if (!res.ok) {
+        if (data.maintenance) {
+          setIsMaintenance(true);
+          if (data.error) setMaintenanceMessage(data.error);
+        }
         throw new Error(data.error || 'Falha ao entrar na sala');
       }
 
@@ -91,6 +144,24 @@ export function App() {
     window.history.replaceState({}, '', window.location.pathname);
     setInviteRoomName(null);
   };
+
+  const handleAdminBypass = (key: string) => {
+    sessionStorage.setItem('admin_bypass_token', key);
+    setAdminBypassToken(key);
+    setIsMaintenance(false);
+  };
+
+  // If in Maintenance mode and no admin bypass token active, show Maintenance Screen
+  if (isMaintenance && !adminBypassToken) {
+    return (
+      <MaintenanceScreen
+        message={maintenanceMessage}
+        onRetry={checkMaintenanceStatus}
+        isChecking={isCheckingMaintenance}
+        onAdminBypass={handleAdminBypass}
+      />
+    );
+  }
 
   if (!session) {
     return (
