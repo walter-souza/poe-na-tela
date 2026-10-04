@@ -17,9 +17,7 @@ const PORT = process.env.PORT || 3001;
 const LIVEKIT_URL = process.env.LIVEKIT_URL || 'ws://127.0.0.1:7880';
 const LIVEKIT_INTERNAL_URL =
   process.env.LIVEKIT_INTERNAL_URL ||
-  (LIVEKIT_URL.startsWith('ws://127.0.0.1') || LIVEKIT_URL.startsWith('http://127.0.0.1')
-    ? 'http://127.0.0.1:7880'
-    : 'http://127.0.0.1:7880');
+  LIVEKIT_URL.replace(/^ws:\/\//i, 'http://').replace(/^wss:\/\//i, 'https://');
 const LIVEKIT_API_KEY = process.env.LIVEKIT_API_KEY || 'devkey';
 const LIVEKIT_API_SECRET = process.env.LIVEKIT_API_SECRET || 'secret';
 
