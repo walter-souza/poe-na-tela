@@ -3,6 +3,8 @@ import {
   Room,
   RoomEvent,
   Track,
+  LocalVideoTrack,
+  LocalAudioTrack,
   VideoPresets,
   ScreenSharePresets,
   ConnectionState,
@@ -52,6 +54,7 @@ export function useLiveKit({ url, token, onDisconnected }: UseLiveKitOptions) {
   const statsIntervalRef = useRef<number | null>(null);
   const prevStatsRef = useRef<{ bytes: number; frames: number; timestamp: number } | null>(null);
   const currentVolumeRef = useRef<number>(1);
+  const desktopTracksRef = useRef<{ videoTrack?: LocalVideoTrack; audioTrack?: LocalAudioTrack }>({});
 
   // Update screen shares list from room participants
   const updateScreenShares = useCallback((room: Room) => {
@@ -646,6 +649,91 @@ export function useLiveKit({ url, token, onDisconnected }: UseLiveKitOptions) {
           ? { width: 1280, height: 720, frameRate: targetFps }
           : { width: 1920, height: 1080, frameRate: targetFps };
 
+      // 1. Check if running in native Desktop App with selected source
+      if (typeof window !== 'undefined' && window.desktopAPI?.isDesktop && config?.sourceId) {
+        const desktopConstraints: any = {
+          audio: shouldIncludeAudio
+            ? {
+                mandatory: {
+                  chromeMediaSource: 'desktop',
+                },
+              }
+            : false,
+          video: {
+            mandatory: {
+              chromeMediaSource: 'desktop',
+              chromeMediaSourceId: config.sourceId,
+              minWidth: screenResolution.width,
+              maxWidth: screenResolution.width,
+              minHeight: screenResolution.height,
+              maxHeight: screenResolution.height,
+              minFrameRate: targetFps,
+              maxFrameRate: targetFps,
+            },
+          },
+        };
+
+        const mediaStream = await navigator.mediaDevices.getUserMedia(desktopConstraints);
+        const videoMediaTrack = mediaStream.getVideoTracks()[0];
+        const audioMediaTrack = mediaStream.getAudioTracks()[0];
+
+        if (videoMediaTrack) {
+          videoMediaTrack.contentHint = config?.contentHint || 'motion';
+          const localVideoTrack = new LocalVideoTrack(videoMediaTrack);
+
+          await room.localParticipant.publishTrack(localVideoTrack, {
+            name: 'screen_share',
+            source: Track.Source.ScreenShare,
+            videoCodec: (config?.codec as any) || 'h264',
+            videoEncoding: {
+              maxBitrate: targetBitrate,
+              maxFramerate: targetFps,
+              priority: 'high',
+            },
+            simulcast: false,
+          });
+
+          try {
+            const sender = (localVideoTrack as any).sender as RTCRtpSender;
+            if (sender && typeof sender.getParameters === 'function') {
+              const params = sender.getParameters();
+              if (params && 'degradationPreference' in params) {
+                (params as any).degradationPreference = 'maintain-framerate';
+                sender.setParameters(params).catch(() => {});
+              }
+            }
+          } catch (e) {
+            // Non-critical
+          }
+
+          desktopTracksRef.current.videoTrack = localVideoTrack;
+          setLocalScreenTrack(localVideoTrack);
+        }
+
+        if (audioMediaTrack && shouldIncludeAudio) {
+          audioMediaTrack.contentHint = 'music';
+          const localAudioTrack = new LocalAudioTrack(audioMediaTrack);
+
+          await room.localParticipant.publishTrack(localAudioTrack, {
+            name: 'screen_share_audio',
+            source: Track.Source.ScreenShareAudio,
+            audioPreset: { maxBitrate: 192000, priority: 'high' },
+            dtx: false,
+            red: true,
+          });
+
+          desktopTracksRef.current.audioTrack = localAudioTrack;
+        }
+
+        setIsScreenSharing(true);
+        setIsLocalScreenAudioMuted(false);
+        setHostName(room.localParticipant.name || room.localParticipant.identity);
+        startKeepAlive();
+        updateScreenShares(room);
+        return;
+      }
+
+      // 2. Browser Standard getDisplayMedia capture
       await room.localParticipant.setScreenShareEnabled(
         true,
         {
@@ -728,7 +816,24 @@ export function useLiveKit({ url, token, onDisconnected }: UseLiveKitOptions) {
     const room = roomRef.current;
     if (!room) return;
 
-    await room.localParticipant.setScreenShareEnabled(false);
+    if (desktopTracksRef.current.videoTrack || desktopTracksRef.current.audioTrack) {
+      if (desktopTracksRef.current.videoTrack) {
+        try {
+          await room.localParticipant.unpublishTrack(desktopTracksRef.current.videoTrack);
+          desktopTracksRef.current.videoTrack.stop();
+        } catch {}
+      }
+      if (desktopTracksRef.current.audioTrack) {
+        try {
+          await room.localParticipant.unpublishTrack(desktopTracksRef.current.audioTrack);
+          desktopTracksRef.current.audioTrack.stop();
+        } catch {}
+      }
+      desktopTracksRef.current = {};
+    } else {
+      await room.localParticipant.setScreenShareEnabled(false);
+    }
+
     setIsScreenSharing(false);
     setIsLocalScreenAudioMuted(false);
     setLocalScreenTrack(null);
@@ -739,6 +844,13 @@ export function useLiveKit({ url, token, onDisconnected }: UseLiveKitOptions) {
   const toggleLocalScreenAudio = () => {
     const room = roomRef.current;
     if (!room || !room.localParticipant) return;
+
+    if (desktopTracksRef.current.audioTrack?.mediaStreamTrack) {
+      const nextMute = !isLocalScreenAudioMuted;
+      desktopTracksRef.current.audioTrack.mediaStreamTrack.enabled = !nextMute;
+      setIsLocalScreenAudioMuted(nextMute);
+      return;
+    }
 
     const audioPub = room.localParticipant.getTrackPublication(Track.Source.ScreenShareAudio);
     if (audioPub && audioPub.track && audioPub.track.mediaStreamTrack) {

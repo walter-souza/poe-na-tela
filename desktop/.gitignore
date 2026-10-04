@@ -1,0 +1,5 @@
+node_modules
+dist
+dist-installer
+build
+.DS_Store

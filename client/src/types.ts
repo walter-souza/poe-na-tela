@@ -10,6 +10,7 @@ export interface StreamQualityConfig {
   includeAudio: boolean;
   contentHint: 'motion' | 'detail';
   isolateRoomAudio?: boolean; // WebRTC restrictOwnAudio to prevent voice chat loopback
+  sourceId?: string; // Specific window or screen ID in Desktop App
 }
 
 export interface StreamStats {
@@ -68,4 +69,27 @@ export interface ScreenShareItem {
   videoTrack: any; // Track from livekit-client
   audioTrack?: any; // Track from livekit-client
   isLocal: boolean;
+}
+
+export interface DesktopSource {
+  id: string;
+  name: string;
+  thumbnail: string;
+  appIcon?: string | null;
+  display_id?: string;
+}
+
+declare global {
+  interface Window {
+    desktopAPI?: {
+      isDesktop: boolean;
+      getSources: () => Promise<DesktopSource[]>;
+      minimize: () => void;
+      maximize: () => void;
+      close: () => void;
+      setPriority: (priority: 'high' | 'realtime' | 'normal') => Promise<boolean>;
+      registerShortcut: (shortcut: string, actionName: string) => Promise<boolean>;
+      onShortcut: (callback: (action: string) => void) => () => void;
+    };
+  }
 }

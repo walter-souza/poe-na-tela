@@ -1,0 +1,20 @@
+appId: com.poenatela.desktop
+productName: Põe na Tela
+directories:
+  output: dist-installer
+  buildResources: build
+files:
+  - dist/**/*
+  - ../client/dist/**/*
+win:
+  target:
+    - target: nsis
+      arch:
+        - x64
+  requestedExecutionLevel: asInvoker
+nsis:
+  oneClick: false
+  allowToChangeInstallationDirectory: true
+  createDesktopShortcut: true
+  createStartMenuShortcut: true
+  shortcutName: Põe na Tela
