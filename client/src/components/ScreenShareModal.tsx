@@ -122,11 +122,16 @@ export const ScreenShareModal: React.FC<ScreenShareModalProps> = ({
           </div>
 
           {/* User tips banner */}
-          <div className="p-3 bg-white/5 border border-white/5 rounded-xl flex items-start gap-2.5 text-xs text-gray-400">
-            <Info className="w-4 h-4 text-indigo-400 shrink-0 mt-0.5" />
-            <div className="leading-relaxed">
-              <span className="font-semibold text-gray-300">Áudio do Jogo / Filme: </span>
-              Na janela seguinte do navegador, certifique-se de marcar a opção <span className="text-white font-medium">"Compartilhar áudio"</span> para transmitir o som em alta fidelidade estéreo (192 kbps).
+          <div className="p-3.5 bg-indigo-950/20 border border-indigo-500/20 rounded-xl space-y-2 text-xs text-gray-300">
+            <div className="flex items-start gap-2.5">
+              <Info className="w-4 h-4 text-indigo-400 shrink-0 mt-0.5" />
+              <div className="leading-relaxed">
+                <span className="font-semibold text-white">Dica para fluidez em jogos: </span>
+                Configure o jogo em <span className="text-indigo-300 font-medium">"Tela Cheia em Janela / Sem Bordas (Borderless)"</span> e selecione a aba <span className="text-indigo-300 font-medium">"Janela"</span> na próxima tela para evitar que o Windows reduza o FPS ao focar no jogo.
+              </div>
+            </div>
+            <div className="text-[11px] text-gray-400 pl-6 border-t border-white/5 pt-1.5">
+              🔊 <span className="text-gray-300 font-medium">Áudio:</span> Lembre-se de marcar a opção <span className="text-white font-medium">"Compartilhar áudio"</span> no diálogo do navegador.
             </div>
           </div>
         </div>

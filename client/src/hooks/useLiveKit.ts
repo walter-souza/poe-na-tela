@@ -10,6 +10,7 @@ import {
 } from 'livekit-client';
 import type { StreamQualityConfig, StreamStats, ChatMessage, ReactionEvent, ParticipantInfo, ScreenShareItem } from '../types';
 import { playJoinSound, playLeaveSound } from '../utils/soundEffects';
+import { startKeepAlive, stopKeepAlive } from '../utils/keepAlive';
 
 export interface UseLiveKitOptions {
   url: string;
@@ -508,6 +509,7 @@ export function useLiveKit({ url, token, onDisconnected }: UseLiveKitOptions) {
 
     return () => {
       isSubscribed = false;
+      stopKeepAlive();
       if (statsIntervalRef.current) clearInterval(statsIntervalRef.current);
       room.off(RoomEvent.Connected, handleConnected);
       room.off(RoomEvent.Disconnected, handleDisconnected);
@@ -670,6 +672,8 @@ export function useLiveKit({ url, token, onDisconnected }: UseLiveKitOptions) {
           },
           dtx: false,
           red: true,
+          simulcast: false,
+          videoCodec: (config?.codec as any) || 'vp9',
           videoEncoding: {
             maxBitrate: targetBitrate,
             maxFramerate: targetFps,
@@ -689,20 +693,38 @@ export function useLiveKit({ url, token, onDisconnected }: UseLiveKitOptions) {
         if (videoTrackPub.track.mediaStreamTrack) {
           videoTrackPub.track.mediaStreamTrack.contentHint = config?.contentHint || 'motion';
         }
+
+        // Apply maintain-framerate degradation preference to prevent WebRTC from dropping to 10 FPS
+        try {
+          const sender = (videoTrackPub.track as any).sender as RTCRtpSender;
+          if (sender && typeof sender.getParameters === 'function') {
+            const params = sender.getParameters();
+            if (params && 'degradationPreference' in params) {
+              (params as any).degradationPreference = 'maintain-framerate';
+              sender.setParameters(params).catch(() => {});
+            }
+          }
+        } catch (e) {
+          // Non-critical fallback
+        }
+
         setLocalScreenTrack(videoTrackPub.track);
         setIsScreenSharing(true);
         setIsLocalScreenAudioMuted(false);
         setHostName(room.localParticipant.name || room.localParticipant.identity);
+        startKeepAlive();
       }
       updateScreenShares(room);
     } catch (err) {
       console.error('Failed to start screen share:', err);
       setIsScreenSharing(false);
       setIsLocalScreenAudioMuted(false);
+      stopKeepAlive();
     }
   };
 
   const stopScreenShare = async () => {
+    stopKeepAlive();
     const room = roomRef.current;
     if (!room) return;
 
@@ -824,6 +846,7 @@ export function useLiveKit({ url, token, onDisconnected }: UseLiveKitOptions) {
 
   const handleManualDisconnect = () => {
     isExplicitDisconnectRef.current = true;
+    stopKeepAlive();
     roomRef.current?.disconnect();
   };
 
