@@ -1,5 +1,6 @@
 import { app, BrowserWindow, ipcMain, desktopCapturer, globalShortcut } from 'electron';
 import * as path from 'path';
+import * as fs from 'fs';
 import * as os from 'os';
 
 // 1. Enable ultra-high-performance GPU flags and eliminate background throttling
@@ -24,6 +25,56 @@ try {
 
 let mainWindow: BrowserWindow | null = null;
 
+function findProductionIndexPath(): string {
+  const possiblePaths = [
+    path.join(__dirname, '../../client/dist/index.html'),
+    path.join(__dirname, '../client/dist/index.html'),
+    path.join(app.getAppPath(), 'client/dist/index.html'),
+    path.join(app.getAppPath(), '../client/dist/index.html'),
+    path.join(process.resourcesPath, 'client/dist/index.html'),
+  ];
+
+  for (const p of possiblePaths) {
+    if (fs.existsSync(p)) {
+      return p;
+    }
+  }
+  return path.join(__dirname, '../../client/dist/index.html');
+}
+
+async function loadApp(window: BrowserWindow) {
+  const isDev = process.env.NODE_ENV === 'development' || !app.isPackaged;
+  const devUrl = process.env.VITE_DEV_SERVER_URL || 'http://localhost:3000';
+
+  if (isDev) {
+    let retries = 15;
+    const tryLoad = async () => {
+      try {
+        await window.loadURL(devUrl);
+        console.log(`Successfully connected to dev server at ${devUrl}`);
+      } catch (err) {
+        if (retries > 0) {
+          retries--;
+          console.log(`Waiting for Vite dev server at ${devUrl} (${retries} retries left)...`);
+          setTimeout(tryLoad, 700);
+        } else {
+          console.warn(`Could not connect to Vite dev server, falling back to compiled files...`);
+          const prodPath = findProductionIndexPath();
+          window.loadFile(prodPath).catch((loadErr) => {
+            console.error('Failed to load local HTML file:', loadErr);
+          });
+        }
+      }
+    };
+    tryLoad();
+  } else {
+    const prodPath = findProductionIndexPath();
+    window.loadFile(prodPath).catch((err) => {
+      console.error('Failed to load production HTML:', err);
+    });
+  }
+}
+
 function createWindow() {
   mainWindow = new BrowserWindow({
     width: 1280,
@@ -42,19 +93,15 @@ function createWindow() {
     },
   });
 
-  const isDev = process.env.NODE_ENV === 'development' || !app.isPackaged;
+  loadApp(mainWindow);
 
-  if (isDev) {
-    const devUrl = process.env.VITE_DEV_SERVER_URL || 'http://localhost:5173';
-    mainWindow.loadURL(devUrl).catch(() => {
-      // If dev server not yet ready, retry shortly
-      setTimeout(() => {
-        mainWindow?.loadURL(devUrl);
-      }, 1500);
-    });
-  } else {
-    mainWindow.loadFile(path.join(__dirname, '../../client/dist/index.html'));
-  }
+  // Shortcut to toggle DevTools (F12 or Ctrl+Shift+I)
+  mainWindow.webContents.on('before-input-event', (event, input) => {
+    if (input.key === 'F12' || (input.control && input.shift && input.key.toLowerCase() === 'i')) {
+      mainWindow?.webContents.toggleDevTools();
+      event.preventDefault();
+    }
+  });
 
   mainWindow.on('closed', () => {
     mainWindow = null;
