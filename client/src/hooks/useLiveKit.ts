@@ -9,6 +9,7 @@ import {
   type RemoteParticipant,
 } from 'livekit-client';
 import type { StreamQualityConfig, StreamStats, ChatMessage, ReactionEvent, ParticipantInfo, ScreenShareItem } from '../types';
+import { playJoinSound, playLeaveSound } from '../utils/soundEffects';
 
 export interface UseLiveKitOptions {
   url: string;
@@ -451,6 +452,11 @@ export function useLiveKit({ url, token, onDisconnected }: UseLiveKitOptions) {
           isSystem: true,
         },
       ]);
+
+      // Play join notification sound if not self and not deafened
+      if (participant.identity !== room.localParticipant?.identity && !isDeafenedRef.current) {
+        playJoinSound();
+      }
     };
 
     const handleParticipantDisconnected = (participant: RemoteParticipant) => {
@@ -468,6 +474,11 @@ export function useLiveKit({ url, token, onDisconnected }: UseLiveKitOptions) {
           isSystem: true,
         },
       ]);
+
+      // Play leave notification sound if not self and not deafened
+      if (participant.identity !== room.localParticipant?.identity && !isDeafenedRef.current) {
+        playLeaveSound();
+      }
     };
 
     room.on(RoomEvent.Connected, handleConnected);
