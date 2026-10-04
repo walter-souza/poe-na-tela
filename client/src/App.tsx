@@ -9,6 +9,7 @@ import { ScreenShareModal } from './components/ScreenShareModal';
 import { MaintenanceScreen } from './components/MaintenanceScreen';
 import { Lobby } from './components/Lobby';
 import { InviteModal } from './components/InviteModal';
+import { getHealthUrl, getTokenUrl } from './utils/api';
 import type { StreamQualityConfig } from './types';
 
 export function App() {
@@ -48,8 +49,7 @@ export function App() {
   const checkMaintenanceStatus = async () => {
     setIsCheckingMaintenance(true);
     try {
-      const apiBase = (import.meta.env.VITE_API_URL || '/api').replace(/\/$/, '');
-      const res = await fetch(`${apiBase}/health`);
+      const res = await fetch(getHealthUrl());
       if (res.ok) {
         const data = await res.json();
         if (data.maintenance) {
@@ -90,8 +90,7 @@ export function App() {
     setError(null);
 
     try {
-      const apiBase = (import.meta.env.VITE_API_URL || '/api').replace(/\/$/, '');
-      const res = await fetch(`${apiBase}/token`, {
+      const res = await fetch(getTokenUrl(), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

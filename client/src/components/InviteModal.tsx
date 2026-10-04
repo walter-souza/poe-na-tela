@@ -13,6 +13,7 @@ import {
   Loader2,
 } from 'lucide-react';
 import { sanitizeRoomName, sanitizeUserName } from '../utils/sanitize';
+import { getRoomInfoUrl } from '../utils/api';
 
 interface InviteModalProps {
   isOpen: boolean;
@@ -65,13 +66,8 @@ export const InviteModal: React.FC<InviteModalProps> = ({
 
     const checkRoom = async () => {
       try {
-        const apiBase = (import.meta.env.VITE_API_URL || '/api').replace(/\/$/, '');
         const cleanRoom = sanitizeRoomName(roomName);
-        const infoUrl = apiBase.endsWith('/api')
-          ? `${apiBase}/room/${encodeURIComponent(cleanRoom)}/info`
-          : `${apiBase}/api/room/${encodeURIComponent(cleanRoom)}/info`;
-
-        const res = await fetch(infoUrl);
+        const res = await fetch(getRoomInfoUrl(cleanRoom));
         if (res.ok) {
           const data = await res.json();
           setRoomInfo({

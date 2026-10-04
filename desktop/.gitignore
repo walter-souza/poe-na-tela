@@ -1,5 +1,6 @@
 node_modules
 dist
 dist-installer
+client-dist
 build
 .DS_Store

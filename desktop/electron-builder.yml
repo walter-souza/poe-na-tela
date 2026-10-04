@@ -5,7 +5,7 @@ directories:
   buildResources: build
 files:
   - dist/**/*
-  - ../client/dist/**/*
+  - client-dist/**/*
 win:
   target:
     - target: nsis

@@ -15,6 +15,7 @@ import {
 import { PasswordModal } from './PasswordModal';
 import { sanitizeRoomName, sanitizeUserName } from '../utils/sanitize';
 import type { FavoriteRoom, ActiveRoomInfo } from '../types';
+import { getRoomsUrl, getRoomInfoUrl } from '../utils/api';
 
 interface LobbyProps {
   onJoin: (roomName: string, userName: string, isPublisher: boolean, passcode?: string) => void;
@@ -57,9 +58,7 @@ export const Lobby: React.FC<LobbyProps> = ({ onJoin, isLoading, error }) => {
   // Fetch active rooms from backend API
   const fetchActiveRooms = async () => {
     try {
-      const apiBase = (import.meta.env.VITE_API_URL || '/api').replace(/\/$/, '');
-      const roomsUrl = apiBase.endsWith('/api') ? `${apiBase}/rooms` : `${apiBase}/api/rooms`;
-      const res = await fetch(roomsUrl);
+      const res = await fetch(getRoomsUrl());
       if (!res.ok) return;
       const data = await res.json();
       if (data.rooms && Array.isArray(data.rooms)) {
@@ -142,11 +141,7 @@ export const Lobby: React.FC<LobbyProps> = ({ onJoin, isLoading, error }) => {
     }
 
     try {
-      const apiBase = (import.meta.env.VITE_API_URL || '/api').replace(/\/$/, '');
-      const infoUrl = apiBase.endsWith('/api')
-        ? `${apiBase}/room/${encodeURIComponent(sanitized)}/info`
-        : `${apiBase}/api/room/${encodeURIComponent(sanitized)}/info`;
-      const res = await fetch(infoUrl);
+      const res = await fetch(getRoomInfoUrl(sanitized));
       if (res.ok) {
         const info = await res.json();
         if (info.hasPasscode) {

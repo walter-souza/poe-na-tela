@@ -27,19 +27,23 @@ let mainWindow: BrowserWindow | null = null;
 
 function findProductionIndexPath(): string {
   const possiblePaths = [
+    path.join(__dirname, '../client-dist/index.html'),
+    path.join(__dirname, '../../client-dist/index.html'),
     path.join(__dirname, '../../client/dist/index.html'),
-    path.join(__dirname, '../client/dist/index.html'),
-    path.join(app.getAppPath(), 'client/dist/index.html'),
-    path.join(app.getAppPath(), '../client/dist/index.html'),
-    path.join(process.resourcesPath, 'client/dist/index.html'),
+    path.join(app.getAppPath(), 'client-dist/index.html'),
+    path.join(app.getAppPath(), 'dist/index.html'),
+    path.join(process.resourcesPath, 'client-dist/index.html'),
+    path.join(process.resourcesPath, 'app.asar/client-dist/index.html'),
   ];
 
   for (const p of possiblePaths) {
     if (fs.existsSync(p)) {
+      console.log('Production index.html located at:', p);
       return p;
     }
   }
-  return path.join(__dirname, '../../client/dist/index.html');
+  console.warn('Fallback index path:', possiblePaths[0]);
+  return possiblePaths[0];
 }
 
 async function loadApp(window: BrowserWindow) {
