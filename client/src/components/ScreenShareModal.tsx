@@ -24,7 +24,7 @@ export const ScreenShareModal: React.FC<ScreenShareModalProps> = ({
       resolution,
       frameRate: 30,
       bitrateKbps: resolution === '4k' ? 14000 : resolution === '1440p' ? 9000 : resolution === '720p' ? 3500 : 6000,
-      codec: 'vp9',
+      codec: 'h264',
       includeAudio: true,
       contentHint,
       isolateRoomAudio,

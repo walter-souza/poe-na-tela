@@ -285,7 +285,7 @@ export function useLiveKit({ url, token, onDisconnected }: UseLiveKitOptions) {
         resolution: VideoPresets.h1080.resolution,
       },
       publishDefaults: {
-        videoCodec: 'vp9',
+        videoCodec: 'h264',
         screenShareEncoding: ScreenSharePresets.h1080fps30.encoding,
         audioPreset: {
           maxBitrate: 192000,
@@ -673,7 +673,7 @@ export function useLiveKit({ url, token, onDisconnected }: UseLiveKitOptions) {
           dtx: false,
           red: true,
           simulcast: false,
-          videoCodec: (config?.codec as any) || 'vp9',
+          videoCodec: (config?.codec as any) || 'h264',
           videoEncoding: {
             maxBitrate: targetBitrate,
             maxFramerate: targetFps,
