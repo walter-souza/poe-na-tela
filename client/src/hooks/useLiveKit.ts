@@ -799,20 +799,43 @@ export function useLiveKit({ url, token, onDisconnected }: UseLiveKitOptions) {
 
       const videoTrackPub = room.localParticipant.getTrackPublication(Track.Source.ScreenShare);
       if (videoTrackPub && videoTrackPub.track) {
-        if (videoTrackPub.track.mediaStreamTrack) {
-          videoTrackPub.track.mediaStreamTrack.contentHint = config?.contentHint || 'motion';
+        const mediaTrack = videoTrackPub.track.mediaStreamTrack;
+        const trackSettings = mediaTrack && typeof mediaTrack.getSettings === 'function' ? mediaTrack.getSettings() : null;
+        const displaySurface = (trackSettings as any)?.displaySurface; // 'monitor' | 'window' | 'browser'
+
+        // Determine effective contentHint and degradation preference:
+        const isDetailMode = config?.contentHint === 'detail';
+        const isWindowOrTab = displaySurface === 'window' || displaySurface === 'browser';
+        const effectiveContentHint = isDetailMode || (isWindowOrTab && !config?.contentHint) ? 'detail' : (config?.contentHint || 'motion');
+
+        if (mediaTrack) {
+          mediaTrack.contentHint = effectiveContentHint;
         }
 
-        // Apply maintain-framerate degradation preference to prevent WebRTC from dropping to 10 FPS
+        // Apply degradation preference & encoding parameters to prevent WebRTC from dropping resolution on windows/tabs
         try {
           const sender = (videoTrackPub.track as any).sender as RTCRtpSender;
           if (sender && typeof sender.getParameters === 'function') {
             const params = sender.getParameters();
             if (params) {
-              params.degradationPreference = 'maintain-framerate';
+              // For detail mode: maintain-resolution guarantees crisp native text and UI.
+              // For window or tab in motion mode: balanced avoids aggressive 480p downscaling.
+              // For full-screen monitor in motion mode: maintain-framerate ensures 30 FPS.
+              if (isDetailMode) {
+                params.degradationPreference = 'maintain-resolution';
+              } else if (isWindowOrTab) {
+                params.degradationPreference = 'balanced';
+              } else {
+                params.degradationPreference = 'maintain-framerate';
+              }
+
               if (params.encodings && params.encodings.length > 0) {
                 params.encodings[0].maxFramerate = 30;
                 params.encodings[0].maxBitrate = targetBitrate;
+                // Force scaleResolutionDownBy = 1.0 to prevent WebRTC from downscaling windows/tabs
+                params.encodings[0].scaleResolutionDownBy = 1.0;
+                params.encodings[0].networkPriority = 'high';
+                params.encodings[0].priority = 'high';
               }
               await sender.setParameters(params);
             }

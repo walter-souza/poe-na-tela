@@ -18,7 +18,7 @@ export const ScreenShareModal: React.FC<ScreenShareModalProps> = ({
   const [resolution, setResolution] = useState<VideoResolution>('1080p');
   const frameRate: VideoFrameRate = 30;
   const [isolateRoomAudio, setIsolateRoomAudio] = useState<boolean>(true);
-  const [contentHint] = useState<'motion' | 'detail'>('motion');
+  const [contentHint, setContentHint] = useState<'motion' | 'detail'>('motion');
 
   // Desktop native source selection
   const [sources, setSources] = useState<DesktopSource[]>([]);
@@ -214,6 +214,54 @@ export const ScreenShareModal: React.FC<ScreenShareModalProps> = ({
             </div>
           </div>
 
+          {/* Optimization Mode (Motion vs Detail) */}
+          <div>
+            <label className="block font-medium text-xs text-gray-400 uppercase tracking-wider mb-2">
+              Modo de Otimização
+            </label>
+            <div className="grid grid-cols-2 gap-3">
+              {[
+                {
+                  id: 'motion' as const,
+                  label: '🎮 Jogos & Vídeo',
+                  badge: '30 FPS',
+                  desc: 'Fluidez contínua, ideal para Jogos e Tela Cheia',
+                },
+                {
+                  id: 'detail' as const,
+                  label: '📑 Janelas & Abas',
+                  badge: 'Ultra Nítido',
+                  desc: 'Nitidez cristalina sem borrão de texto, ideal para Abas e Janelas',
+                },
+              ].map(({ id, label, badge, desc }) => (
+                <button
+                  key={id}
+                  type="button"
+                  onClick={() => setContentHint(id)}
+                  className={`py-2.5 px-3 rounded-xl border text-left transition ${
+                    contentHint === id
+                      ? 'bg-indigo-600/30 border-indigo-500 text-white shadow-md'
+                      : 'bg-white/5 border-white/5 text-gray-400 hover:bg-white/10 hover:text-white'
+                  }`}
+                >
+                  <div className="flex items-center justify-between">
+                    <span className="font-semibold text-xs sm:text-sm text-white">{label}</span>
+                    <span
+                      className={`text-[9px] px-1.5 py-0.2 rounded font-bold uppercase ${
+                        contentHint === id
+                          ? 'bg-indigo-500/40 text-indigo-200'
+                          : 'bg-white/10 text-gray-400'
+                      }`}
+                    >
+                      {badge}
+                    </span>
+                  </div>
+                  <div className="text-[11px] text-gray-400 mt-1 leading-snug">{desc}</div>
+                </button>
+              ))}
+            </div>
+          </div>
+
           {/* Resolution Selection */}
           <div>
             <label className="block font-medium text-xs text-gray-400 uppercase tracking-wider mb-2">
@@ -283,8 +331,8 @@ export const ScreenShareModal: React.FC<ScreenShareModalProps> = ({
               <div className="flex items-start gap-2.5">
                 <Info className="w-4 h-4 text-indigo-400 shrink-0 mt-0.5" />
                 <div className="leading-relaxed">
-                  <span className="font-semibold text-white">Dica para fluidez em jogos no navegador: </span>
-                  Configure o jogo em <span className="text-indigo-300 font-medium">"Janela sem Bordas"</span> e selecione a aba <span className="text-indigo-300 font-medium">"Janela"</span> na próxima tela.
+                  <span className="font-semibold text-white">Dica de Qualidade: </span>
+                  Para transmitir <span className="text-indigo-300 font-medium">Abas do Chrome</span> ou <span className="text-indigo-300 font-medium">Janelas</span> de programas/leitura, selecione o modo <span className="text-indigo-300 font-medium">"Janelas & Abas"</span> acima para manter a nitidez nativa sem compressão agressiva.
                 </div>
               </div>
             </div>
