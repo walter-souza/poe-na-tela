@@ -2,7 +2,7 @@
   "name": "poe-na-tela",
   "version": "1.5.0",
   "private": true,
-  "description": "Põe na Tela! — Plataforma de streaming de jogos em 60 FPS para amigos",
+  "description": "Põe na Tela! — Plataforma de streaming de jogos em 30 FPS para amigos",
   "scripts": {
     "dev:server": "cd server && npm run dev",
     "dev:client": "cd client && npm run dev",

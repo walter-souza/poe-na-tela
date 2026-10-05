@@ -1,7 +1,7 @@
 {
   "name": "poe-na-tela-desktop",
   "version": "1.5.0",
-  "description": "Põe na Tela Desktop - Transmissão de jogos em 60 FPS com aceleração nativa de GPU",
+  "description": "Põe na Tela Desktop - Transmissão de jogos em 30 FPS com aceleração nativa de GPU",
   "main": "dist/main.js",
   "scripts": {
     "dev": "tsc && electron .",
@@ -9,7 +9,7 @@
     "dist": "npm run build && electron-builder --win",
     "pack": "npm run build && electron-builder --dir"
   },
-  "keywords": ["webrtc", "livekit", "gaming", "streaming", "60fps", "electron"],
+  "keywords": ["webrtc", "livekit", "gaming", "streaming", "30fps", "electron"],
   "author": "Põe na Tela",
   "license": "MIT",
   "devDependencies": {

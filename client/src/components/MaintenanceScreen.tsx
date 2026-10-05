@@ -43,7 +43,7 @@ export const MaintenanceScreen: React.FC<MaintenanceScreenProps> = ({
                 Ultra-Baixa Latência
               </span>
             </h1>
-            <p className="text-xs text-gray-400">Streaming de jogos em 60 FPS com amigos</p>
+            <p className="text-xs text-gray-400">Streaming de jogos em 30 FPS com amigos</p>
           </div>
         </div>
 
@@ -82,7 +82,7 @@ export const MaintenanceScreen: React.FC<MaintenanceScreenProps> = ({
           </div>
           <div className="flex items-center gap-2 text-gray-400">
             <span className="text-indigo-400 font-bold">•</span>
-            <span>Otimização de servidores para menor latência em 60 FPS</span>
+            <span>Otimização de servidores para menor latência em 30 FPS</span>
           </div>
           <div className="flex items-center gap-2 text-gray-400">
             <span className="text-indigo-400 font-bold">•</span>

@@ -257,7 +257,7 @@ export function useLiveKit({ url, token, onDisconnected }: UseLiveKitOptions) {
         bitrateKbps: bitrate,
         rttMs: rtt,
         packetLossPercent: parseFloat(packetLoss.toFixed(1)),
-        fps: fps || (totalBytes > 0 ? 60 : 0),
+        fps: fps || (totalBytes > 0 ? 30 : 0),
         width,
         height,
         codec,
@@ -626,19 +626,19 @@ export function useLiveKit({ url, token, onDisconnected }: UseLiveKitOptions) {
     if (!room) return;
 
     try {
-      const targetFps = config?.frameRate || 30;
+      const targetFps = 30;
       const shouldIncludeAudio = config?.includeAudio ?? true;
       const shouldIsolateRoomAudio = config?.isolateRoomAudio ?? true;
 
       const targetBitrate = config?.bitrateKbps
         ? config.bitrateKbps * 1000
         : config?.resolution === '4k'
-        ? 14000000
+        ? 8000000
         : config?.resolution === '1440p'
-        ? 9000000
-        : config?.resolution === '720p'
-        ? 3500000
-        : 6000000;
+        ? 5500000
+        : config?.resolution === '1080p'
+        ? 3600000
+        : 2200000;
 
       const screenResolution =
         config?.resolution === '4k'
@@ -667,13 +667,28 @@ export function useLiveKit({ url, token, onDisconnected }: UseLiveKitOptions) {
               maxWidth: screenResolution.width,
               minHeight: screenResolution.height,
               maxHeight: screenResolution.height,
-              minFrameRate: targetFps,
+              minFrameRate: 30,
               maxFrameRate: targetFps,
             },
+            optional: [
+              { minFrameRate: 30 },
+              { maxFrameRate: targetFps },
+              { frameRate: targetFps },
+            ],
           },
         };
 
-        const mediaStream = await navigator.mediaDevices.getUserMedia(desktopConstraints);
+        let mediaStream: MediaStream;
+        try {
+          mediaStream = await navigator.mediaDevices.getUserMedia(desktopConstraints);
+        } catch (mediaErr) {
+          console.warn('Desktop getUserMedia with audio failed, falling back to video-only capture:', mediaErr);
+          const videoOnlyConstraints: any = {
+            audio: false,
+            video: desktopConstraints.video,
+          };
+          mediaStream = await navigator.mediaDevices.getUserMedia(videoOnlyConstraints);
+        }
         const videoMediaTrack = mediaStream.getVideoTracks()[0];
         const audioMediaTrack = mediaStream.getAudioTracks()[0];
 
@@ -697,9 +712,15 @@ export function useLiveKit({ url, token, onDisconnected }: UseLiveKitOptions) {
             const sender = (localVideoTrack as any).sender as RTCRtpSender;
             if (sender && typeof sender.getParameters === 'function') {
               const params = sender.getParameters();
-              if (params && 'degradationPreference' in params) {
-                (params as any).degradationPreference = 'maintain-framerate';
-                sender.setParameters(params).catch(() => {});
+              if (params) {
+                params.degradationPreference = 'maintain-framerate';
+                if (params.encodings && params.encodings.length > 0) {
+                  params.encodings[0].maxFramerate = targetFps;
+                  params.encodings[0].maxBitrate = targetBitrate;
+                  params.encodings[0].networkPriority = 'high';
+                  params.encodings[0].priority = 'high';
+                }
+                await sender.setParameters(params);
               }
             }
           } catch (e) {
@@ -787,9 +808,13 @@ export function useLiveKit({ url, token, onDisconnected }: UseLiveKitOptions) {
           const sender = (videoTrackPub.track as any).sender as RTCRtpSender;
           if (sender && typeof sender.getParameters === 'function') {
             const params = sender.getParameters();
-            if (params && 'degradationPreference' in params) {
-              (params as any).degradationPreference = 'maintain-framerate';
-              sender.setParameters(params).catch(() => {});
+            if (params) {
+              params.degradationPreference = 'maintain-framerate';
+              if (params.encodings && params.encodings.length > 0) {
+                params.encodings[0].maxFramerate = 30;
+                params.encodings[0].maxBitrate = targetBitrate;
+              }
+              await sender.setParameters(params);
             }
           }
         } catch (e) {

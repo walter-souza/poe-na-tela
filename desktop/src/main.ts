@@ -8,16 +8,28 @@ app.commandLine.appendSwitch('enable-gpu-rasterization');
 app.commandLine.appendSwitch('enable-zero-copy');
 app.commandLine.appendSwitch('ignore-gpu-blocklist');
 app.commandLine.appendSwitch('force-high-performance-gpu');
+app.commandLine.appendSwitch('use-angle', 'd3d11');
 app.commandLine.appendSwitch('disable-background-timer-throttling');
 app.commandLine.appendSwitch('disable-renderer-backgrounding');
 app.commandLine.appendSwitch('disable-backgrounding-occluded-windows');
-app.commandLine.appendSwitch('enable-features', 'WebRTCPipeWireCapturer,WindowsGraphicsCapture');
+app.commandLine.appendSwitch('enable-hardware-overlays', 'single-fullscreen,single-on-top,underlay');
+app.commandLine.appendSwitch('enable-native-gpu-memory-buffers');
+app.commandLine.appendSwitch('enable-webrtc-hw-encoding');
+app.commandLine.appendSwitch('webrtc-max-cpu-consumption-percentage', '100');
+app.commandLine.appendSwitch(
+  'enable-features',
+  'WindowsGraphicsCapture,WebRtcAllowWgcScreenCapturer,WebRtcAllowWgcWindowCapturer,WebRtcAllowWgcZeroHz,AcceleratedVideoEncoder,PlatformHEVCDecoderSupport,DirectCompositionVideoOverlays'
+);
+app.commandLine.appendSwitch(
+  'disable-features',
+  'WebRtcAllowDirectXCapturer,CalculateNativeWinOcclusion,ThrottleDisplayNoneAndVisibilityHiddenFrame'
+);
 
 // Set Process Priority to HIGH on Windows to prevent game focus from starving WebRTC capture
 try {
   if (process.platform === 'win32') {
     os.setPriority(os.constants.priority.PRIORITY_HIGH);
-    console.log('Successfully set Windows process priority to HIGH for smooth 60 FPS streaming.');
+    console.log('Successfully set Windows process priority to HIGH for smooth 30 FPS streaming.');
   }
 } catch (e) {
   console.warn('Could not set process priority:', e);
