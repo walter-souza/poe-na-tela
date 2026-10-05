@@ -8,6 +8,9 @@ import {
   Pin,
   Sparkles,
   User,
+  Eye,
+  EyeOff,
+  Radio,
 } from 'lucide-react';
 import type { ScreenShareItem } from '../types';
 
@@ -39,11 +42,17 @@ export const StreamTile: React.FC<StreamTileProps> = ({
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [isMuted, setIsMuted] = useState(false);
   const [showControls, setShowControls] = useState(false);
+  const [isPreviewPaused, setIsPreviewPaused] = useState(false);
   const hideTimeoutRef = useRef<number | null>(null);
 
-  // Attach and detach video track
+  // Attach and detach video track based on isPreviewPaused
   useEffect(() => {
     if (!videoRef.current || !stream.videoTrack) return;
+
+    if (stream.isLocal && isPreviewPaused) {
+      stream.videoTrack.detach(videoRef.current);
+      return;
+    }
 
     stream.videoTrack.attach(videoRef.current);
 
@@ -52,7 +61,7 @@ export const StreamTile: React.FC<StreamTileProps> = ({
         stream.videoTrack.detach(videoRef.current);
       }
     };
-  }, [stream.videoTrack]);
+  }, [stream.videoTrack, stream.isLocal, isPreviewPaused]);
 
   const handleMouseMove = () => {
     if (isThumbnail) return;
@@ -175,13 +184,35 @@ export const StreamTile: React.FC<StreamTileProps> = ({
         isSpotlighted ? 'border-indigo-500/40 ring-1 ring-indigo-500/30' : 'border-white/10 hover:border-white/20'
       }`}
     >
-      <video
-        ref={videoRef}
-        autoPlay
-        playsInline
-        muted={stream.isLocal}
-        className="w-full h-full object-contain bg-black"
-      />
+      {stream.isLocal && isPreviewPaused ? (
+        <div className="w-full h-full flex flex-col items-center justify-center bg-[#0d1017] text-center p-6 select-none animate-fadeIn">
+          <div className="w-16 h-16 rounded-2xl bg-indigo-500/10 border border-indigo-500/20 flex items-center justify-center text-indigo-400 mb-3 shadow-lg shadow-indigo-500/10">
+            <Radio className="w-8 h-8 animate-pulse text-indigo-400" />
+          </div>
+          <h4 className="text-sm font-bold text-white mb-1">Prévia do Streamer Pausada</h4>
+          <p className="text-xs text-gray-400 max-w-sm mb-4">
+            A renderização local do seu vídeo foi pausada para economizar CPU/GPU e evitar queda de FPS. Seus espectadores continuam assistindo normalmente.
+          </p>
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              setIsPreviewPaused(false);
+            }}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold shadow transition"
+          >
+            <Eye className="w-3.5 h-3.5" />
+            <span>Reativar Prévia</span>
+          </button>
+        </div>
+      ) : (
+        <video
+          ref={videoRef}
+          autoPlay
+          playsInline
+          muted={stream.isLocal}
+          className="w-full h-full object-contain bg-black"
+        />
+      )}
 
       {/* Top Stream Info Badge */}
       <div className="absolute top-2 left-2 sm:top-3 sm:left-3 z-20 flex items-center gap-1.5 sm:gap-2 pointer-events-none">
@@ -269,6 +300,36 @@ export const StreamTile: React.FC<StreamTileProps> = ({
                 <Sparkles className="w-3.5 h-3.5" />
                 <span>Sua Transmissão</span>
               </div>
+
+              {/* Pause / Resume Local Preview Button */}
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setIsPreviewPaused((prev) => !prev);
+                }}
+                className={`flex items-center gap-1.5 backdrop-blur-md px-2.5 py-1.5 rounded-xl border text-xs font-medium transition shadow ${
+                  isPreviewPaused
+                    ? 'bg-amber-500/20 border-amber-500/30 text-amber-300 hover:bg-amber-500/30'
+                    : 'bg-white/10 border-white/15 text-gray-200 hover:bg-white/20'
+                }`}
+                title={
+                  isPreviewPaused
+                    ? 'Reativar prévia local (gasta mais GPU)'
+                    : 'Pausar prévia local (economiza CPU/GPU e aumenta FPS)'
+                }
+              >
+                {isPreviewPaused ? (
+                  <>
+                    <Eye className="w-3.5 h-3.5 text-amber-400" />
+                    <span className="text-[11px] font-semibold">Prévia Pausada</span>
+                  </>
+                ) : (
+                  <>
+                    <EyeOff className="w-3.5 h-3.5 text-gray-300" />
+                    <span className="text-[11px]">Pausar Prévia (Aumenta FPS)</span>
+                  </>
+                )}
+              </button>
 
               {stream.audioTrack && onToggleLocalScreenAudio && (
                 <button
