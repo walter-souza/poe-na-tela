@@ -80,24 +80,24 @@ export const ScreenShareModal: React.FC<ScreenShareModalProps> = ({
   const displayedSources = activeTab === 'screens' ? screenSources : windowSources;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-fadeIn">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/80 backdrop-blur-sm animate-fadeIn">
       <div className="bg-[#13151f] border border-white/10 rounded-2xl w-full max-w-xl shadow-2xl overflow-hidden text-gray-200">
         {/* Header */}
-        <div className="flex items-center justify-between px-6 py-4 border-b border-white/10 bg-white/5">
-          <div className="flex items-center gap-3">
-            <div className="p-2 bg-indigo-500/20 text-indigo-400 rounded-xl">
+        <div className="flex items-center justify-between px-4 sm:px-6 py-3.5 sm:py-4 border-b border-white/10 bg-white/5">
+          <div className="flex items-center gap-2.5 sm:gap-3">
+            <div className="p-2 bg-indigo-500/20 text-indigo-400 rounded-xl shrink-0">
               <Monitor className="w-5 h-5" />
             </div>
             <div>
               <div className="flex items-center gap-2">
-                <h3 className="font-bold text-white text-base">Configurações de Transmissão</h3>
+                <h3 className="font-bold text-white text-sm sm:text-base">Configurações de Transmissão</h3>
                 {isDesktopApp && (
                   <span className="text-[10px] bg-emerald-500/20 text-emerald-300 font-bold px-2 py-0.5 rounded-full border border-emerald-500/30 flex items-center gap-1">
                     <Sparkles className="w-3 h-3" /> APP DESKTOP (30 FPS)
                   </span>
                 )}
               </div>
-              <p className="text-xs text-gray-400">
+              <p className="text-[11px] sm:text-xs text-gray-400">
                 {isDesktopApp
                   ? 'Captura nativa de jogos com aceleração por GPU e taxa fluida'
                   : 'Qualidade de vídeo e isolamento de som para seus amigos'}
@@ -106,13 +106,13 @@ export const ScreenShareModal: React.FC<ScreenShareModalProps> = ({
           </div>
           <button
             onClick={onClose}
-            className="text-gray-400 hover:text-white p-1 rounded-lg hover:bg-white/10 transition"
+            className="text-gray-400 hover:text-white p-1 rounded-lg hover:bg-white/10 transition shrink-0"
           >
             <X className="w-5 h-5" />
           </button>
         </div>
 
-        <div className="p-6 space-y-5 text-sm max-h-[75vh] overflow-y-auto">
+        <div className="p-4 sm:p-6 space-y-4 sm:space-y-5 text-sm max-h-[80vh] sm:max-h-[75vh] overflow-y-auto">
           {/* Desktop Source Picker (Screens / Windows) */}
           {isDesktopApp && (
             <div className="space-y-3">
@@ -292,16 +292,16 @@ export const ScreenShareModal: React.FC<ScreenShareModalProps> = ({
         </div>
 
         {/* Footer */}
-        <div className="flex items-center justify-end gap-3 px-6 py-4 border-t border-white/10 bg-white/5">
+        <div className="flex items-center justify-end gap-2.5 sm:gap-3 px-4 sm:px-6 py-3 sm:py-4 border-t border-white/10 bg-white/5">
           <button
             onClick={onClose}
-            className="px-4 py-2 rounded-xl text-gray-400 hover:text-white hover:bg-white/5 font-medium transition"
+            className="px-3 sm:px-4 py-2 rounded-xl text-gray-400 hover:text-white hover:bg-white/5 font-medium text-xs sm:text-sm transition"
           >
             Cancelar
           </button>
           <button
             onClick={handleStart}
-            className="px-6 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-semibold shadow-lg shadow-indigo-600/30 transition flex items-center gap-2"
+            className="px-4 sm:px-6 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-semibold text-xs sm:text-sm shadow-lg shadow-indigo-600/30 transition flex items-center gap-1.5 sm:gap-2"
           >
             <Zap className="w-4 h-4" />
             <span>Iniciar Transmissão ({frameRate} FPS)</span>

@@ -249,26 +249,26 @@ export const Lobby: React.FC<LobbyProps> = ({ onJoin, isLoading, error }) => {
     : false;
 
   return (
-    <div className="min-h-screen bg-[#090a0f] text-gray-100 flex flex-col justify-center items-center p-4 sm:p-6 relative overflow-hidden">
+    <div className="min-h-screen min-h-[100dvh] bg-[#090a0f] text-gray-100 flex flex-col justify-start lg:justify-center items-center p-3.5 sm:p-6 py-6 sm:py-8 lg:py-6 relative overflow-x-hidden overflow-y-auto lg:overflow-hidden">
       {/* Background Glows */}
       <div className="absolute top-1/4 left-1/4 w-96 h-96 bg-indigo-600/10 rounded-full blur-3xl pointer-events-none" />
       <div className="absolute bottom-1/4 right-1/4 w-96 h-96 bg-purple-600/10 rounded-full blur-3xl pointer-events-none" />
 
       {/* Header Branding */}
-      <div className="w-full max-w-5xl text-center mb-6 z-10">
-        <div className="inline-flex items-center justify-center w-14 h-14 rounded-2xl bg-gradient-to-tr from-indigo-600 to-violet-500 shadow-xl shadow-indigo-600/30 mb-3 glow-active">
-          <Sparkles className="w-7 h-7 text-white" />
+      <div className="w-full max-w-5xl text-center mb-5 sm:mb-6 z-10">
+        <div className="inline-flex items-center justify-center w-12 h-12 sm:w-14 sm:h-14 rounded-2xl bg-gradient-to-tr from-indigo-600 to-violet-500 shadow-xl shadow-indigo-600/30 mb-2.5 sm:mb-3 glow-active">
+          <Sparkles className="w-6 h-6 sm:w-7 sm:h-7 text-white" />
         </div>
-        <h1 className="text-3xl sm:text-4xl font-black text-white tracking-tight">Põe na Tela!</h1>
-        <p className="text-xs sm:text-sm text-gray-400 mt-1">
+        <h1 className="text-2xl sm:text-4xl font-black text-white tracking-tight">Põe na Tela!</h1>
+        <p className="text-xs sm:text-sm text-gray-400 mt-1 max-w-md mx-auto">
           Põe na tela, comandante! Transmissão de tela para amigos com ultra-baixa latência
         </p>
       </div>
 
       {/* Main Container Grid (Standardized Fixed Height Layout) */}
-      <div className="w-full max-w-5xl relative z-10 grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
+      <div className="w-full max-w-5xl relative z-10 grid grid-cols-1 lg:grid-cols-12 gap-5 sm:gap-6 items-start pb-8 lg:pb-0">
         {/* Left Side: Room Entry Form (7 cols - Standard Fixed Height) */}
-        <div className="lg:col-span-7 bg-[#11131a]/90 backdrop-blur-xl border border-white/10 rounded-3xl p-6 sm:p-7 shadow-2xl flex flex-col justify-between lg:h-[510px]">
+        <div className="lg:col-span-7 bg-[#11131a]/90 backdrop-blur-xl border border-white/10 rounded-3xl p-5 sm:p-7 shadow-2xl flex flex-col justify-between lg:h-[510px]">
           {error && (
             <div className="p-3 bg-rose-500/10 border border-rose-500/30 rounded-xl text-xs text-rose-300 flex items-center gap-2 mb-2">
               <span className="font-bold">Erro:</span>
@@ -392,16 +392,16 @@ export const Lobby: React.FC<LobbyProps> = ({ onJoin, isLoading, error }) => {
           </form>
 
           {/* Tech Badges */}
-          <div className="pt-3 border-t border-white/10 grid grid-cols-3 gap-2 text-center text-[11px] text-gray-400 mt-2">
-            <div className="p-1.5 bg-white/5 rounded-lg border border-white/5">
+          <div className="pt-3 border-t border-white/10 grid grid-cols-3 gap-1.5 sm:gap-2 text-center text-[10px] sm:text-[11px] text-gray-400 mt-2">
+            <div className="p-1 sm:p-1.5 bg-white/5 rounded-lg border border-white/5">
               <span className="font-bold text-indigo-300 block">WebRTC SFU</span>
               <span>&lt;200ms</span>
             </div>
-            <div className="p-1.5 bg-white/5 rounded-lg border border-white/5">
+            <div className="p-1 sm:p-1.5 bg-white/5 rounded-lg border border-white/5">
               <span className="font-bold text-emerald-300 block">30 FPS</span>
               <span>Hardware</span>
             </div>
-            <div className="p-1.5 bg-white/5 rounded-lg border border-white/5">
+            <div className="p-1 sm:p-1.5 bg-white/5 rounded-lg border border-white/5">
               <span className="font-bold text-purple-300 block">Stereo Loop</span>
               <span>Som do Jogo</span>
             </div>
@@ -409,7 +409,7 @@ export const Lobby: React.FC<LobbyProps> = ({ onJoin, isLoading, error }) => {
         </div>
 
         {/* Right Side: Favorites List (5 cols - Standard Fixed Height Matching Left) */}
-        <div className="lg:col-span-5 bg-[#11131a]/90 backdrop-blur-xl border border-white/10 rounded-3xl p-6 shadow-2xl flex flex-col lg:h-[510px] space-y-4">
+        <div className="lg:col-span-5 bg-[#11131a]/90 backdrop-blur-xl border border-white/10 rounded-3xl p-5 sm:p-6 shadow-2xl flex flex-col lg:h-[510px] space-y-4">
           {/* Header */}
           <div className="flex items-center justify-between pb-3 border-b border-white/10 flex-shrink-0">
             <div className="flex items-center gap-2">
@@ -446,7 +446,7 @@ export const Lobby: React.FC<LobbyProps> = ({ onJoin, isLoading, error }) => {
           </form>
 
           {/* Favorites List Items (Fills the remaining area in standard height card with internal scroll) */}
-          <div className="flex-1 min-h-0 space-y-2.5 overflow-y-auto pr-1">
+          <div className="flex-1 min-h-[140px] max-h-[320px] lg:max-h-none min-h-0 space-y-2.5 overflow-y-auto pr-1">
             {favorites.length === 0 ? (
               <div className="p-6 text-center text-gray-500 text-xs border border-dashed border-white/10 rounded-2xl flex flex-col items-center justify-center space-y-2">
                 <Star className="w-8 h-8 text-amber-500/30 stroke-1" />

@@ -132,27 +132,27 @@ export const InviteModal: React.FC<InviteModalProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/85 backdrop-blur-md animate-fadeIn select-none">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/85 backdrop-blur-md animate-fadeIn select-none">
       <div className="bg-[#11131c] border border-indigo-500/20 rounded-3xl w-full max-w-lg shadow-2xl overflow-hidden text-gray-200">
         {/* Header */}
-        <div className="px-6 py-5 border-b border-white/10 bg-gradient-to-r from-indigo-950/40 to-violet-950/20 flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-2xl bg-indigo-600/20 border border-indigo-500/30 flex items-center justify-center text-indigo-400 shadow-lg shadow-indigo-500/10">
+        <div className="px-4 sm:px-6 py-4 sm:py-5 border-b border-white/10 bg-gradient-to-r from-indigo-950/40 to-violet-950/20 flex items-center justify-between">
+          <div className="flex items-center gap-2.5 sm:gap-3">
+            <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-2xl bg-indigo-600/20 border border-indigo-500/30 flex items-center justify-center text-indigo-400 shadow-lg shadow-indigo-500/10 shrink-0">
               <Sparkles className="w-5 h-5" />
             </div>
             <div>
-              <h3 className="font-bold text-white text-base leading-tight">Convite de Transmissão</h3>
-              <p className="text-xs text-gray-400">Você recebeu um link para entrar na sala</p>
+              <h3 className="font-bold text-white text-sm sm:text-base leading-tight">Convite de Transmissão</h3>
+              <p className="text-[11px] sm:text-xs text-gray-400">Você recebeu um link para entrar na sala</p>
             </div>
           </div>
 
-          <div className="px-3 py-1 rounded-full bg-indigo-500/10 border border-indigo-500/30 text-indigo-300 font-mono text-xs font-semibold">
+          <div className="px-2.5 sm:px-3 py-1 rounded-full bg-indigo-500/10 border border-indigo-500/30 text-indigo-300 font-mono text-xs font-semibold max-w-[120px] truncate">
             {roomName}
           </div>
         </div>
 
         {/* Content Body */}
-        <form onSubmit={handleSubmit} className="p-6 space-y-5">
+        <form onSubmit={handleSubmit} className="p-4 sm:p-6 space-y-4 sm:space-y-5">
           {/* Room Status Badge */}
           {isCheckingRoom ? (
             <div className="flex items-center justify-center gap-2 p-3 bg-white/5 border border-white/5 rounded-2xl text-xs text-gray-400">
@@ -258,21 +258,22 @@ export const InviteModal: React.FC<InviteModalProps> = ({
           )}
 
           {/* Action Buttons */}
-          <div className="flex items-center justify-between gap-3 pt-3 border-t border-white/10">
+          <div className="flex items-center justify-between gap-2.5 sm:gap-3 pt-3 border-t border-white/10">
             <button
               type="button"
               onClick={onCancel}
               disabled={isSubmitting}
-              className="flex items-center gap-2 px-4 py-2.5 rounded-2xl text-xs font-medium text-gray-400 hover:text-white hover:bg-white/5 transition"
+              className="flex items-center gap-1.5 sm:gap-2 px-3 sm:px-4 py-2.5 rounded-2xl text-xs font-medium text-gray-400 hover:text-white hover:bg-white/5 transition"
             >
               <ArrowLeft className="w-4 h-4" />
-              <span>Voltar ao Menu Principal</span>
+              <span className="hidden sm:inline">Voltar ao Menu Principal</span>
+              <span className="sm:hidden">Voltar</span>
             </button>
 
             <button
               type="submit"
               disabled={isSubmitting || isCheckingRoom || !userName.trim()}
-              className="flex items-center gap-2 px-6 py-2.5 bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-500 hover:to-violet-500 disabled:opacity-40 text-white font-bold text-xs rounded-2xl shadow-lg shadow-indigo-600/30 transition cursor-pointer"
+              className="flex items-center gap-1.5 sm:gap-2 px-4 sm:px-6 py-2.5 bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-500 hover:to-violet-500 disabled:opacity-40 text-white font-bold text-xs rounded-2xl shadow-lg shadow-indigo-600/30 transition cursor-pointer"
             >
               {isSubmitting ? (
                 <>

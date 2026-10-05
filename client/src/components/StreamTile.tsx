@@ -63,16 +63,43 @@ export const StreamTile: React.FC<StreamTileProps> = ({
     }, 2500);
   };
 
+  const handleToggleControls = () => {
+    if (isThumbnail) return;
+    setShowControls((prev) => !prev);
+    if (hideTimeoutRef.current) clearTimeout(hideTimeoutRef.current);
+    hideTimeoutRef.current = window.setTimeout(() => {
+      setShowControls(false);
+    }, 3500);
+  };
+
   const toggleFullscreen = async (e: React.MouseEvent) => {
     e.stopPropagation();
-    if (!containerRef.current) return;
+    const container = containerRef.current;
+    const video = videoRef.current;
 
-    if (!document.fullscreenElement) {
-      await containerRef.current.requestFullscreen();
-      setIsFullscreen(true);
-    } else {
-      await document.exitFullscreen();
-      setIsFullscreen(false);
+    try {
+      if (container && (container.requestFullscreen || (container as any).webkitRequestFullscreen)) {
+        if (!document.fullscreenElement && !(document as any).webkitFullscreenElement) {
+          if (container.requestFullscreen) {
+            await container.requestFullscreen();
+          } else if ((container as any).webkitRequestFullscreen) {
+            await (container as any).webkitRequestFullscreen();
+          }
+          setIsFullscreen(true);
+        } else {
+          if (document.exitFullscreen) {
+            await document.exitFullscreen();
+          } else if ((document as any).webkitExitFullscreen) {
+            await (document as any).webkitExitFullscreen();
+          }
+          setIsFullscreen(false);
+        }
+      } else if (video && (video as any).webkitEnterFullscreen) {
+        // iOS Safari native video fullscreen
+        (video as any).webkitEnterFullscreen();
+      }
+    } catch (err) {
+      console.warn('Fullscreen request failed:', err);
     }
   };
 
@@ -141,9 +168,10 @@ export const StreamTile: React.FC<StreamTileProps> = ({
   return (
     <div
       ref={containerRef}
+      onClick={handleToggleControls}
       onMouseMove={handleMouseMove}
       onMouseLeave={() => setShowControls(false)}
-      className={`relative w-full h-full bg-black rounded-2xl overflow-hidden flex items-center justify-center border transition-all duration-300 group select-none shadow-2xl ${
+      className={`relative w-full h-full bg-black rounded-2xl overflow-hidden flex items-center justify-center border transition-all duration-300 group select-none shadow-2xl cursor-pointer ${
         isSpotlighted ? 'border-indigo-500/40 ring-1 ring-indigo-500/30' : 'border-white/10 hover:border-white/20'
       }`}
     >
@@ -156,15 +184,15 @@ export const StreamTile: React.FC<StreamTileProps> = ({
       />
 
       {/* Top Stream Info Badge */}
-      <div className="absolute top-3 left-3 z-20 flex items-center gap-2 pointer-events-none">
-        <div className="flex items-center gap-1.5 bg-red-600/90 backdrop-blur-md px-2.5 py-0.5 rounded-full text-white text-[11px] font-bold uppercase tracking-wider shadow">
+      <div className="absolute top-2 left-2 sm:top-3 sm:left-3 z-20 flex items-center gap-1.5 sm:gap-2 pointer-events-none">
+        <div className="flex items-center gap-1 sm:gap-1.5 bg-red-600/90 backdrop-blur-md px-2 sm:px-2.5 py-0.5 rounded-full text-white text-[10px] sm:text-[11px] font-bold uppercase tracking-wider shadow">
           <span className="w-1.5 h-1.5 rounded-full bg-white animate-ping" />
           <span>AO VIVO</span>
         </div>
 
-        <div className="bg-black/60 backdrop-blur-md border border-white/15 px-2.5 py-0.5 rounded-full text-xs text-gray-200 flex items-center gap-1.5 shadow">
+        <div className="bg-black/60 backdrop-blur-md border border-white/15 px-2 sm:px-2.5 py-0.5 rounded-full text-[11px] sm:text-xs text-gray-200 flex items-center gap-1.5 shadow">
           <User className="w-3 h-3 text-indigo-400" />
-          <span className="font-semibold text-white truncate max-w-[140px] sm:max-w-[200px]">
+          <span className="font-semibold text-white truncate max-w-[90px] xs:max-w-[130px] sm:max-w-[200px]">
             {stream.participantName}
           </span>
           {stream.isLocal && (
@@ -177,14 +205,14 @@ export const StreamTile: React.FC<StreamTileProps> = ({
 
       {/* Top Right Pin/Spotlight Button */}
       {onToggleSpotlight && (
-        <div className="absolute top-3 right-3 z-20">
+        <div className="absolute top-2 right-2 sm:top-3 sm:right-3 z-20">
           <button
             onClick={(e) => {
               e.stopPropagation();
               onToggleSpotlight();
             }}
             title={isSpotlighted ? 'Remover destaque' : 'Destacar esta transmissão'}
-            className={`p-2 rounded-xl backdrop-blur-md border transition ${
+            className={`p-1.5 sm:p-2 rounded-xl backdrop-blur-md border transition ${
               isSpotlighted
                 ? 'bg-indigo-600 border-indigo-400 text-white shadow-lg shadow-indigo-600/30'
                 : 'bg-black/60 hover:bg-black/80 border-white/15 text-gray-300 hover:text-white'
@@ -197,12 +225,13 @@ export const StreamTile: React.FC<StreamTileProps> = ({
 
       {/* Bottom Controls Bar (Visible on Hover / In Fullscreen) */}
       <div
-        className={`absolute bottom-0 inset-x-0 bg-gradient-to-t from-black/90 via-black/40 to-transparent p-3 sm:p-4 z-20 transition-opacity duration-300 flex items-center justify-between ${
+        onClick={(e) => e.stopPropagation()}
+        className={`absolute bottom-0 inset-x-0 bg-gradient-to-t from-black/90 via-black/40 to-transparent p-2 sm:p-4 z-20 transition-opacity duration-300 flex items-center justify-between ${
           showControls ? 'opacity-100' : 'opacity-0 pointer-events-none'
         }`}
       >
         {/* Left: Volume Slider per stream or Local Screen Audio Toggle */}
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-1.5 sm:gap-2">
           {!stream.isLocal ? (
             <div className="flex items-center gap-2 bg-black/60 backdrop-blur-md px-2.5 py-1.5 rounded-xl border border-white/15 text-white">
               <button

@@ -96,8 +96,8 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({
   };
 
   return (
-    <div className="w-80 lg:w-96 bg-[#11131a] border-l border-white/10 flex flex-col h-full shadow-2xl">
-      <div className="flex items-center justify-between p-3 border-b border-white/10 bg-white/5">
+    <div className="fixed inset-0 z-50 w-full h-[100dvh] flex flex-col bg-[#11131a] md:relative md:inset-auto md:w-80 lg:w-96 md:h-full md:border-l border-white/10 shadow-2xl">
+      <div className="flex items-center justify-between p-3 border-b border-white/10 bg-white/5 safe-area-top">
         <div className="flex bg-black/40 p-1 rounded-xl border border-white/5">
           <button
             onClick={() => setActiveTab('chat')}
@@ -145,10 +145,11 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({
           {onClose && (
             <button
               onClick={onClose}
-              title="Ocultar Chat"
-              className="p-1.5 rounded-xl text-gray-400 hover:text-white hover:bg-white/10 border border-transparent hover:border-white/10 transition"
+              title="Fechar Chat"
+              className="p-1.5 rounded-xl text-gray-400 hover:text-white hover:bg-white/10 border border-transparent hover:border-white/10 transition flex items-center gap-1"
             >
               <PanelRightClose className="w-4 h-4" />
+              <span className="text-xs font-medium md:hidden">Fechar</span>
             </button>
           )}
         </div>
@@ -316,7 +317,7 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({
       </div>
 
       {activeTab === 'chat' && (
-        <form onSubmit={handleSend} className="p-3 border-t border-white/10 bg-white/5 flex items-center gap-2 relative">
+        <form onSubmit={handleSend} className="p-3 border-t border-white/10 bg-white/5 flex items-center gap-2 relative safe-area-bottom">
           <input
             type="text"
             placeholder="Conversar com amigos..."
@@ -328,7 +329,7 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({
           {/* Emoji Reaction Popover */}
           <div className="relative" ref={emojiPickerRef}>
             {showEmojiPicker && (
-              <div className="absolute bottom-full right-0 mb-3 p-3 bg-[#151722] border border-white/15 rounded-2xl shadow-2xl backdrop-blur-xl z-50 w-64 animate-fadeIn select-none">
+              <div className="absolute bottom-full right-0 mb-3 p-3 bg-[#151722] border border-white/15 rounded-2xl shadow-2xl backdrop-blur-xl z-50 w-64 max-w-[calc(100vw-2rem)] animate-fadeIn select-none">
                 <div className="text-[11px] font-semibold text-gray-400 mb-2 px-1 flex items-center justify-between border-b border-white/5 pb-1.5">
                   <span className="flex items-center gap-1.5">
                     <Sparkles className="w-3.5 h-3.5 text-indigo-400" />

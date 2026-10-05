@@ -25,32 +25,33 @@ export const MaintenanceScreen: React.FC<MaintenanceScreenProps> = ({
   };
 
   return (
-    <div className="min-h-screen w-screen bg-[#07080d] flex flex-col items-center justify-between p-4 sm:p-8 text-gray-100 relative overflow-hidden select-none">
+    <div className="min-h-screen min-h-[100dvh] w-screen bg-[#07080d] flex flex-col items-center justify-between p-4 sm:p-8 text-gray-100 relative overflow-x-hidden overflow-y-auto select-none">
       {/* Background ambient lighting */}
       <div className="absolute top-1/4 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[550px] h-[550px] bg-indigo-600/10 rounded-full blur-[140px] pointer-events-none" />
       <div className="absolute bottom-10 right-10 w-[350px] h-[350px] bg-violet-600/10 rounded-full blur-[120px] pointer-events-none" />
 
       {/* Top Bar Header */}
-      <header className="w-full max-w-5xl flex items-center justify-between z-10">
-        <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-2xl bg-gradient-to-tr from-indigo-600 to-violet-500 flex items-center justify-center text-white shadow-xl shadow-indigo-600/20">
+      <header className="w-full max-w-5xl flex items-center justify-between z-10 gap-2">
+        <div className="flex items-center gap-2.5 sm:gap-3">
+          <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-2xl bg-gradient-to-tr from-indigo-600 to-violet-500 flex items-center justify-center text-white shadow-xl shadow-indigo-600/20 shrink-0">
             <Sparkles className="w-5 h-5" />
           </div>
           <div>
-            <h1 className="text-base font-bold tracking-tight text-white flex items-center gap-2">
+            <h1 className="text-sm sm:text-base font-bold tracking-tight text-white flex items-center gap-1.5 sm:gap-2">
               <span>Põe na Tela</span>
               <span className="text-[10px] bg-indigo-500/20 text-indigo-300 font-semibold px-2 py-0.5 rounded-md border border-indigo-500/30">
                 Ultra-Baixa Latência
               </span>
             </h1>
-            <p className="text-xs text-gray-400">Streaming de jogos em 30 FPS com amigos</p>
+            <p className="text-[11px] sm:text-xs text-gray-400">Streaming de jogos em 30 FPS com amigos</p>
           </div>
         </div>
 
         {/* Live Status Badge */}
-        <div className="flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-amber-500/10 border border-amber-500/20 text-amber-300 text-xs font-semibold shadow-lg backdrop-blur-md">
+        <div className="flex items-center gap-1.5 sm:gap-2 px-2.5 sm:px-3.5 py-1.5 rounded-full bg-amber-500/10 border border-amber-500/20 text-amber-300 text-[11px] sm:text-xs font-semibold shadow-lg backdrop-blur-md shrink-0">
           <span className="w-2 h-2 rounded-full bg-amber-400 animate-ping" />
-          <span>Manutenção Programada</span>
+          <span className="hidden sm:inline">Manutenção Programada</span>
+          <span className="sm:hidden">Manutenção</span>
         </div>
       </header>
 

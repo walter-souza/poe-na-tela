@@ -26,7 +26,7 @@ export const StreamHUD: React.FC<StreamHUDProps> = ({ stats, isOpen, onClose }) 
   const bitrateMbps = (stats.bitrateKbps / 1000).toFixed(2);
 
   return (
-    <div className="absolute top-4 left-4 z-40 bg-black/80 backdrop-blur-md border border-white/10 rounded-xl p-4 text-xs font-mono text-gray-200 shadow-2xl min-w-[280px] transition-all">
+    <div className="absolute top-2 left-2 sm:top-4 sm:left-4 z-40 bg-black/85 backdrop-blur-md border border-white/10 rounded-xl p-3 sm:p-4 text-xs font-mono text-gray-200 shadow-2xl w-[calc(100vw-1rem)] max-w-sm sm:w-auto sm:min-w-[280px] transition-all">
       <div className="flex items-center justify-between pb-2 border-b border-white/10 mb-3">
         <div className="flex items-center gap-2 font-semibold text-indigo-400">
           <Gauge className="w-4 h-4" />
