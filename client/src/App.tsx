@@ -1,15 +1,12 @@
-import { useState, useEffect, type Dispatch, type SetStateAction } from 'react';
-import { MessageSquare, Tv } from 'lucide-react';
+import { useState, type Dispatch, type SetStateAction } from 'react';
 import { useLiveKit } from './hooks/useLiveKit';
 import { VideoPlayer } from './components/VideoPlayer';
 import { ControlsBar } from './components/ControlsBar';
 import { ChatPanel } from './components/ChatPanel';
 import { StreamHUD } from './components/StreamHUD';
 import { ScreenShareModal } from './components/ScreenShareModal';
-import { MaintenanceScreen } from './components/MaintenanceScreen';
 import { Lobby } from './components/Lobby';
 import { InviteModal } from './components/InviteModal';
-import { getHealthUrl, getTokenUrl } from './utils/api';
 import type { StreamQualityConfig } from './types';
 
 export function App() {
@@ -23,60 +20,9 @@ export function App() {
 
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [isChatOpen, setIsChatOpen] = useState(() => {
-    if (typeof window !== 'undefined') {
-      return window.innerWidth >= 768;
-    }
-    return true;
-  });
+  const [isChatOpen, setIsChatOpen] = useState(true);
   const [isHUDOpen, setIsHUDOpen] = useState(false);
   const [isScreenShareModalOpen, setIsScreenShareModalOpen] = useState(false);
-
-  // Maintenance Mode States
-  const [isMaintenance, setIsMaintenance] = useState<boolean>(() => {
-    return import.meta.env.VITE_MAINTENANCE_MODE === 'true' || import.meta.env.VITE_MAINTENANCE_MODE === '1';
-  });
-  const [maintenanceMessage, setMaintenanceMessage] = useState<string>('');
-  const [isCheckingMaintenance, setIsCheckingMaintenance] = useState(false);
-
-  // Admin bypass token check (URL query param ?bypass=... or ?admin=... or sessionStorage)
-  const [adminBypassToken, setAdminBypassToken] = useState<string | null>(() => {
-    const params = new URLSearchParams(window.location.search);
-    const urlBypass = params.get('bypass') || params.get('admin');
-    if (urlBypass) {
-      sessionStorage.setItem('admin_bypass_token', urlBypass);
-      return urlBypass;
-    }
-    return sessionStorage.getItem('admin_bypass_token') || null;
-  });
-
-  // Check health and maintenance mode from API
-  const checkMaintenanceStatus = async () => {
-    setIsCheckingMaintenance(true);
-    try {
-      const res = await fetch(getHealthUrl());
-      if (res.ok) {
-        const data = await res.json();
-        if (data.maintenance) {
-          setIsMaintenance(true);
-          if (data.message) setMaintenanceMessage(data.message);
-        } else {
-          // If env var is not forcefully true, set false
-          if (import.meta.env.VITE_MAINTENANCE_MODE !== 'true') {
-            setIsMaintenance(false);
-          }
-        }
-      }
-    } catch {
-      // If backend is completely down or unreachable
-    } finally {
-      setIsCheckingMaintenance(false);
-    }
-  };
-
-  useEffect(() => {
-    checkMaintenanceStatus();
-  }, []);
 
   // Detect room parameter in URL for invite link auto-redirection
   const [inviteRoomName, setInviteRoomName] = useState<string | null>(() => {
@@ -95,7 +41,8 @@ export function App() {
     setError(null);
 
     try {
-      const res = await fetch(getTokenUrl(), {
+      const apiBase = (import.meta.env.VITE_API_URL || '/api').replace(/\/$/, '');
+      const res = await fetch(`${apiBase}/token`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -103,7 +50,6 @@ export function App() {
           participantName: userName,
           isPublisher,
           passcode,
-          bypassToken: adminBypassToken,
           createIfMissing: true,
         }),
       });
@@ -111,10 +57,6 @@ export function App() {
       const data = await res.json();
 
       if (!res.ok) {
-        if (data.maintenance) {
-          setIsMaintenance(true);
-          if (data.error) setMaintenanceMessage(data.error);
-        }
         throw new Error(data.error || 'Falha ao entrar na sala');
       }
 
@@ -148,24 +90,6 @@ export function App() {
     window.history.replaceState({}, '', window.location.pathname);
     setInviteRoomName(null);
   };
-
-  const handleAdminBypass = (key: string) => {
-    sessionStorage.setItem('admin_bypass_token', key);
-    setAdminBypassToken(key);
-    setIsMaintenance(false);
-  };
-
-  // If in Maintenance mode and no admin bypass token active, show Maintenance Screen
-  if (isMaintenance && !adminBypassToken) {
-    return (
-      <MaintenanceScreen
-        message={maintenanceMessage}
-        onRetry={checkMaintenanceStatus}
-        isChecking={isCheckingMaintenance}
-        onAdminBypass={handleAdminBypass}
-      />
-    );
-  }
 
   if (!session) {
     return (
@@ -226,15 +150,12 @@ function StreamRoom({
 }: StreamRoomProps) {
   const {
     isScreenSharing,
-    isLocalScreenAudioMuted,
     isMicEnabled,
     isDeafened,
     canPlaybackAudio,
     unlockAudio,
     setStreamVolume,
     streamVolumes,
-    setUserVolume,
-    userVolumes,
     screenShares,
     messages,
     participants,
@@ -242,7 +163,6 @@ function StreamRoom({
     reaction,
     startScreenShare,
     stopScreenShare,
-    toggleLocalScreenAudio,
     toggleMic,
     toggleDeafen,
     sendMessage,
@@ -272,9 +192,9 @@ function StreamRoom({
   };
 
   return (
-    <div className="h-screen h-[100dvh] w-screen flex flex-col bg-[#090a0f] text-gray-100 overflow-hidden select-none">
+    <div className="h-screen w-screen flex flex-col bg-[#090a0f] text-gray-100 overflow-hidden select-none">
       <div className="flex-1 flex overflow-hidden relative">
-        <div className="flex-1 flex flex-col p-1 sm:p-3 md:p-4 min-w-0 relative">
+        <div className="flex-1 flex flex-col p-3 sm:p-4 min-w-0 relative">
           <StreamHUD
             stats={stats}
             isOpen={isHUDOpen}
@@ -291,36 +211,7 @@ function StreamRoom({
             canPlaybackAudio={canPlaybackAudio}
             onUnlockAudio={unlockAudio}
             onOpenScreenShareConfig={() => setIsScreenShareModalOpen(true)}
-            isLocalScreenAudioMuted={isLocalScreenAudioMuted}
-            onToggleLocalScreenAudio={toggleLocalScreenAudio}
           />
-
-          {/* Centered Room Name at top */}
-          <div className="absolute top-2 sm:top-6 inset-x-0 mx-auto w-fit z-20 pointer-events-none flex items-center justify-center px-2">
-            <div className="pointer-events-auto flex items-center gap-1.5 sm:gap-2 px-2.5 sm:px-3.5 py-1.5 sm:py-2 rounded-2xl bg-[#11131c]/90 border border-white/15 text-white text-[11px] sm:text-xs font-semibold shadow-2xl backdrop-blur-md select-none">
-              <Tv className="w-3.5 h-3.5 text-indigo-400 shrink-0" />
-              <span className="text-gray-400 font-medium hidden sm:inline">Sala:</span>
-              <span className="font-bold text-white tracking-wide max-w-[100px] xs:max-w-[140px] sm:max-w-xs md:max-w-md truncate">
-                {session.roomName}
-              </span>
-            </div>
-          </div>
-
-          {!isChatOpen && (
-            <button
-              onClick={() => setIsChatOpen(true)}
-              title="Exibir Chat e Participantes"
-              className="absolute top-2 right-2 sm:top-6 sm:right-6 z-30 flex items-center gap-1.5 sm:gap-2 px-2.5 sm:px-3.5 py-1.5 sm:py-2.5 rounded-2xl bg-[#11131c]/90 hover:bg-[#181a26] border border-white/15 text-white text-xs font-semibold shadow-2xl backdrop-blur-md transition-all hover:scale-105 active:scale-95 group cursor-pointer"
-            >
-              <MessageSquare className="w-4 h-4 text-indigo-400 group-hover:text-indigo-300 transition-colors" />
-              <span className="hidden sm:inline">Exibir Chat</span>
-              {messages.length > 0 && (
-                <span className="bg-indigo-600 text-[10px] px-1.5 py-0.2 rounded-full font-bold">
-                  {messages.length}
-                </span>
-              )}
-            </button>
-          )}
         </div>
 
         {isChatOpen && (
@@ -331,9 +222,6 @@ function StreamRoom({
             onSendReaction={sendReaction}
             userName={session.userName}
             roomName={session.roomName}
-            onClose={() => setIsChatOpen(false)}
-            userVolumes={userVolumes}
-            onUserVolumeChange={setUserVolume}
           />
         )}
       </div>

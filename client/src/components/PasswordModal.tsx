@@ -28,31 +28,31 @@ export const PasswordModal: React.FC<PasswordModalProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/80 backdrop-blur-md animate-fadeIn">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md animate-fadeIn">
       <div className="bg-[#13151f] border border-white/10 rounded-3xl w-full max-w-md shadow-2xl overflow-hidden text-gray-200">
         {/* Header */}
-        <div className="flex items-center justify-between px-4 sm:px-6 py-3.5 sm:py-4 border-b border-white/10 bg-white/5">
-          <div className="flex items-center gap-2.5 sm:gap-3">
-            <div className="p-2 sm:p-2.5 bg-amber-500/20 text-amber-400 rounded-2xl shrink-0">
+        <div className="flex items-center justify-between px-6 py-4 border-b border-white/10 bg-white/5">
+          <div className="flex items-center gap-3">
+            <div className="p-2.5 bg-amber-500/20 text-amber-400 rounded-2xl">
               <Lock className="w-5 h-5" />
             </div>
             <div>
-              <h3 className="font-bold text-white text-sm sm:text-base">Sala Protegida por Senha</h3>
-              <p className="text-[11px] sm:text-xs text-gray-400">
+              <h3 className="font-bold text-white text-base">Sala Protegida por Senha</h3>
+              <p className="text-xs text-gray-400">
                 A sala <span className="text-indigo-400 font-semibold">{roomName}</span> requer senha
               </p>
             </div>
           </div>
           <button
             onClick={onClose}
-            className="text-gray-400 hover:text-white p-1 rounded-xl hover:bg-white/10 transition shrink-0"
+            className="text-gray-400 hover:text-white p-1 rounded-xl hover:bg-white/10 transition"
           >
             <X className="w-5 h-5" />
           </button>
         </div>
 
         {/* Content */}
-        <form onSubmit={handleSubmit} className="p-4 sm:p-6 space-y-4">
+        <form onSubmit={handleSubmit} className="p-6 space-y-4">
           {error && (
             <div className="p-3 bg-rose-500/10 border border-rose-500/30 rounded-xl text-xs text-rose-300 flex items-center gap-2">
               <ShieldAlert className="w-4 h-4 flex-shrink-0" />

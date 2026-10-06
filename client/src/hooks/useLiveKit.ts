@@ -3,16 +3,12 @@ import {
   Room,
   RoomEvent,
   Track,
-  LocalVideoTrack,
-  LocalAudioTrack,
   VideoPresets,
   ScreenSharePresets,
   ConnectionState,
   type RemoteParticipant,
 } from 'livekit-client';
 import type { StreamQualityConfig, StreamStats, ChatMessage, ReactionEvent, ParticipantInfo, ScreenShareItem } from '../types';
-import { playJoinSound, playLeaveSound } from '../utils/soundEffects';
-import { startKeepAlive, stopKeepAlive } from '../utils/keepAlive';
 
 export interface UseLiveKitOptions {
   url: string;
@@ -29,7 +25,6 @@ export function useLiveKit({ url, token, onDisconnected }: UseLiveKitOptions) {
 
   const [connectionState, setConnectionState] = useState<ConnectionState>(ConnectionState.Disconnected);
   const [isScreenSharing, setIsScreenSharing] = useState<boolean>(false);
-  const [isLocalScreenAudioMuted, setIsLocalScreenAudioMuted] = useState<boolean>(false);
   const [isMicEnabled, setIsMicEnabled] = useState<boolean>(false);
   const [isDeafened, setIsDeafened] = useState<boolean>(false);
   const isDeafenedRef = useRef<boolean>(false);
@@ -41,10 +36,6 @@ export function useLiveKit({ url, token, onDisconnected }: UseLiveKitOptions) {
   const streamVolumesRef = useRef<Record<string, number>>({});
   streamVolumesRef.current = streamVolumes;
 
-  const [userVolumes, setUserVolumes] = useState<Record<string, number>>({});
-  const userVolumesRef = useRef<Record<string, number>>({});
-  userVolumesRef.current = userVolumes;
-
   const [remoteScreenTrack, setRemoteScreenTrack] = useState<Track | null>(null);
   const [localScreenTrack, setLocalScreenTrack] = useState<Track | null>(null);
   const [stats, setStats] = useState<StreamStats | null>(null);
@@ -54,7 +45,6 @@ export function useLiveKit({ url, token, onDisconnected }: UseLiveKitOptions) {
   const statsIntervalRef = useRef<number | null>(null);
   const prevStatsRef = useRef<{ bytes: number; frames: number; timestamp: number } | null>(null);
   const currentVolumeRef = useRef<number>(1);
-  const desktopTracksRef = useRef<{ videoTrack?: LocalVideoTrack; audioTrack?: LocalAudioTrack }>({});
 
   // Update screen shares list from room participants
   const updateScreenShares = useCallback((room: Room) => {
@@ -257,7 +247,7 @@ export function useLiveKit({ url, token, onDisconnected }: UseLiveKitOptions) {
         bitrateKbps: bitrate,
         rttMs: rtt,
         packetLossPercent: parseFloat(packetLoss.toFixed(1)),
-        fps: fps || (totalBytes > 0 ? 30 : 0),
+        fps: fps || (totalBytes > 0 ? 60 : 0),
         width,
         height,
         codec,
@@ -279,23 +269,12 @@ export function useLiveKit({ url, token, onDisconnected }: UseLiveKitOptions) {
     const room = new Room({
       adaptiveStream: true,
       dynacast: true,
-      audioCaptureDefaults: {
-        autoGainControl: true,
-        noiseSuppression: true,
-        echoCancellation: true,
-      },
       videoCaptureDefaults: {
         resolution: VideoPresets.h1080.resolution,
       },
       publishDefaults: {
-        videoCodec: 'h264',
+        videoCodec: 'vp9',
         screenShareEncoding: ScreenSharePresets.h1080fps30.encoding,
-        audioPreset: {
-          maxBitrate: 192000,
-          priority: 'high',
-        },
-        dtx: false,
-        red: true,
         simulcast: false,
       },
     });
@@ -307,17 +286,6 @@ export function useLiveKit({ url, token, onDisconnected }: UseLiveKitOptions) {
       setConnectionState(ConnectionState.Connected);
       updateParticipantList(room);
       updateScreenShares(room);
-
-      setMessages((prev) => [
-        ...prev,
-        {
-          id: `system-welcome-${Date.now()}`,
-          sender: 'Sistema',
-          text: 'Você entrou na sala',
-          timestamp: Date.now(),
-          isSystem: true,
-        },
-      ]);
 
       // Attempt unlocking browser audio autoplay
       room.startAudio().catch(() => {});
@@ -364,36 +332,19 @@ export function useLiveKit({ url, token, onDisconnected }: UseLiveKitOptions) {
       // Automatically attach and play remote audio (Microphone & Screen Audio)
       if (track.kind === Track.Kind.Audio) {
         const el = track.attach();
-        const isScreenAudio = track.source === Track.Source.ScreenShareAudio;
         el.setAttribute('data-livekit-track', track.sid || track.kind);
         el.setAttribute('data-participant', participant.identity);
-        el.setAttribute('data-source', isScreenAudio ? 'screen_share_audio' : 'microphone');
 
-        if (isScreenAudio) {
-          const streamVol = streamVolumesRef.current[participant.identity] !== undefined
-            ? streamVolumesRef.current[participant.identity]
-            : 1;
+        const currentVol = streamVolumesRef.current[participant.identity] !== undefined
+          ? streamVolumesRef.current[participant.identity]
+          : currentVolumeRef.current;
 
-          if ('setVolume' in track) {
-            (track as any).setVolume(streamVol);
-          }
-          if (el) {
-            (el as HTMLAudioElement).volume = streamVol;
-            (el as HTMLAudioElement).muted = streamVol === 0 || isDeafenedRef.current;
-          }
-        } else {
-          // Voice Microphone track: check individual userVolumesRef or fallback to currentVolumeRef
-          const voiceVol = userVolumesRef.current[participant.identity] !== undefined
-            ? userVolumesRef.current[participant.identity]
-            : currentVolumeRef.current;
-
-          if ('setVolume' in track) {
-            (track as any).setVolume(voiceVol);
-          }
-          if (el) {
-            (el as HTMLAudioElement).volume = voiceVol;
-            (el as HTMLAudioElement).muted = voiceVol === 0 || isDeafenedRef.current;
-          }
+        if ('setVolume' in track) {
+          (track as any).setVolume(currentVol);
+        }
+        if (el) {
+          (el as HTMLAudioElement).volume = currentVol;
+          (el as HTMLAudioElement).muted = currentVol === 0 || isDeafenedRef.current;
         }
       }
 
@@ -441,50 +392,6 @@ export function useLiveKit({ url, token, onDisconnected }: UseLiveKitOptions) {
       }
     };
 
-    const handleParticipantConnected = (participant: RemoteParticipant) => {
-      if (!isSubscribed) return;
-      updateParticipantList(room);
-      updateScreenShares(room);
-      const name = participant.name || participant.identity || 'Um usuário';
-      setMessages((prev) => [
-        ...prev,
-        {
-          id: `system-join-${Date.now()}-${Math.random()}`,
-          sender: 'Sistema',
-          text: `${name} entrou na sala`,
-          timestamp: Date.now(),
-          isSystem: true,
-        },
-      ]);
-
-      // Play join notification sound if not self and not deafened
-      if (participant.identity !== room.localParticipant?.identity && !isDeafenedRef.current) {
-        playJoinSound();
-      }
-    };
-
-    const handleParticipantDisconnected = (participant: RemoteParticipant) => {
-      if (!isSubscribed) return;
-      updateParticipantList(room);
-      updateScreenShares(room);
-      const name = participant.name || participant.identity || 'Um usuário';
-      setMessages((prev) => [
-        ...prev,
-        {
-          id: `system-leave-${Date.now()}-${Math.random()}`,
-          sender: 'Sistema',
-          text: `${name} saiu da sala`,
-          timestamp: Date.now(),
-          isSystem: true,
-        },
-      ]);
-
-      // Play leave notification sound if not self and not deafened
-      if (participant.identity !== room.localParticipant?.identity && !isDeafenedRef.current) {
-        playLeaveSound();
-      }
-    };
-
     room.on(RoomEvent.Connected, handleConnected);
     room.on(RoomEvent.Disconnected, handleDisconnected);
     room.on(RoomEvent.Reconnecting, handleReconnecting);
@@ -496,8 +403,14 @@ export function useLiveKit({ url, token, onDisconnected }: UseLiveKitOptions) {
     room.on(RoomEvent.TrackUnpublished, () => updateScreenShares(room));
     room.on(RoomEvent.LocalTrackPublished, () => updateScreenShares(room));
     room.on(RoomEvent.LocalTrackUnpublished, () => updateScreenShares(room));
-    room.on(RoomEvent.ParticipantConnected, handleParticipantConnected);
-    room.on(RoomEvent.ParticipantDisconnected, handleParticipantDisconnected);
+    room.on(RoomEvent.ParticipantConnected, () => {
+      updateParticipantList(room);
+      updateScreenShares(room);
+    });
+    room.on(RoomEvent.ParticipantDisconnected, () => {
+      updateParticipantList(room);
+      updateScreenShares(room);
+    });
     room.on(RoomEvent.ActiveSpeakersChanged, () => updateParticipantList(room));
     room.on(RoomEvent.DataReceived, handleDataReceived);
 
@@ -512,7 +425,6 @@ export function useLiveKit({ url, token, onDisconnected }: UseLiveKitOptions) {
 
     return () => {
       isSubscribed = false;
-      stopKeepAlive();
       if (statsIntervalRef.current) clearInterval(statsIntervalRef.current);
       room.off(RoomEvent.Connected, handleConnected);
       room.off(RoomEvent.Disconnected, handleDisconnected);
@@ -535,7 +447,7 @@ export function useLiveKit({ url, token, onDisconnected }: UseLiveKitOptions) {
     }
   };
 
-  // Set individual stream audio volume (ONLY affects ScreenShareAudio, keeping Microphone voice intact)
+  // Set individual stream/participant audio volume
   const setStreamVolume = useCallback((participantIdentity: string, volume: number) => {
     const clamped = Math.max(0, Math.min(1, volume));
     setStreamVolumes((prev) => ({ ...prev, [participantIdentity]: clamped }));
@@ -548,49 +460,19 @@ export function useLiveKit({ url, token, onDisconnected }: UseLiveKitOptions) {
 
     const participant = room.remoteParticipants.get(participantIdentity);
     if (participant) {
+      participant.setVolume(clamped, Track.Source.Microphone);
       participant.setVolume(clamped, Track.Source.ScreenShareAudio);
       participant.audioTrackPublications.forEach((pub) => {
-        if (pub.source === Track.Source.ScreenShareAudio && pub.track && 'setVolume' in pub.track) {
+        if (pub.track && 'setVolume' in pub.track) {
           (pub.track as any).setVolume(clamped);
         }
       });
     }
 
-    document
-      .querySelectorAll(`audio[data-participant="${participantIdentity}"][data-source="screen_share_audio"]`)
-      .forEach((el) => {
-        (el as HTMLAudioElement).volume = clamped;
-        (el as HTMLAudioElement).muted = clamped === 0 || isDeafenedRef.current;
-      });
-  }, []);
-
-  // Set individual participant microphone audio volume (ONLY affects local hearing of that participant's voice)
-  const setUserVolume = useCallback((participantIdentity: string, volume: number) => {
-    const clamped = Math.max(0, Math.min(1, volume));
-    setUserVolumes((prev) => ({ ...prev, [participantIdentity]: clamped }));
-
-    const room = roomRef.current;
-    if (!room) return;
-
-    // Local participant does not need audio playback adjustment
-    if (room.localParticipant?.identity === participantIdentity) return;
-
-    const participant = room.remoteParticipants.get(participantIdentity);
-    if (participant) {
-      participant.setVolume(clamped, Track.Source.Microphone);
-      participant.audioTrackPublications.forEach((pub) => {
-        if (pub.source === Track.Source.Microphone && pub.track && 'setVolume' in pub.track) {
-          (pub.track as any).setVolume(clamped);
-        }
-      });
-    }
-
-    document
-      .querySelectorAll(`audio[data-participant="${participantIdentity}"][data-source="microphone"]`)
-      .forEach((el) => {
-        (el as HTMLAudioElement).volume = clamped;
-        (el as HTMLAudioElement).muted = clamped === 0 || isDeafenedRef.current;
-      });
+    document.querySelectorAll(`audio[data-participant="${participantIdentity}"]`).forEach((el) => {
+      (el as HTMLAudioElement).volume = clamped;
+      (el as HTMLAudioElement).muted = clamped === 0 || isDeafenedRef.current;
+    });
   }, []);
 
   // Set global audio volume for all remote participants and audio elements
@@ -620,292 +502,50 @@ export function useLiveKit({ url, token, onDisconnected }: UseLiveKitOptions) {
     });
   };
 
-  // Start Screen Sharing with high-fidelity stereo audio capture (Cinema / Gaming / Music mode)
+  // Start Screen Sharing with audio capture
   const startScreenShare = async (config?: Partial<StreamQualityConfig>) => {
     const room = roomRef.current;
     if (!room) return;
 
     try {
-      const targetFps = 30;
+      const targetFps = config?.frameRate || 60;
       const shouldIncludeAudio = config?.includeAudio ?? true;
-      const shouldIsolateRoomAudio = config?.isolateRoomAudio ?? true;
 
-      const targetBitrate = config?.bitrateKbps
-        ? config.bitrateKbps * 1000
-        : config?.resolution === '4k'
-        ? 8000000
-        : config?.resolution === '1440p'
-        ? 5500000
-        : config?.resolution === '1080p'
-        ? 3600000
-        : 2200000;
-
-      const screenResolution =
-        config?.resolution === '4k'
-          ? { width: 3840, height: 2160, frameRate: targetFps }
+      await room.localParticipant.setScreenShareEnabled(true, {
+        audio: shouldIncludeAudio,
+        selfBrowserSurface: 'include',
+        surfaceSwitching: 'include',
+        systemAudio: 'include',
+        resolution: config?.resolution === '4k'
+          ? VideoPresets.h2160.resolution
           : config?.resolution === '1440p'
           ? { width: 2560, height: 1440, frameRate: targetFps }
           : config?.resolution === '720p'
-          ? { width: 1280, height: 720, frameRate: targetFps }
-          : { width: 1920, height: 1080, frameRate: targetFps };
-
-      // 1. Check if running in native Desktop App with selected source
-      if (typeof window !== 'undefined' && window.desktopAPI?.isDesktop && config?.sourceId) {
-        const desktopConstraints: any = {
-          audio: shouldIncludeAudio
-            ? {
-                mandatory: {
-                  chromeMediaSource: 'desktop',
-                },
-              }
-            : false,
-          video: {
-            mandatory: {
-              chromeMediaSource: 'desktop',
-              chromeMediaSourceId: config.sourceId,
-              minWidth: screenResolution.width,
-              maxWidth: screenResolution.width,
-              minHeight: screenResolution.height,
-              maxHeight: screenResolution.height,
-              minFrameRate: 30,
-              maxFrameRate: targetFps,
-            },
-            optional: [
-              { minFrameRate: 30 },
-              { maxFrameRate: targetFps },
-              { frameRate: targetFps },
-            ],
-          },
-        };
-
-        let mediaStream: MediaStream;
-        try {
-          mediaStream = await navigator.mediaDevices.getUserMedia(desktopConstraints);
-        } catch (mediaErr) {
-          console.warn('Desktop getUserMedia with audio failed, falling back to video-only capture:', mediaErr);
-          const videoOnlyConstraints: any = {
-            audio: false,
-            video: desktopConstraints.video,
-          };
-          mediaStream = await navigator.mediaDevices.getUserMedia(videoOnlyConstraints);
-        }
-        const videoMediaTrack = mediaStream.getVideoTracks()[0];
-        const audioMediaTrack = mediaStream.getAudioTracks()[0];
-
-        if (videoMediaTrack) {
-          videoMediaTrack.contentHint = config?.contentHint || 'motion';
-          const localVideoTrack = new LocalVideoTrack(videoMediaTrack);
-
-          await room.localParticipant.publishTrack(localVideoTrack, {
-            name: 'screen_share',
-            source: Track.Source.ScreenShare,
-            videoCodec: (config?.codec as any) || 'h264',
-            videoEncoding: {
-              maxBitrate: targetBitrate,
-              maxFramerate: targetFps,
-              priority: 'high',
-            },
-            simulcast: false,
-          });
-
-          try {
-            const sender = (localVideoTrack as any).sender as RTCRtpSender;
-            if (sender && typeof sender.getParameters === 'function') {
-              const params = sender.getParameters();
-              if (params) {
-                params.degradationPreference = 'maintain-framerate';
-                if (params.encodings && params.encodings.length > 0) {
-                  params.encodings[0].maxFramerate = targetFps;
-                  params.encodings[0].maxBitrate = targetBitrate;
-                  params.encodings[0].networkPriority = 'high';
-                  params.encodings[0].priority = 'high';
-                }
-                await sender.setParameters(params);
-              }
-            }
-          } catch (e) {
-            // Non-critical
-          }
-
-          desktopTracksRef.current.videoTrack = localVideoTrack;
-          setLocalScreenTrack(localVideoTrack);
-        }
-
-        if (audioMediaTrack && shouldIncludeAudio) {
-          audioMediaTrack.contentHint = 'music';
-          const localAudioTrack = new LocalAudioTrack(audioMediaTrack);
-
-          await room.localParticipant.publishTrack(localAudioTrack, {
-            name: 'screen_share_audio',
-            source: Track.Source.ScreenShareAudio,
-            audioPreset: { maxBitrate: 192000, priority: 'high' },
-            dtx: false,
-            red: true,
-          });
-
-          desktopTracksRef.current.audioTrack = localAudioTrack;
-        }
-
-        setIsScreenSharing(true);
-        setIsLocalScreenAudioMuted(false);
-        setHostName(room.localParticipant.name || room.localParticipant.identity);
-        startKeepAlive();
-        updateScreenShares(room);
-        return;
-      }
-
-      // 2. Browser Standard getDisplayMedia capture
-      await room.localParticipant.setScreenShareEnabled(
-        true,
-        {
-          audio: shouldIncludeAudio
-            ? {
-                autoGainControl: false,
-                echoCancellation: false,
-                noiseSuppression: false,
-                channelCount: 2,
-                sampleRate: 48000,
-                restrictOwnAudio: shouldIsolateRoomAudio,
-              }
-            : false,
-          selfBrowserSurface: 'exclude',
-          surfaceSwitching: 'include',
-          systemAudio: 'include',
-          suppressLocalAudioPlayback: false,
-          resolution: screenResolution,
-        },
-        {
-          audioPreset: {
-            maxBitrate: 192000,
-            priority: 'high',
-          },
-          dtx: false,
-          red: true,
-          simulcast: false,
-          videoCodec: (config?.codec as any) || 'h264',
-          videoEncoding: {
-            maxBitrate: targetBitrate,
-            maxFramerate: targetFps,
-            priority: 'high',
-          },
-        }
-      );
-
-      // Force 'music' contentHint on screen audio track for full cinema/music dynamic range
-      const audioPub = room.localParticipant.getTrackPublication(Track.Source.ScreenShareAudio);
-      if (audioPub?.track?.mediaStreamTrack) {
-        audioPub.track.mediaStreamTrack.contentHint = 'music';
-      }
+          ? VideoPresets.h720.resolution
+          : VideoPresets.h1080.resolution,
+      });
 
       const videoTrackPub = room.localParticipant.getTrackPublication(Track.Source.ScreenShare);
       if (videoTrackPub && videoTrackPub.track) {
-        const mediaTrack = videoTrackPub.track.mediaStreamTrack;
-        const trackSettings = mediaTrack && typeof mediaTrack.getSettings === 'function' ? mediaTrack.getSettings() : null;
-        const displaySurface = (trackSettings as any)?.displaySurface; // 'monitor' | 'window' | 'browser'
-
-        // Determine effective contentHint and degradation preference:
-        const isDetailMode = config?.contentHint === 'detail';
-        const isWindowOrTab = displaySurface === 'window' || displaySurface === 'browser';
-        const effectiveContentHint = isDetailMode || (isWindowOrTab && !config?.contentHint) ? 'detail' : (config?.contentHint || 'motion');
-
-        if (mediaTrack) {
-          mediaTrack.contentHint = effectiveContentHint;
-        }
-
-        // Apply degradation preference & encoding parameters to prevent WebRTC from dropping resolution on windows/tabs
-        try {
-          const sender = (videoTrackPub.track as any).sender as RTCRtpSender;
-          if (sender && typeof sender.getParameters === 'function') {
-            const params = sender.getParameters();
-            if (params) {
-              // For detail mode: maintain-resolution guarantees crisp native text and UI.
-              // For window or tab in motion mode: balanced avoids aggressive 480p downscaling.
-              // For full-screen monitor in motion mode: maintain-framerate ensures 30 FPS.
-              if (isDetailMode) {
-                params.degradationPreference = 'maintain-resolution';
-              } else if (isWindowOrTab) {
-                params.degradationPreference = 'balanced';
-              } else {
-                params.degradationPreference = 'maintain-framerate';
-              }
-
-              if (params.encodings && params.encodings.length > 0) {
-                params.encodings[0].maxFramerate = 30;
-                params.encodings[0].maxBitrate = targetBitrate;
-                // Force scaleResolutionDownBy = 1.0 to prevent WebRTC from downscaling windows/tabs
-                params.encodings[0].scaleResolutionDownBy = 1.0;
-                params.encodings[0].networkPriority = 'high';
-                params.encodings[0].priority = 'high';
-              }
-              await sender.setParameters(params);
-            }
-          }
-        } catch (e) {
-          // Non-critical fallback
-        }
-
         setLocalScreenTrack(videoTrackPub.track);
         setIsScreenSharing(true);
-        setIsLocalScreenAudioMuted(false);
         setHostName(room.localParticipant.name || room.localParticipant.identity);
-        startKeepAlive();
       }
       updateScreenShares(room);
     } catch (err) {
       console.error('Failed to start screen share:', err);
       setIsScreenSharing(false);
-      setIsLocalScreenAudioMuted(false);
-      stopKeepAlive();
     }
   };
 
   const stopScreenShare = async () => {
-    stopKeepAlive();
     const room = roomRef.current;
     if (!room) return;
 
-    if (desktopTracksRef.current.videoTrack || desktopTracksRef.current.audioTrack) {
-      if (desktopTracksRef.current.videoTrack) {
-        try {
-          await room.localParticipant.unpublishTrack(desktopTracksRef.current.videoTrack);
-          desktopTracksRef.current.videoTrack.stop();
-        } catch {}
-      }
-      if (desktopTracksRef.current.audioTrack) {
-        try {
-          await room.localParticipant.unpublishTrack(desktopTracksRef.current.audioTrack);
-          desktopTracksRef.current.audioTrack.stop();
-        } catch {}
-      }
-      desktopTracksRef.current = {};
-    } else {
-      await room.localParticipant.setScreenShareEnabled(false);
-    }
-
+    await room.localParticipant.setScreenShareEnabled(false);
     setIsScreenSharing(false);
-    setIsLocalScreenAudioMuted(false);
     setLocalScreenTrack(null);
     updateScreenShares(room);
-  };
-
-  // Toggle local screen share audio (Host mutes/unmutes outgoing screen sound without muting their mic)
-  const toggleLocalScreenAudio = () => {
-    const room = roomRef.current;
-    if (!room || !room.localParticipant) return;
-
-    if (desktopTracksRef.current.audioTrack?.mediaStreamTrack) {
-      const nextMute = !isLocalScreenAudioMuted;
-      desktopTracksRef.current.audioTrack.mediaStreamTrack.enabled = !nextMute;
-      setIsLocalScreenAudioMuted(nextMute);
-      return;
-    }
-
-    const audioPub = room.localParticipant.getTrackPublication(Track.Source.ScreenShareAudio);
-    if (audioPub && audioPub.track && audioPub.track.mediaStreamTrack) {
-      const nextMute = !isLocalScreenAudioMuted;
-      audioPub.track.mediaStreamTrack.enabled = !nextMute;
-      setIsLocalScreenAudioMuted(nextMute);
-    }
   };
 
   // Toggle Microphone
@@ -941,20 +581,7 @@ export function useLiveKit({ url, token, onDisconnected }: UseLiveKitOptions) {
     });
 
     document.querySelectorAll('audio').forEach((el) => {
-      const audioElement = el as HTMLAudioElement;
-      if (nextDeafen) {
-        audioElement.muted = true;
-      } else {
-        const participantId = audioElement.getAttribute('data-participant');
-        const source = audioElement.getAttribute('data-source');
-        if (source === 'screen_share_audio') {
-          const vol = participantId ? streamVolumesRef.current[participantId] ?? 1 : 1;
-          audioElement.muted = vol === 0;
-        } else {
-          const vol = participantId ? userVolumesRef.current[participantId] ?? currentVolumeRef.current : 1;
-          audioElement.muted = vol === 0;
-        }
-      }
+      (el as HTMLAudioElement).muted = nextDeafen;
     });
   };
 
@@ -1006,7 +633,6 @@ export function useLiveKit({ url, token, onDisconnected }: UseLiveKitOptions) {
 
   const handleManualDisconnect = () => {
     isExplicitDisconnectRef.current = true;
-    stopKeepAlive();
     roomRef.current?.disconnect();
   };
 
@@ -1014,7 +640,6 @@ export function useLiveKit({ url, token, onDisconnected }: UseLiveKitOptions) {
     room: roomRef.current,
     connectionState,
     isScreenSharing,
-    isLocalScreenAudioMuted,
     isMicEnabled,
     isDeafened,
     canPlaybackAudio,
@@ -1022,8 +647,6 @@ export function useLiveKit({ url, token, onDisconnected }: UseLiveKitOptions) {
     setGlobalVolume,
     setStreamVolume,
     streamVolumes,
-    setUserVolume,
-    userVolumes,
     screenShares,
     messages,
     participants,
@@ -1034,7 +657,6 @@ export function useLiveKit({ url, token, onDisconnected }: UseLiveKitOptions) {
     hostName,
     startScreenShare,
     stopScreenShare,
-    toggleLocalScreenAudio,
     toggleMic,
     toggleDeafen,
     sendMessage,
