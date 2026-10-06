@@ -36,8 +36,19 @@ export const WhepTile: React.FC<WhepTileProps> = ({ whepUrl, roomName }) => {
       setStream(mediaStream);
 
       pc.ontrack = (event) => {
-        if (event.track) {
+        if (event.streams && event.streams[0]) {
+          if (videoRef.current) {
+            videoRef.current.srcObject = event.streams[0];
+            videoRef.current.play().catch(() => {});
+          }
+          setStream(event.streams[0]);
+          setIsPlaying(true);
+        } else if (event.track) {
           mediaStream.addTrack(event.track);
+          if (videoRef.current) {
+            videoRef.current.srcObject = mediaStream;
+            videoRef.current.play().catch(() => {});
+          }
           setIsPlaying(true);
         }
       };
