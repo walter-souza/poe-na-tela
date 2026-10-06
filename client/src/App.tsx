@@ -297,6 +297,7 @@ function StreamRoom({
             onOpenScreenShareConfig={() => setIsScreenShareModalOpen(true)}
             isLocalScreenAudioMuted={isLocalScreenAudioMuted}
             onToggleLocalScreenAudio={toggleLocalScreenAudio}
+            roomName={session.roomName}
           />
 
           {/* Centered Room Name at top */}

@@ -10,6 +10,8 @@ import {
 } from 'lucide-react';
 import type { ScreenShareItem, ReactionEvent, StreamLayoutMode } from '../types';
 import { StreamTile } from './StreamTile';
+import { WhepTile } from './WhepTile';
+import { getWhepUrl } from '../utils/api';
 import confetti from 'canvas-confetti';
 
 interface VideoPlayerProps {
@@ -24,6 +26,7 @@ interface VideoPlayerProps {
   onOpenScreenShareConfig?: () => void;
   isLocalScreenAudioMuted?: boolean;
   onToggleLocalScreenAudio?: () => void;
+  roomName?: string;
 }
 
 export const VideoPlayer: React.FC<VideoPlayerProps> = ({
@@ -38,6 +41,7 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
   onOpenScreenShareConfig,
   isLocalScreenAudioMuted = false,
   onToggleLocalScreenAudio,
+  roomName,
 }) => {
   const [layoutMode, setLayoutMode] = useState<StreamLayoutMode>('grid');
   const [spotlightId, setSpotlightId] = useState<string | null>(null);
@@ -102,17 +106,24 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
     return screenShares.filter((s) => s.id !== featuredStream?.id);
   }, [screenShares, featuredStream]);
 
-  // Empty State (0 streams sharing)
+  // Empty State (0 streams sharing via LiveKit WebRTC)
   if (screenShares.length === 0) {
     return (
       <div className="relative flex-1 bg-black rounded-2xl overflow-hidden flex items-center justify-center border border-white/5 shadow-2xl group select-none min-h-[400px]">
-        <div className="flex flex-col items-center justify-center text-center p-8 max-w-md">
+        {/* Stream de 60 FPS via MediaMTX (OBS / SRT) se disponível */}
+        {roomName && (
+          <div className="absolute inset-0 z-10">
+            <WhepTile whepUrl={getWhepUrl(roomName)} roomName={roomName} />
+          </div>
+        )}
+
+        <div className="flex flex-col items-center justify-center text-center p-8 max-w-md z-0">
           <div className="w-20 h-20 rounded-2xl bg-indigo-500/10 border border-indigo-500/20 flex items-center justify-center mb-6 text-indigo-400 glow-active">
             <Tv className="w-10 h-10 animate-pulse" />
           </div>
           <h3 className="text-xl font-bold text-white mb-2">Aguardando Transmissão</h3>
           <p className="text-sm text-gray-400 mb-6 leading-relaxed">
-            Ninguém está compartilhando tela no momento. Qualquer participante pode transmitir tela com áudio simultaneamente!
+            Ninguém está compartilhando tela no momento. Você pode transmitir direto pelo navegador ou via <strong>OBS Studio (SRT 60 FPS)</strong>!
           </p>
 
           {onOpenScreenShareConfig && (
@@ -127,7 +138,7 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
 
           <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-white/5 border border-white/10 text-xs text-gray-400">
             <Radio className="w-3.5 h-3.5 text-emerald-400 animate-pulse" />
-            <span>Sala pronta para múltiplos streams com Dynacast</span>
+            <span>Suporte a 60 FPS cravados via SRT & OBS Studio</span>
           </div>
         </div>
 

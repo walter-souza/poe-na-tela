@@ -32,3 +32,12 @@ export function getRoomInfoUrl(roomName: string): string {
   const endpoint = base.endsWith('/api') ? `${base}/room-info` : `${base}/api/room-info`;
   return `${endpoint}/${encodeURIComponent(roomName)}`;
 }
+
+export function getWhepUrl(roomName: string): string {
+  const envUrl = import.meta.env.VITE_STREAM_URL;
+  if (envUrl && typeof envUrl === 'string' && envUrl.trim().length > 0) {
+    return `${envUrl.replace(/\/$/, '')}/${encodeURIComponent(roomName)}/whep`;
+  }
+  // Fallback padrão apontando para a porta 8889 do MediaMTX da VPS
+  return `http://194.61.238.98:8889/${encodeURIComponent(roomName)}/whep`;
+}
