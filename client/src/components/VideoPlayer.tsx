@@ -136,9 +136,9 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
             </button>
           )}
 
-          <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-white/5 border border-white/10 text-xs text-gray-400">
+          <div className="flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-indigo-500/10 border border-indigo-500/20 text-xs text-indigo-300">
             <Radio className="w-3.5 h-3.5 text-emerald-400 animate-pulse" />
-            <span>Suporte a 60 FPS cravados via SRT & OBS Studio</span>
+            <span>Detecção automática ativa: inicie a live no OBS que o vídeo começa sozinho</span>
           </div>
         </div>
 
