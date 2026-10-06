@@ -398,7 +398,7 @@ export const Lobby: React.FC<LobbyProps> = ({ onJoin, isLoading, error }) => {
               <span>&lt;200ms</span>
             </div>
             <div className="p-1 sm:p-1.5 bg-white/5 rounded-lg border border-white/5">
-              <span className="font-bold text-emerald-300 block">30 FPS</span>
+              <span className="font-bold text-emerald-300 block">60 FPS</span>
               <span>Hardware</span>
             </div>
             <div className="p-1 sm:p-1.5 bg-white/5 rounded-lg border border-white/5">

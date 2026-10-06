@@ -16,7 +16,7 @@ export const ScreenShareModal: React.FC<ScreenShareModalProps> = ({
   const isDesktopApp = typeof window !== 'undefined' && !!window.desktopAPI?.isDesktop;
 
   const [resolution, setResolution] = useState<VideoResolution>('1080p');
-  const frameRate: VideoFrameRate = 30;
+  const [frameRate, setFrameRate] = useState<VideoFrameRate>(60);
   const [isolateRoomAudio, setIsolateRoomAudio] = useState<boolean>(true);
   const [contentHint, setContentHint] = useState<'motion' | 'detail'>('motion');
 
@@ -53,14 +53,15 @@ export const ScreenShareModal: React.FC<ScreenShareModalProps> = ({
   if (!isOpen) return null;
 
   const handleStart = () => {
+    const is60 = frameRate === 60;
     const finalBitrate =
       resolution === '4k'
-        ? 8000
+        ? (is60 ? 14000 : 8000)
         : resolution === '1440p'
-        ? 5500
+        ? (is60 ? 9000 : 5500)
         : resolution === '1080p'
-        ? 3600
-        : 2200;
+        ? (is60 ? 6000 : 3600)
+        : (is60 ? 3500 : 2200);
 
     onConfirm({
       resolution,
@@ -92,8 +93,8 @@ export const ScreenShareModal: React.FC<ScreenShareModalProps> = ({
               <div className="flex items-center gap-2">
                 <h3 className="font-bold text-white text-sm sm:text-base">Configurações de Transmissão</h3>
                 {isDesktopApp && (
-                  <span className="text-[10px] bg-emerald-500/20 text-emerald-300 font-bold px-2 py-0.5 rounded-full border border-emerald-500/30 flex items-center gap-1">
-                    <Sparkles className="w-3 h-3" /> APP DESKTOP (30 FPS)
+                  <span className="text-[10px] bg-purple-500/20 text-purple-300 font-bold px-2 py-0.5 rounded-full border border-purple-500/30 flex items-center gap-1">
+                    <Sparkles className="w-3 h-3" /> APP DESKTOP (60 FPS)
                   </span>
                 )}
               </div>
@@ -196,21 +197,51 @@ export const ScreenShareModal: React.FC<ScreenShareModalProps> = ({
             </div>
           )}
 
-          {/* Frame Rate Indicator (Fixed 30 FPS) */}
+          {/* Frame Rate Selection (Unlocked 60 FPS / 30 FPS) */}
           <div>
             <label className="block font-medium text-xs text-gray-400 uppercase tracking-wider mb-2">
               Taxa de Quadros (FPS)
             </label>
-            <div className="py-2.5 px-3.5 rounded-xl border border-indigo-500/40 bg-indigo-600/20 text-white flex items-center justify-between">
-              <div>
-                <div className="font-semibold text-sm text-white flex items-center gap-2">
-                  30 FPS
-                  <span className="text-[10px] bg-emerald-500/20 text-emerald-300 font-bold px-2 py-0.5 rounded-full border border-emerald-500/30">
-                    Otimizado
-                  </span>
-                </div>
-                <div className="text-[11px] text-gray-400">Taxa de quadros estável com máxima fluidez e menor consumo de banda</div>
-              </div>
+            <div className="grid grid-cols-2 gap-3">
+              {[
+                {
+                  fps: 60 as VideoFrameRate,
+                  label: '60 FPS',
+                  desc: 'Máxima fluidez para jogos e movimento rápido',
+                  badge: 'Destravado',
+                },
+                {
+                  fps: 30 as VideoFrameRate,
+                  label: '30 FPS',
+                  desc: 'Menor consumo de banda e CPU',
+                  badge: 'Econômico',
+                },
+              ].map(({ fps, label, desc, badge }) => (
+                <button
+                  key={fps}
+                  type="button"
+                  onClick={() => setFrameRate(fps)}
+                  className={`py-2.5 px-3 rounded-xl border text-left transition flex flex-col justify-between ${
+                    frameRate === fps
+                      ? 'bg-indigo-600/30 border-indigo-500 text-white shadow-md'
+                      : 'bg-white/5 border-white/5 hover:bg-white/10 text-gray-300'
+                  }`}
+                >
+                  <div className="flex items-center justify-between mb-1">
+                    <span className="font-bold text-sm text-white">{label}</span>
+                    <span
+                      className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full border ${
+                        fps === 60
+                          ? 'bg-purple-500/20 text-purple-300 border-purple-500/30'
+                          : 'bg-emerald-500/20 text-emerald-300 border-emerald-500/30'
+                      }`}
+                    >
+                      {badge}
+                    </span>
+                  </div>
+                  <span className="text-[11px] text-gray-400 leading-tight">{desc}</span>
+                </button>
+              ))}
             </div>
           </div>
 
@@ -224,7 +255,7 @@ export const ScreenShareModal: React.FC<ScreenShareModalProps> = ({
                 {
                   id: 'motion' as const,
                   label: '🎮 Jogos & Vídeo',
-                  badge: '30 FPS',
+                  badge: `${frameRate} FPS`,
                   desc: 'Fluidez contínua, ideal para Jogos e Tela Cheia',
                 },
                 {

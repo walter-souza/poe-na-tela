@@ -1,5 +1,5 @@
 export type VideoResolution = '720p' | '1080p' | '1440p' | '4k';
-export type VideoFrameRate = 30;
+export type VideoFrameRate = 30 | 60;
 export type VideoCodecPreference = 'vp9' | 'vp8' | 'h264' | 'av1';
 
 export interface StreamQualityConfig {
@@ -22,6 +22,8 @@ export interface StreamStats {
   height: number;
   codec: string;
   jitterMs: number;
+  bufferDelayMs?: number;
+  playoutBufferMs?: number;
   bytesReceivedOrSent: number;
 }
 

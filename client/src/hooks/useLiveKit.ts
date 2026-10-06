@@ -6,7 +6,6 @@ import {
   LocalVideoTrack,
   LocalAudioTrack,
   VideoPresets,
-  ScreenSharePresets,
   ConnectionState,
   type RemoteParticipant,
 } from 'livekit-client';
@@ -51,10 +50,98 @@ export function useLiveKit({ url, token, onDisconnected }: UseLiveKitOptions) {
   const [reaction, setReaction] = useState<ReactionEvent | null>(null);
   const [hostName, setHostName] = useState<string>('');
 
+  // WebRTC Playout / Jitter Buffer (500ms to 1000ms configurable for smooth 60 FPS delivery)
+  const PLAYOUT_BUFFER_KEY = 'poe-na-tela-playout-buffer';
+  const [playoutBufferMs, setPlayoutBufferMsState] = useState<number>(() => {
+    try {
+      const saved = localStorage.getItem(PLAYOUT_BUFFER_KEY);
+      if (saved) {
+        const val = parseInt(saved, 10);
+        if (!isNaN(val) && val >= 100 && val <= 2000) return val;
+      }
+    } catch {}
+    return 600; // Default 600ms buffer (Fluidez Gamer)
+  });
+  const playoutBufferMsRef = useRef<number>(600);
+  playoutBufferMsRef.current = playoutBufferMs;
+
   const statsIntervalRef = useRef<number | null>(null);
   const prevStatsRef = useRef<{ bytes: number; frames: number; timestamp: number } | null>(null);
   const currentVolumeRef = useRef<number>(1);
   const desktopTracksRef = useRef<{ videoTrack?: LocalVideoTrack; audioTrack?: LocalAudioTrack }>({});
+
+  // Helper to apply WebRTC playoutDelayHint & jitterBufferTarget to an individual track's receiver
+  const applyReceiverPlayoutBuffer = useCallback((track: Track, bufferMs: number) => {
+    try {
+      const isScreen =
+        track.source === Track.Source.ScreenShare ||
+        track.source === Track.Source.ScreenShareAudio;
+
+      // Screen share video & game audio get the configured buffer (500-1000ms).
+      // Voice chat (microphone) stays at low latency (<= 150ms) to preserve natural conversation.
+      const targetMs = isScreen ? bufferMs : Math.min(bufferMs, 150);
+      const targetSec = targetMs / 1000;
+
+      const receiver = (track as any).receiver as RTCRtpReceiver | undefined;
+      if (receiver) {
+        if ('playoutDelayHint' in receiver) {
+          receiver.playoutDelayHint = targetSec;
+        }
+        if ('jitterBufferTarget' in receiver) {
+          (receiver as any).jitterBufferTarget = targetMs;
+        }
+      }
+    } catch (err) {
+      console.warn('Failed to apply receiver buffer delay hint:', err);
+    }
+  }, []);
+
+  // Helper to update all active receivers across the Room & PeerConnection
+  const applyBufferToAllReceivers = useCallback((bufferMs: number) => {
+    const room = roomRef.current;
+    if (!room) return;
+
+    // 1. Through PeerConnection subscriber receivers
+    try {
+      const subPC =
+        (room.engine as any)?.pcManager?.subscriber?.pc ||
+        (room.engine as any)?.pcManager?.subscriber ||
+        (room.engine as any)?.subscriber?.pc;
+
+      if (subPC && typeof subPC.getReceivers === 'function') {
+        const receivers = subPC.getReceivers() as RTCRtpReceiver[];
+        const bufferSec = bufferMs / 1000;
+        receivers.forEach((receiver) => {
+          if ('playoutDelayHint' in receiver) {
+            receiver.playoutDelayHint = bufferSec;
+          }
+          if ('jitterBufferTarget' in receiver) {
+            (receiver as any).jitterBufferTarget = bufferMs;
+          }
+        });
+      }
+    } catch (e) {
+      console.warn('Failed to update pc receivers buffer:', e);
+    }
+
+    // 2. Through remote participants published tracks
+    room.remoteParticipants.forEach((p) => {
+      p.trackPublications.forEach((pub) => {
+        if (pub.track) {
+          applyReceiverPlayoutBuffer(pub.track, bufferMs);
+        }
+      });
+    });
+  }, [applyReceiverPlayoutBuffer]);
+
+  const setPlayoutBufferMs = useCallback((bufferMs: number) => {
+    setPlayoutBufferMsState(bufferMs);
+    playoutBufferMsRef.current = bufferMs;
+    try {
+      localStorage.setItem(PLAYOUT_BUFFER_KEY, bufferMs.toString());
+    } catch {}
+    applyBufferToAllReceivers(bufferMs);
+  }, [applyBufferToAllReceivers]);
 
   // Update screen shares list from room participants
   const updateScreenShares = useCallback((room: Room) => {
@@ -157,6 +244,8 @@ export function useLiveKit({ url, token, onDisconnected }: UseLiveKitOptions) {
       let codec = 'VP9';
       let totalBytes = 0;
       let totalFrames = 0;
+      let jitter = 0;
+      let measuredBufferDelay: number | undefined;
       const now = Date.now();
 
       reports.forEach((rtcReport) => {
@@ -194,6 +283,14 @@ export function useLiveKit({ url, token, onDisconnected }: UseLiveKitOptions) {
             }
             if (report.bytesReceived) {
               totalBytes = Math.max(totalBytes, report.bytesReceived);
+            }
+            if (report.jitter !== undefined) {
+              jitter = Math.round(report.jitter * 1000);
+            }
+            if (report.jitterBufferDelay !== undefined && report.jitterBufferEmittedCount) {
+              measuredBufferDelay = Math.round(
+                (report.jitterBufferDelay / report.jitterBufferEmittedCount) * 1000
+              );
             }
             if (report.packetsLost !== undefined && report.packetsReceived) {
               const total = report.packetsLost + report.packetsReceived;
@@ -257,11 +354,13 @@ export function useLiveKit({ url, token, onDisconnected }: UseLiveKitOptions) {
         bitrateKbps: bitrate,
         rttMs: rtt,
         packetLossPercent: parseFloat(packetLoss.toFixed(1)),
-        fps: fps || (totalBytes > 0 ? 30 : 0),
+        fps: fps || (totalBytes > 0 ? 60 : 0),
         width,
         height,
         codec,
-        jitterMs: 0,
+        jitterMs: jitter,
+        bufferDelayMs: measuredBufferDelay ?? playoutBufferMsRef.current,
+        playoutBufferMs: playoutBufferMsRef.current,
         bytesReceivedOrSent: totalBytes,
       });
     } catch {
@@ -289,7 +388,11 @@ export function useLiveKit({ url, token, onDisconnected }: UseLiveKitOptions) {
       },
       publishDefaults: {
         videoCodec: 'h264',
-        screenShareEncoding: ScreenSharePresets.h1080fps30.encoding,
+        screenShareEncoding: {
+          maxBitrate: 8000000,
+          maxFramerate: 60,
+          priority: 'high',
+        },
         audioPreset: {
           maxBitrate: 192000,
           priority: 'high',
@@ -346,6 +449,7 @@ export function useLiveKit({ url, token, onDisconnected }: UseLiveKitOptions) {
       setConnectionState(ConnectionState.Connected);
       updateParticipantList(room);
       updateScreenShares(room);
+      applyBufferToAllReceivers(playoutBufferMsRef.current);
     };
 
     const handleAudioPlaybackStatusChanged = () => {
@@ -360,6 +464,9 @@ export function useLiveKit({ url, token, onDisconnected }: UseLiveKitOptions) {
       participant: RemoteParticipant
     ) => {
       if (!isSubscribed) return;
+
+      // Apply playout buffer hint to remote track for smooth 60 FPS playback
+      applyReceiverPlayoutBuffer(track, playoutBufferMsRef.current);
 
       // Automatically attach and play remote audio (Microphone & Screen Audio)
       if (track.kind === Track.Kind.Audio) {
@@ -626,19 +733,20 @@ export function useLiveKit({ url, token, onDisconnected }: UseLiveKitOptions) {
     if (!room) return;
 
     try {
-      const targetFps = 30;
+      const targetFps = config?.frameRate || 60;
+      const is60Fps = targetFps === 60;
       const shouldIncludeAudio = config?.includeAudio ?? true;
       const shouldIsolateRoomAudio = config?.isolateRoomAudio ?? true;
 
       const targetBitrate = config?.bitrateKbps
         ? config.bitrateKbps * 1000
         : config?.resolution === '4k'
-        ? 8000000
+        ? (is60Fps ? 14000000 : 8000000)
         : config?.resolution === '1440p'
-        ? 5500000
+        ? (is60Fps ? 9000000 : 5500000)
         : config?.resolution === '1080p'
-        ? 3600000
-        : 2200000;
+        ? (is60Fps ? 6000000 : 3600000)
+        : (is60Fps ? 3500000 : 2200000);
 
       const screenResolution =
         config?.resolution === '4k'
@@ -667,11 +775,11 @@ export function useLiveKit({ url, token, onDisconnected }: UseLiveKitOptions) {
               maxWidth: screenResolution.width,
               minHeight: screenResolution.height,
               maxHeight: screenResolution.height,
-              minFrameRate: 30,
+              minFrameRate: Math.min(30, targetFps),
               maxFrameRate: targetFps,
             },
             optional: [
-              { minFrameRate: 30 },
+              { minFrameRate: Math.min(30, targetFps) },
               { maxFrameRate: targetFps },
               { frameRate: targetFps },
             ],
@@ -830,7 +938,7 @@ export function useLiveKit({ url, token, onDisconnected }: UseLiveKitOptions) {
               }
 
               if (params.encodings && params.encodings.length > 0) {
-                params.encodings[0].maxFramerate = 30;
+                params.encodings[0].maxFramerate = targetFps;
                 params.encodings[0].maxBitrate = targetBitrate;
                 // Force scaleResolutionDownBy = 1.0 to prevent WebRTC from downscaling windows/tabs
                 params.encodings[0].scaleResolutionDownBy = 1.0;
@@ -1030,6 +1138,8 @@ export function useLiveKit({ url, token, onDisconnected }: UseLiveKitOptions) {
     remoteScreenTrack,
     localScreenTrack,
     stats,
+    playoutBufferMs,
+    setPlayoutBufferMs,
     reaction,
     hostName,
     startScreenShare,
