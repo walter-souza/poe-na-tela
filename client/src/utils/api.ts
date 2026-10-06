@@ -38,6 +38,6 @@ export function getWhepUrl(roomName: string): string {
   if (envUrl && typeof envUrl === 'string' && envUrl.trim().length > 0) {
     return `${envUrl.replace(/\/$/, '')}/${encodeURIComponent(roomName)}/whep`;
   }
-  // Fallback padrão apontando para a porta 8889 do MediaMTX da VPS
-  return `http://194.61.238.98:8889/${encodeURIComponent(roomName)}/whep`;
+  // Fallback padrão seguro (HTTPS) apontando para o proxy reverso do MediaMTX
+  return `https://stream.194.61.238.98.sslip.io/${encodeURIComponent(roomName)}/whep`;
 }
