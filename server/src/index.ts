@@ -20,6 +20,8 @@ const LIVEKIT_INTERNAL_URL =
   LIVEKIT_URL.replace(/^ws:\/\//i, 'http://').replace(/^wss:\/\//i, 'https://');
 const LIVEKIT_API_KEY = process.env.LIVEKIT_API_KEY || 'devkey';
 const LIVEKIT_API_SECRET = process.env.LIVEKIT_API_SECRET || 'secret';
+const MEDIAMTX_API_URL = process.env.MEDIAMTX_API_URL || 'http://127.0.0.1:9997';
+const STREAM_BASE_URL = (process.env.STREAM_URL || process.env.VITE_STREAM_URL || 'https://stream.194.61.238.98.sslip.io').replace(/\/$/, '');
 
 // Maintenance Mode Helper
 const isMaintenanceMode = () =>
@@ -263,6 +265,79 @@ app.get(['/api/room/:roomName/info', '/room/:roomName/info'], async (req: Reques
     hasPasscode: isActive && Boolean(config?.passcode),
     isActive,
     numParticipants,
+  });
+});
+
+/**
+ * List active OBS (SRT / MediaMTX) streams for a specific room (multi-stream squad support)
+ */
+app.get(['/api/rooms/:roomName/streams', '/rooms/:roomName/streams', '/api/room/:roomName/streams', '/room/:roomName/streams'], async (req: Request, res: Response): Promise<void> => {
+  const roomName = sanitizeRoomName(req.params.roomName);
+  if (!roomName) {
+    res.status(400).json({ error: 'Nome de sala inválido.', streams: [] });
+    return;
+  }
+
+  const streams: Array<{
+    id: string;
+    name: string;
+    path: string;
+    whepUrl: string;
+  }> = [];
+
+  try {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 1800);
+    const mtxRes = await fetch(`${MEDIAMTX_API_URL}/v3/paths/list`, {
+      signal: controller.signal,
+    }).finally(() => clearTimeout(timeout));
+
+    if (mtxRes.ok) {
+      const data: any = await mtxRes.json();
+      const items = Array.isArray(data.items) ? data.items : [];
+
+      for (const item of items) {
+        if (!item || !item.name || !item.ready) continue;
+        const itemPath = String(item.name).trim();
+
+        // 1. Single / default stream (e.g. "jogatina")
+        if (itemPath === roomName) {
+          streams.push({
+            id: 'main',
+            name: 'Principal',
+            path: itemPath,
+            whepUrl: `${STREAM_BASE_URL}/${encodeURIComponent(itemPath)}/whep`,
+          });
+        }
+        // 2. Sub-path multi-stream (e.g. "jogatina/pedro" or "jogatina-pedro")
+        else if (itemPath.startsWith(`${roomName}/`) || itemPath.startsWith(`${roomName}-`)) {
+          const rawId = itemPath.startsWith(`${roomName}/`)
+            ? itemPath.slice(roomName.length + 1)
+            : itemPath.slice(roomName.length + 1);
+
+          if (rawId) {
+            const formattedName = decodeURIComponent(rawId)
+              .replace(/[-_]/g, ' ')
+              .replace(/\b\w/g, (c) => c.toUpperCase());
+
+            streams.push({
+              id: rawId,
+              name: formattedName || rawId,
+              path: itemPath,
+              whepUrl: `${STREAM_BASE_URL}/${encodeURIComponent(itemPath)}/whep`,
+            });
+          }
+        }
+      }
+    }
+  } catch {
+    // MediaMTX API offline or unreachable, return empty array gracefully
+  }
+
+  res.json({
+    roomName,
+    streams,
+    count: streams.length,
   });
 });
 

@@ -41,3 +41,30 @@ export function getWhepUrl(roomName: string): string {
   // Fallback padrão seguro (HTTPS) apontando para o proxy reverso do MediaMTX
   return `https://stream.194.61.238.98.sslip.io/${encodeURIComponent(roomName)}/whep`;
 }
+
+export interface ObsStreamItem {
+  id: string;
+  name: string;
+  path: string;
+  whepUrl: string;
+}
+
+export function getRoomStreamsUrl(roomName: string): string {
+  const base = getApiBaseUrl();
+  const endpoint = base.endsWith('/api') ? `${base}/rooms` : `${base}/api/rooms`;
+  return `${endpoint}/${encodeURIComponent(roomName)}/streams`;
+}
+
+export async function fetchRoomStreams(roomName: string): Promise<ObsStreamItem[]> {
+  try {
+    const res = await fetch(getRoomStreamsUrl(roomName));
+    if (res.ok) {
+      const data = await res.json();
+      if (Array.isArray(data.streams)) {
+        return data.streams;
+      }
+    }
+  } catch {}
+  return [];
+}
+

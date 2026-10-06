@@ -1,12 +1,23 @@
 import React, { useEffect, useRef, useState, useCallback } from 'react';
-import { Volume2, VolumeX, Maximize, Radio } from 'lucide-react';
+import { Volume2, VolumeX, Maximize, Radio, Square } from 'lucide-react';
 
 interface WhepTileProps {
   whepUrl: string;
   roomName: string;
+  streamerName?: string;
+  onStateChange?: (isPlaying: boolean) => void;
+  isSpotlighted?: boolean;
+  onToggleSpotlight?: () => void;
 }
 
-export const WhepTile: React.FC<WhepTileProps> = ({ whepUrl, roomName }) => {
+export const WhepTile: React.FC<WhepTileProps> = ({
+  whepUrl,
+  roomName,
+  streamerName,
+  onStateChange,
+  isSpotlighted = false,
+  onToggleSpotlight,
+}) => {
   const videoRef = useRef<HTMLVideoElement>(null);
   const pcRef = useRef<RTCPeerConnection | null>(null);
   const pollTimerRef = useRef<any>(null);
@@ -16,6 +27,11 @@ export const WhepTile: React.FC<WhepTileProps> = ({ whepUrl, roomName }) => {
   const [stream, setStream] = useState<MediaStream | null>(null);
   const [isPlaying, setIsPlaying] = useState(false);
   const [isMuted, setIsMuted] = useState(false);
+
+  // Notify parent of state change
+  useEffect(() => {
+    onStateChange?.(isPlaying);
+  }, [isPlaying, onStateChange]);
 
   // Attach stream to video element whenever stream changes or becomes active
   useEffect(() => {
@@ -216,7 +232,7 @@ export const WhepTile: React.FC<WhepTileProps> = ({ whepUrl, roomName }) => {
     return (
       <div className="absolute top-4 right-4 z-20 flex items-center gap-2 bg-black/60 backdrop-blur-md px-3 py-1.5 rounded-full border border-white/10 text-[11px] text-gray-400">
         <Radio className="w-3.5 h-3.5 text-indigo-400 animate-pulse" />
-        <span>Aguardando OBS (início automático ativo)</span>
+        <span>{streamerName && streamerName !== 'Principal' ? `Aguardando ${streamerName}...` : 'Aguardando OBS (início automático ativo)'}</span>
       </div>
     );
   }
@@ -234,7 +250,9 @@ export const WhepTile: React.FC<WhepTileProps> = ({ whepUrl, roomName }) => {
       {/* Badge Superior */}
       <div className="absolute top-4 left-4 z-20 flex items-center gap-2 bg-black/80 backdrop-blur-md px-3.5 py-1.5 rounded-full border border-white/15 text-xs text-white">
         <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
-        <span className="font-semibold">{roomName} (OBS / SRT)</span>
+        <span className="font-semibold">
+          {streamerName && streamerName !== 'Principal' ? `${streamerName} (OBS)` : `${roomName} (OBS / SRT)`}
+        </span>
         <span className="text-gray-400">|</span>
         <span className="text-indigo-400 font-mono font-medium">60 FPS Cravados</span>
       </div>
@@ -252,6 +270,18 @@ export const WhepTile: React.FC<WhepTileProps> = ({ whepUrl, roomName }) => {
         >
           {isMuted ? <VolumeX className="w-4 h-4 text-rose-400" /> : <Volume2 className="w-4 h-4" />}
         </button>
+
+        {onToggleSpotlight && (
+          <button
+            onClick={onToggleSpotlight}
+            className={`p-1.5 transition cursor-pointer ${
+              isSpotlighted ? 'text-indigo-400' : 'text-gray-300 hover:text-white'
+            }`}
+            title={isSpotlighted ? 'Remover Destaque' : 'Destacar Stream'}
+          >
+            <Square className="w-4 h-4" />
+          </button>
+        )}
 
         <button
           onClick={toggleFullscreen}
