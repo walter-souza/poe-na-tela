@@ -85,7 +85,7 @@ app.get(['/api/health', '/api/status', '/health', '/status'], (_req: Request, re
     message: maintenance ? getMaintenanceMessage() : undefined,
     livekitUrl: LIVEKIT_URL,
     timestamp: new Date().toISOString(),
-    version: '1.5.0',
+    version: '1.6.0',
   });
 });
 
