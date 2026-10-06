@@ -9,8 +9,17 @@ interface WhepTileProps {
 export const WhepTile: React.FC<WhepTileProps> = ({ whepUrl, roomName }) => {
   const videoRef = useRef<HTMLVideoElement>(null);
   const pcRef = useRef<RTCPeerConnection | null>(null);
+  const [stream, setStream] = useState<MediaStream | null>(null);
   const [isPlaying, setIsPlaying] = useState(false);
-  const [isMuted, setIsMuted] = useState(false);
+  const [isMuted, setIsMuted] = useState(true);
+
+  // Attach stream to video tag whenever it becomes available
+  useEffect(() => {
+    if (videoRef.current && stream) {
+      videoRef.current.srcObject = stream;
+      videoRef.current.play().catch((err) => console.log('Autoplay deferred:', err));
+    }
+  }, [stream, isPlaying]);
 
   const startWhep = async () => {
     try {
@@ -23,16 +32,18 @@ export const WhepTile: React.FC<WhepTileProps> = ({ whepUrl, roomName }) => {
       });
       pcRef.current = pc;
 
-      pc.addTransceiver('video', { direction: 'recvonly' });
-      pc.addTransceiver('audio', { direction: 'recvonly' });
+      const mediaStream = new MediaStream();
+      setStream(mediaStream);
 
       pc.ontrack = (event) => {
-        if (videoRef.current && event.streams[0]) {
-          videoRef.current.srcObject = event.streams[0];
-          videoRef.current.play().catch(() => {});
+        if (event.track) {
+          mediaStream.addTrack(event.track);
           setIsPlaying(true);
         }
       };
+
+      pc.addTransceiver('video', { direction: 'recvonly' });
+      pc.addTransceiver('audio', { direction: 'recvonly' });
 
       const offer = await pc.createOffer();
       await pc.setLocalDescription(offer);
