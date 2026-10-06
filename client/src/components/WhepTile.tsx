@@ -49,10 +49,16 @@ export const WhepTile: React.FC<WhepTileProps> = ({
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [showControls, setShowControls] = useState(false);
 
+  // Stable ref for onStateChange to prevent effect re-trigger loops
+  const onStateChangeRef = useRef(onStateChange);
+  useEffect(() => {
+    onStateChangeRef.current = onStateChange;
+  }, [onStateChange]);
+
   // Notify parent of state change
   useEffect(() => {
-    onStateChange?.(isPlaying);
-  }, [isPlaying, onStateChange]);
+    onStateChangeRef.current?.(isPlaying);
+  }, [isPlaying]);
 
   // Sync volume with video element
   useEffect(() => {
@@ -187,7 +193,7 @@ export const WhepTile: React.FC<WhepTileProps> = ({
           const timeout = setTimeout(() => {
             pc.removeEventListener('icegatheringstatechange', checkState);
             resolve();
-          }, 1200);
+          }, 2000);
 
           const checkState = () => {
             if (pc.iceGatheringState === 'complete') {
@@ -351,20 +357,7 @@ export const WhepTile: React.FC<WhepTileProps> = ({
     );
   }
 
-  // 2. Probing / Connecting State
-  if (!isPlaying) {
-    return (
-      <div className="relative w-full h-full bg-black/80 rounded-2xl overflow-hidden flex flex-col items-center justify-center border border-white/10 shadow-2xl p-4">
-        <video ref={videoRef} autoPlay playsInline muted className="hidden" />
-        <div className="flex items-center gap-2 bg-black/60 backdrop-blur-md px-3.5 py-1.5 rounded-full border border-white/10 text-xs text-gray-300">
-          <Radio className="w-3.5 h-3.5 text-indigo-400 animate-pulse" />
-          <span>Aguardando transmissão de <strong>{displayName}</strong>...</span>
-        </div>
-      </div>
-    );
-  }
-
-  // 3. Full / Grid Stream Tile
+  // 2. Full / Grid Stream Tile (ALWAYS mounted so video element and WebRTC tracks are NEVER unmounted)
   return (
     <div
       ref={containerRef}
@@ -382,6 +375,16 @@ export const WhepTile: React.FC<WhepTileProps> = ({
         muted={isMuted}
         className="w-full h-full object-contain bg-black"
       />
+
+      {/* Loading / Connecting Overlay when not yet playing */}
+      {!isPlaying && (
+        <div className="absolute inset-0 z-10 bg-black/80 backdrop-blur-sm flex flex-col items-center justify-center p-4">
+          <div className="flex items-center gap-2 bg-black/60 backdrop-blur-md px-3.5 py-1.5 rounded-full border border-white/10 text-xs text-gray-300 shadow-xl">
+            <Radio className="w-3.5 h-3.5 text-indigo-400 animate-pulse" />
+            <span>Aguardando transmissão de <strong>{displayName}</strong>...</span>
+          </div>
+        </div>
+      )}
 
       {/* Top Stream Info Badge — Idêntico ao padrão WebRTC */}
       <div className="absolute top-2 left-2 sm:top-3 sm:left-3 z-20 flex items-center gap-1.5 sm:gap-2 pointer-events-none">

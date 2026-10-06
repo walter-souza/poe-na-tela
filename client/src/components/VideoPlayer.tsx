@@ -119,7 +119,11 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
     const poll = async () => {
       const list = await fetchRoomStreams(roomName);
       if (isMounted) {
-        setObsStreams(list);
+        setObsStreams((prev) => {
+          const prevKeys = prev.map((s) => `${s.id}:${s.path}:${s.whepUrl}`).join('|');
+          const nextKeys = list.map((s) => `${s.id}:${s.path}:${s.whepUrl}`).join('|');
+          return prevKeys === nextKeys ? prev : list;
+        });
       }
     };
 

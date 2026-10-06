@@ -300,20 +300,24 @@ app.get(['/api/rooms/:roomName/streams', '/rooms/:roomName/streams', '/api/room/
         if (!item || !item.name || !item.ready) continue;
         const itemPath = String(item.name).trim();
 
-        // 1. Single / default stream (e.g. "jogatina")
-        if (itemPath === roomName) {
+        const lowerPath = itemPath.toLowerCase();
+        const lowerRoom = roomName.toLowerCase();
+
+        // Helper to format clean WHEP URL with unencoded slashes: /teste/aaa/whep
+        const cleanWhepUrl = `${STREAM_BASE_URL}/${itemPath.split('/').map(encodeURIComponent).join('/')}/whep`;
+
+        // 1. Single / default stream (e.g. "jogatina" ou "teste")
+        if (lowerPath === lowerRoom) {
           streams.push({
             id: 'main',
             name: 'Principal',
             path: itemPath,
-            whepUrl: `${STREAM_BASE_URL}/${encodeURIComponent(itemPath)}/whep`,
+            whepUrl: cleanWhepUrl,
           });
         }
-        // 2. Sub-path multi-stream (e.g. "jogatina/pedro" or "jogatina-pedro")
-        else if (itemPath.startsWith(`${roomName}/`) || itemPath.startsWith(`${roomName}-`)) {
-          const rawId = itemPath.startsWith(`${roomName}/`)
-            ? itemPath.slice(roomName.length + 1)
-            : itemPath.slice(roomName.length + 1);
+        // 2. Sub-path multi-stream (e.g. "jogatina/pedro" ou "jogatina-pedro")
+        else if (lowerPath.startsWith(`${lowerRoom}/`) || lowerPath.startsWith(`${lowerRoom}-`)) {
+          const rawId = itemPath.slice(roomName.length + 1);
 
           if (rawId) {
             const formattedName = decodeURIComponent(rawId)
@@ -321,10 +325,10 @@ app.get(['/api/rooms/:roomName/streams', '/rooms/:roomName/streams', '/api/room/
               .replace(/\b\w/g, (c) => c.toUpperCase());
 
             streams.push({
-              id: rawId,
+              id: rawId.toLowerCase(),
               name: formattedName || rawId,
               path: itemPath,
-              whepUrl: `${STREAM_BASE_URL}/${encodeURIComponent(itemPath)}/whep`,
+              whepUrl: cleanWhepUrl,
             });
           }
         }
