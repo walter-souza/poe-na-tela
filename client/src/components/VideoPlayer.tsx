@@ -22,6 +22,8 @@ interface VideoPlayerProps {
   canPlaybackAudio?: boolean;
   onUnlockAudio?: () => void;
   onOpenScreenShareConfig?: () => void;
+  isLocalScreenAudioMuted?: boolean;
+  onToggleLocalScreenAudio?: () => void;
 }
 
 export const VideoPlayer: React.FC<VideoPlayerProps> = ({
@@ -34,6 +36,8 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
   canPlaybackAudio = true,
   onUnlockAudio,
   onOpenScreenShareConfig,
+  isLocalScreenAudioMuted = false,
+  onToggleLocalScreenAudio,
 }) => {
   const [layoutMode, setLayoutMode] = useState<StreamLayoutMode>('grid');
   const [spotlightId, setSpotlightId] = useState<string | null>(null);
@@ -108,7 +112,7 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
           </div>
           <h3 className="text-xl font-bold text-white mb-2">Aguardando Transmissão</h3>
           <p className="text-sm text-gray-400 mb-6 leading-relaxed">
-            Ninguém está compartilhando tela no momento. Qualquer participante pode transmitir tela em 60 FPS com áudio simultaneamente!
+            Ninguém está compartilhando tela no momento. Qualquer participante pode transmitir tela com áudio simultaneamente!
           </p>
 
           {onOpenScreenShareConfig && (
@@ -144,20 +148,20 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
   }
 
   return (
-    <div className="relative flex-1 bg-black/40 rounded-2xl overflow-hidden flex flex-col min-h-[400px]">
+    <div className="relative flex-1 bg-black/40 rounded-2xl overflow-hidden flex flex-col min-h-0">
       {/* Top Multi-Stream Header Bar */}
-      <div className="absolute top-3 inset-x-3 z-30 flex items-center justify-between pointer-events-none">
+      <div className="absolute top-2 inset-x-2 sm:top-3 sm:inset-x-3 z-30 flex items-center justify-between pointer-events-none">
         {/* Left: Stream Count */}
-        <div className="pointer-events-auto flex items-center gap-2 bg-black/60 backdrop-blur-md border border-white/15 px-3 py-1.5 rounded-2xl text-xs text-white shadow-lg">
+        <div className="pointer-events-auto flex items-center gap-1.5 sm:gap-2 bg-black/60 backdrop-blur-md border border-white/15 px-2.5 sm:px-3 py-1 sm:py-1.5 rounded-2xl text-[11px] sm:text-xs text-white shadow-lg">
           <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
           <span className="font-bold">{screenShares.length}</span>
-          <span className="text-gray-300">
+          <span className="text-gray-300 hidden sm:inline">
             {screenShares.length === 1 ? 'tela ao vivo' : 'telas ao vivo'}
           </span>
         </div>
 
         {/* Right: Layout Switcher & HUD Toggle */}
-        <div className="pointer-events-auto flex items-center gap-2 bg-black/60 backdrop-blur-md border border-white/15 p-1 rounded-2xl shadow-lg">
+        <div className="pointer-events-auto flex items-center gap-1.5 sm:gap-2 bg-black/60 backdrop-blur-md border border-white/15 p-1 rounded-2xl shadow-lg">
           {screenShares.length > 1 && (
             <div className="flex items-center gap-1 border-r border-white/10 pr-1.5 mr-0.5">
               <button
@@ -206,31 +210,31 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
       {!canPlaybackAudio && (
         <div
           onClick={onUnlockAudio}
-          className="absolute top-16 inset-x-8 z-40 bg-indigo-600/95 hover:bg-indigo-500 backdrop-blur-md border border-indigo-400/30 text-white px-4 py-3 rounded-2xl shadow-2xl flex items-center justify-between cursor-pointer animate-pulse transition"
+          className="absolute top-14 sm:top-16 inset-x-2 sm:inset-x-8 z-40 bg-indigo-600/95 hover:bg-indigo-500 backdrop-blur-md border border-indigo-400/30 text-white px-3 sm:px-4 py-2.5 sm:py-3 rounded-2xl shadow-2xl flex items-center justify-between cursor-pointer animate-pulse transition"
         >
-          <div className="flex items-center gap-3">
-            <div className="p-2 bg-white/20 rounded-xl">
-              <Volume2 className="w-5 h-5" />
+          <div className="flex items-center gap-2.5 sm:gap-3">
+            <div className="p-1.5 sm:p-2 bg-white/20 rounded-xl">
+              <Volume2 className="w-4 h-4 sm:w-5 sm:h-5" />
             </div>
             <div>
-              <div className="font-bold text-sm">Áudio Pausado pelo Navegador</div>
-              <div className="text-xs text-indigo-100">
-                Clique aqui para desbloquear e ouvir o áudio das transmissões
+              <div className="font-bold text-xs sm:text-sm">Áudio Pausado pelo Navegador</div>
+              <div className="text-[11px] sm:text-xs text-indigo-100">
+                Toque aqui para desbloquear e ouvir o áudio
               </div>
             </div>
           </div>
-          <button className="px-4 py-1.5 bg-white text-indigo-700 font-bold text-xs rounded-xl shadow">
+          <button className="px-3 sm:px-4 py-1.5 bg-white text-indigo-700 font-bold text-xs rounded-xl shadow shrink-0">
             Ativar Som
           </button>
         </div>
       )}
 
       {/* Main Video View Area */}
-      <div className="flex-1 flex flex-col p-2 min-h-0 pt-14">
+      <div className="flex-1 flex flex-col p-1 sm:p-2 min-h-0 pt-12 sm:pt-14">
         {layoutMode === 'grid' || screenShares.length === 1 ? (
           // GRID MODE LAYOUT
           <div
-            className={`flex-1 grid gap-3 min-h-0 ${
+            className={`flex-1 grid gap-2 sm:gap-3 min-h-0 ${
               screenShares.length === 1
                 ? 'grid-cols-1'
                 : screenShares.length === 2
@@ -241,7 +245,7 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
             }`}
           >
             {screenShares.map((stream) => (
-              <div key={stream.id} className="min-h-[220px] flex-1 flex">
+              <div key={stream.id} className="min-h-[160px] sm:min-h-[220px] flex-1 flex">
                 <StreamTile
                   stream={stream}
                   volume={streamVolumes[stream.participantIdentity] ?? 1}
@@ -255,6 +259,8 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
                         }
                       : undefined
                   }
+                  isLocalScreenAudioMuted={isLocalScreenAudioMuted}
+                  onToggleLocalScreenAudio={onToggleLocalScreenAudio}
                 />
               </div>
             ))}
@@ -273,6 +279,8 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
                   }
                   isSpotlighted={true}
                   onToggleSpotlight={() => setLayoutMode('grid')}
+                  isLocalScreenAudioMuted={isLocalScreenAudioMuted}
+                  onToggleLocalScreenAudio={onToggleLocalScreenAudio}
                 />
               </div>
             )}
