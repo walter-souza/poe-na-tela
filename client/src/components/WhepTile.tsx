@@ -1,5 +1,14 @@
 import React, { useEffect, useRef, useState, useCallback } from 'react';
-import { Volume2, VolumeX, Maximize, Radio, Square } from 'lucide-react';
+import {
+  Volume2,
+  VolumeX,
+  Maximize,
+  Minimize,
+  Radio,
+  Pin,
+  PictureInPicture,
+  User,
+} from 'lucide-react';
 
 interface WhepTileProps {
   whepUrl: string;
@@ -8,6 +17,10 @@ interface WhepTileProps {
   onStateChange?: (isPlaying: boolean) => void;
   isSpotlighted?: boolean;
   onToggleSpotlight?: () => void;
+  isThumbnail?: boolean;
+  onSelectThumbnail?: () => void;
+  volume?: number;
+  onVolumeChange?: (volume: number) => void;
 }
 
 export const WhepTile: React.FC<WhepTileProps> = ({
@@ -17,21 +30,36 @@ export const WhepTile: React.FC<WhepTileProps> = ({
   onStateChange,
   isSpotlighted = false,
   onToggleSpotlight,
+  isThumbnail = false,
+  onSelectThumbnail,
+  volume = 1,
+  onVolumeChange,
 }) => {
   const videoRef = useRef<HTMLVideoElement>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
   const pcRef = useRef<RTCPeerConnection | null>(null);
   const pollTimerRef = useRef<any>(null);
   const isConnectingRef = useRef(false);
   const isMountedRef = useRef(true);
+  const hideTimeoutRef = useRef<number | null>(null);
 
   const [stream, setStream] = useState<MediaStream | null>(null);
   const [isPlaying, setIsPlaying] = useState(false);
   const [isMuted, setIsMuted] = useState(false);
+  const [isFullscreen, setIsFullscreen] = useState(false);
+  const [showControls, setShowControls] = useState(false);
 
   // Notify parent of state change
   useEffect(() => {
     onStateChange?.(isPlaying);
   }, [isPlaying, onStateChange]);
+
+  // Sync volume with video element
+  useEffect(() => {
+    if (videoRef.current) {
+      videoRef.current.volume = isMuted ? 0 : Math.max(0, Math.min(1, volume));
+    }
+  }, [volume, isMuted]);
 
   // Attach stream to video element whenever stream changes or becomes active
   useEffect(() => {
@@ -40,7 +68,7 @@ export const WhepTile: React.FC<WhepTileProps> = ({
       const playPromise = videoRef.current.play();
       if (playPromise !== undefined) {
         playPromise.catch((err) => {
-          console.log('[WHEP] Autoplay com áudio bloqueado pelo navegador, iniciando mutado:', err);
+          console.log('[WHEP] Autoplay bloqueado pelo navegador, iniciando mutado:', err);
           if (videoRef.current) {
             videoRef.current.muted = true;
             setIsMuted(true);
@@ -128,12 +156,11 @@ export const WhepTile: React.FC<WhepTileProps> = ({
         setIsPlaying(true);
       };
 
-      // Detecta quando o streamer encerra ou reinicia a transmissão no OBS
       pc.onconnectionstatechange = () => {
         if (!isMountedRef.current) return;
         const state = pc.connectionState;
         if (state === 'failed' || state === 'disconnected' || state === 'closed') {
-          console.log(`[WHEP] Conexão com OBS alterada (${state}). Reiniciando detecção automática...`);
+          console.log(`[WHEP] Conexão com OBS alterada (${state}). Reiniciando detecção...`);
           handleStreamLost();
         }
       };
@@ -142,7 +169,7 @@ export const WhepTile: React.FC<WhepTileProps> = ({
         if (!isMountedRef.current) return;
         const iceState = pc.iceConnectionState;
         if (iceState === 'failed' || iceState === 'disconnected') {
-          console.log(`[WHEP] Conexão ICE perdida (${iceState}). Reiniciando detecção automática...`);
+          console.log(`[WHEP] Conexão ICE perdida (${iceState}). Reiniciando detecção...`);
           handleStreamLost();
         }
       };
@@ -153,7 +180,6 @@ export const WhepTile: React.FC<WhepTileProps> = ({
       const offer = await pc.createOffer();
       await pc.setLocalDescription(offer);
 
-      // Aguarda coleta dos candidatos ICE locais com proteção de timeout de 1.2s
       await new Promise<void>((resolve) => {
         if (pc.iceGatheringState === 'complete') {
           resolve();
@@ -181,7 +207,6 @@ export const WhepTile: React.FC<WhepTileProps> = ({
       });
 
       if (!res.ok) {
-        // Stream ainda não começou no OBS (MediaMTX responde 404)
         throw new Error(`MediaMTX WHEP: status ${res.status}`);
       }
 
@@ -197,7 +222,6 @@ export const WhepTile: React.FC<WhepTileProps> = ({
       cleanupPeerConnection();
       if (isMountedRef.current) {
         setIsPlaying(false);
-        // Tenta novamente a cada 2 segundos até o OBS iniciar
         scheduleNextProbe(2000);
       }
     } finally {
@@ -219,77 +243,243 @@ export const WhepTile: React.FC<WhepTileProps> = ({
     };
   }, [whepUrl]);
 
-  const toggleFullscreen = () => {
-    if (!videoRef.current) return;
-    if (document.fullscreenElement) {
-      document.exitFullscreen().catch(() => {});
-    } else {
-      videoRef.current.requestFullscreen().catch(() => {});
+  const handleMouseMove = () => {
+    if (isThumbnail) return;
+    setShowControls(true);
+    if (hideTimeoutRef.current) clearTimeout(hideTimeoutRef.current);
+    hideTimeoutRef.current = window.setTimeout(() => {
+      setShowControls(false);
+    }, 2500);
+  };
+
+  const handleToggleControls = () => {
+    if (isThumbnail) return;
+    setShowControls((prev) => !prev);
+    if (hideTimeoutRef.current) clearTimeout(hideTimeoutRef.current);
+    hideTimeoutRef.current = window.setTimeout(() => {
+      setShowControls(false);
+    }, 3500);
+  };
+
+  const toggleFullscreen = async (e: React.MouseEvent) => {
+    e.stopPropagation();
+    const container = containerRef.current;
+    try {
+      if (container && (container.requestFullscreen || (container as any).webkitRequestFullscreen)) {
+        if (!document.fullscreenElement && !(document as any).webkitFullscreenElement) {
+          if (container.requestFullscreen) {
+            await container.requestFullscreen();
+          } else if ((container as any).webkitRequestFullscreen) {
+            await (container as any).webkitRequestFullscreen();
+          }
+          setIsFullscreen(true);
+        } else {
+          if (document.exitFullscreen) {
+            await document.exitFullscreen();
+          } else if ((document as any).webkitExitFullscreen) {
+            await (document as any).webkitExitFullscreen();
+          }
+          setIsFullscreen(false);
+        }
+      }
+    } catch (err) {
+      console.error('Fullscreen error:', err);
     }
   };
 
-  if (!isPlaying) {
+  const togglePiP = async (e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (!videoRef.current) return;
+    try {
+      if (document.pictureInPictureElement) {
+        await document.exitPictureInPicture();
+      } else {
+        await videoRef.current.requestPictureInPicture();
+      }
+    } catch (err) {
+      console.error('Error toggling PiP:', err);
+    }
+  };
+
+  const handleVolumeChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const val = parseFloat(e.target.value);
+    const muted = val === 0;
+    setIsMuted(muted);
+    onVolumeChange?.(val);
+  };
+
+  const toggleMute = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    const nextMute = !isMuted;
+    setIsMuted(nextMute);
+    onVolumeChange?.(nextMute ? 0 : (volume || 1));
+  };
+
+  const displayName = streamerName && streamerName !== 'Principal' ? streamerName : roomName;
+
+  // 1. Thumbnail view (Strip lateral/inferior no modo spotlight)
+  if (isThumbnail) {
     return (
-      <div className="absolute top-4 right-4 z-20 flex items-center gap-2 bg-black/60 backdrop-blur-md px-3 py-1.5 rounded-full border border-white/10 text-[11px] text-gray-400">
-        <Radio className="w-3.5 h-3.5 text-indigo-400 animate-pulse" />
-        <span>{streamerName && streamerName !== 'Principal' ? `Aguardando ${streamerName}...` : 'Aguardando OBS (início automático ativo)'}</span>
+      <div
+        onClick={onSelectThumbnail}
+        className={`relative aspect-video w-36 sm:w-44 rounded-xl overflow-hidden cursor-pointer border-2 transition-all duration-200 group bg-black/60 shadow-lg shrink-0 ${
+          isSpotlighted
+            ? 'border-indigo-500 shadow-indigo-500/30 scale-[1.02]'
+            : 'border-white/10 hover:border-white/40 hover:scale-[1.01]'
+        }`}
+      >
+        <video
+          ref={videoRef}
+          autoPlay
+          playsInline
+          muted
+          className="w-full h-full object-contain bg-black"
+        />
+        <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/80 to-transparent p-1.5 flex items-center justify-between text-[11px] text-white">
+          <span className="truncate font-medium">{displayName}</span>
+          {isSpotlighted ? (
+            <span className="text-[9px] bg-emerald-500/40 text-emerald-200 px-1 py-0.2 rounded font-semibold">
+              Foco
+            </span>
+          ) : (
+            <span className="text-[9px] bg-indigo-500/30 text-indigo-300 px-1 py-0.2 rounded font-semibold">
+              OBS
+            </span>
+          )}
+        </div>
       </div>
     );
   }
 
+  // 2. Probing / Connecting State
+  if (!isPlaying) {
+    return (
+      <div className="relative w-full h-full bg-black/80 rounded-2xl overflow-hidden flex flex-col items-center justify-center border border-white/10 shadow-2xl p-4">
+        <video ref={videoRef} autoPlay playsInline muted className="hidden" />
+        <div className="flex items-center gap-2 bg-black/60 backdrop-blur-md px-3.5 py-1.5 rounded-full border border-white/10 text-xs text-gray-300">
+          <Radio className="w-3.5 h-3.5 text-indigo-400 animate-pulse" />
+          <span>Aguardando transmissão de <strong>{displayName}</strong>...</span>
+        </div>
+      </div>
+    );
+  }
+
+  // 3. Full / Grid Stream Tile
   return (
-    <div className="relative w-full h-full bg-black rounded-2xl overflow-hidden flex items-center justify-center border border-white/10 shadow-2xl group select-none">
+    <div
+      ref={containerRef}
+      onClick={handleToggleControls}
+      onMouseMove={handleMouseMove}
+      onMouseLeave={() => setShowControls(false)}
+      className={`relative w-full h-full bg-black rounded-2xl overflow-hidden flex items-center justify-center border transition-all duration-300 group select-none shadow-2xl cursor-pointer ${
+        isSpotlighted ? 'border-indigo-500/40 ring-1 ring-indigo-500/30' : 'border-white/10 hover:border-white/20'
+      }`}
+    >
       <video
         ref={videoRef}
         autoPlay
         playsInline
         muted={isMuted}
-        className="w-full h-full object-contain"
+        className="w-full h-full object-contain bg-black"
       />
 
-      {/* Badge Superior */}
-      <div className="absolute top-4 left-4 z-20 flex items-center gap-2 bg-black/80 backdrop-blur-md px-3.5 py-1.5 rounded-full border border-white/15 text-xs text-white">
-        <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
-        <span className="font-semibold">
-          {streamerName && streamerName !== 'Principal' ? `${streamerName} (OBS)` : `${roomName} (OBS / SRT)`}
-        </span>
-        <span className="text-gray-400">|</span>
-        <span className="text-indigo-400 font-mono font-medium">60 FPS Cravados</span>
+      {/* Top Stream Info Badge — Idêntico ao padrão WebRTC */}
+      <div className="absolute top-2 left-2 sm:top-3 sm:left-3 z-20 flex items-center gap-1.5 sm:gap-2 pointer-events-none">
+        <div className="flex items-center gap-1 sm:gap-1.5 bg-red-600/90 backdrop-blur-md px-2 sm:px-2.5 py-0.5 rounded-full text-white text-[10px] sm:text-[11px] font-bold uppercase tracking-wider shadow">
+          <span className="w-1.5 h-1.5 rounded-full bg-white animate-ping" />
+          <span>AO VIVO</span>
+        </div>
+
+        <div className="bg-black/60 backdrop-blur-md border border-white/15 px-2 sm:px-2.5 py-0.5 rounded-full text-[11px] sm:text-xs text-gray-200 flex items-center gap-1.5 shadow">
+          <User className="w-3 h-3 text-indigo-400" />
+          <span className="font-semibold text-white truncate max-w-[110px] xs:max-w-[150px] sm:max-w-[220px]">
+            {displayName}
+          </span>
+          <span className="text-[10px] bg-indigo-500/30 text-indigo-200 px-1.5 py-0.2 rounded font-bold font-mono">
+            OBS 60 FPS
+          </span>
+        </div>
       </div>
 
-      {/* Controles Flutuantes */}
-      <div className="absolute bottom-4 right-4 z-20 flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity bg-black/80 backdrop-blur-md px-3 py-1.5 rounded-xl border border-white/15">
-        <button
-          onClick={() => {
-            const nextMuted = !isMuted;
-            setIsMuted(nextMuted);
-            if (videoRef.current) videoRef.current.muted = nextMuted;
-          }}
-          className="p-1.5 text-gray-300 hover:text-white transition cursor-pointer"
-          title={isMuted ? 'Desmutar áudio do jogo' : 'Mutar áudio do jogo'}
-        >
-          {isMuted ? <VolumeX className="w-4 h-4 text-rose-400" /> : <Volume2 className="w-4 h-4" />}
-        </button>
-
-        {onToggleSpotlight && (
+      {/* Top Right Pin / Spotlight Button */}
+      {onToggleSpotlight && (
+        <div className="absolute top-2 right-2 sm:top-3 sm:right-3 z-20">
           <button
-            onClick={onToggleSpotlight}
-            className={`p-1.5 transition cursor-pointer ${
-              isSpotlighted ? 'text-indigo-400' : 'text-gray-300 hover:text-white'
+            onClick={(e) => {
+              e.stopPropagation();
+              onToggleSpotlight();
+            }}
+            title={isSpotlighted ? 'Remover destaque' : 'Destacar esta transmissão'}
+            className={`p-1.5 sm:p-2 rounded-xl backdrop-blur-md border transition ${
+              isSpotlighted
+                ? 'bg-indigo-600 border-indigo-400 text-white shadow-lg shadow-indigo-600/30'
+                : 'bg-black/60 hover:bg-black/80 border-white/15 text-gray-300 hover:text-white'
             }`}
-            title={isSpotlighted ? 'Remover Destaque' : 'Destacar Stream'}
           >
-            <Square className="w-4 h-4" />
+            <Pin className={`w-3.5 h-3.5 ${isSpotlighted ? 'rotate-45 text-white' : ''}`} />
           </button>
-        )}
+        </div>
+      )}
 
-        <button
-          onClick={toggleFullscreen}
-          className="p-1.5 text-gray-300 hover:text-white transition cursor-pointer"
-          title="Tela Cheia"
-        >
-          <Maximize className="w-4 h-4" />
-        </button>
+      {/* Bottom Controls Bar (Visible on Hover / In Fullscreen) */}
+      <div
+        onClick={(e) => e.stopPropagation()}
+        className={`absolute bottom-0 inset-x-0 bg-gradient-to-t from-black/90 via-black/40 to-transparent p-2 sm:p-4 z-20 transition-opacity duration-300 flex items-center justify-between ${
+          showControls ? 'opacity-100' : 'opacity-0 pointer-events-none'
+        }`}
+      >
+        {/* Left: Volume Slider per streamer */}
+        <div className="flex items-center gap-1.5 sm:gap-2">
+          <div className="flex items-center gap-2 bg-black/60 backdrop-blur-md px-2.5 py-1.5 rounded-xl border border-white/15 text-white">
+            <button
+              onClick={toggleMute}
+              className="hover:text-indigo-400 transition"
+              title={
+                isMuted || volume === 0
+                  ? 'Ativar som da transmissão'
+                  : 'Silenciar áudio da transmissão'
+              }
+            >
+              {isMuted || volume === 0 ? (
+                <VolumeX className="w-3.5 h-3.5 text-rose-400" />
+              ) : (
+                <Volume2 className="w-3.5 h-3.5" />
+              )}
+            </button>
+            <input
+              type="range"
+              min="0"
+              max="1"
+              step="0.01"
+              value={isMuted ? 0 : volume}
+              onChange={handleVolumeChange}
+              title={`Volume de ${displayName}`}
+              className="w-14 sm:w-20 h-1.5 bg-white/20 rounded-lg appearance-none cursor-pointer accent-indigo-500"
+            />
+            <span className="text-[10px] text-gray-300 min-w-[28px]">
+              {Math.round((isMuted ? 0 : volume) * 100)}%
+            </span>
+          </div>
+        </div>
+
+        {/* Right: PiP & Fullscreen */}
+        <div className="flex items-center gap-1.5">
+          <button
+            onClick={togglePiP}
+            title="Picture-in-Picture"
+            className="p-1.5 sm:p-2 rounded-xl bg-black/60 hover:bg-black/80 border border-white/15 text-gray-300 hover:text-white transition shadow"
+          >
+            <PictureInPicture className="w-3.5 h-3.5" />
+          </button>
+
+          <button
+            onClick={toggleFullscreen}
+            title="Tela Cheia"
+            className="p-1.5 sm:p-2 rounded-xl bg-black/60 hover:bg-black/80 border border-white/15 text-gray-300 hover:text-white transition shadow"
+          >
+            {isFullscreen ? <Minimize className="w-3.5 h-3.5" /> : <Maximize className="w-3.5 h-3.5" />}
+          </button>
+        </div>
       </div>
     </div>
   );
