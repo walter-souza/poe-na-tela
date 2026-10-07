@@ -14,6 +14,24 @@ import { WhepTile } from './WhepTile';
 import { getWhepUrl, fetchRoomStreams, type ObsStreamItem } from '../utils/api';
 import confetti from 'canvas-confetti';
 
+export type UnifiedStreamItem =
+  | {
+      type: 'webrtc';
+      id: string;
+      rawId: string;
+      volumeId: string;
+      name: string;
+      webrtcStream: ScreenShareItem;
+    }
+  | {
+      type: 'obs';
+      id: string;
+      rawId: string;
+      volumeId: string;
+      name: string;
+      obsStream: ObsStreamItem;
+    };
+
 interface VideoPlayerProps {
   screenShares: ScreenShareItem[];
   streamVolumes: Record<string, number>;
@@ -52,14 +70,92 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
     createdAt: number;
   }[]>([]);
 
+  // Multi-Stream OBS Squad State
+  const [obsStreams, setObsStreams] = useState<ObsStreamItem[]>([]);
+  const [activeWhepMap, setActiveWhepMap] = useState<Record<string, boolean>>({});
+
+  // Poll for active OBS streams in the room
+  useEffect(() => {
+    if (!roomName) return;
+    let isMounted = true;
+
+    const poll = async () => {
+      const list = await fetchRoomStreams(roomName);
+      if (isMounted) {
+        setObsStreams((prev) => {
+          const prevKeys = prev.map((s) => `${s.id}:${s.path}:${s.whepUrl}`).join('|');
+          const nextKeys = list.map((s) => `${s.id}:${s.path}:${s.whepUrl}`).join('|');
+          return prevKeys === nextKeys ? prev : list;
+        });
+      }
+    };
+
+    poll();
+    const interval = setInterval(poll, 2500);
+    return () => {
+      isMounted = false;
+      clearInterval(interval);
+    };
+  }, [roomName]);
+
+  // Active OBS streams from MediaMTX polling or fallback
+  const effectiveObsStreams = useMemo(() => {
+    if (obsStreams.length > 0) return obsStreams;
+    if (activeWhepMap['main'] && roomName) {
+      return [{ id: 'main', name: 'Principal', path: roomName, whepUrl: getWhepUrl(roomName) }];
+    }
+    return [];
+  }, [obsStreams, activeWhepMap, roomName]);
+
+  // UNIFIED HYBRID STREAM ENGINE: Combines WebRTC Screen Shares and OBS Streams
+  const unifiedStreams = useMemo<UnifiedStreamItem[]>(() => {
+    const list: UnifiedStreamItem[] = [];
+
+    // 1. WebRTC screenshares (LiveKit)
+    for (const s of screenShares) {
+      list.push({
+        type: 'webrtc',
+        id: `webrtc:${s.id}`,
+        rawId: s.id,
+        volumeId: s.participantIdentity,
+        name: s.participantName || s.participantIdentity,
+        webrtcStream: s,
+      });
+    }
+
+    // 2. OBS Studio streams (SRT / MediaMTX / WHEP)
+    for (const st of effectiveObsStreams) {
+      list.push({
+        type: 'obs',
+        id: `obs:${st.id}`,
+        rawId: st.id,
+        volumeId: st.id,
+        name: st.name,
+        obsStream: st,
+      });
+    }
+
+    return list;
+  }, [screenShares, effectiveObsStreams]);
+
   // Automatically update spotlightId if current spotlight stream leaves
   useEffect(() => {
-    if (screenShares.length === 0) {
+    if (unifiedStreams.length === 0) {
       setSpotlightId(null);
-    } else if (!screenShares.some((s) => s.id === spotlightId)) {
-      setSpotlightId(screenShares[0].id);
+    } else if (!unifiedStreams.some((s) => s.id === spotlightId)) {
+      setSpotlightId(unifiedStreams[0].id);
     }
-  }, [screenShares, spotlightId]);
+  }, [unifiedStreams, spotlightId]);
+
+  // Featured stream and other streams for Spotlight mode
+  const featuredStream = useMemo(() => {
+    if (unifiedStreams.length === 0) return null;
+    return unifiedStreams.find((s) => s.id === spotlightId) || unifiedStreams[0];
+  }, [unifiedStreams, spotlightId]);
+
+  const otherStreams = useMemo(() => {
+    return unifiedStreams.filter((s) => s.id !== featuredStream?.id);
+  }, [unifiedStreams, featuredStream]);
 
   // Floating reactions & confetti triggers
   useEffect(() => {
@@ -97,257 +193,59 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
     return () => clearInterval(interval);
   }, []);
 
-  const featuredStream = useMemo(() => {
-    if (screenShares.length === 0) return null;
-    return screenShares.find((s) => s.id === spotlightId) || screenShares[0];
-  }, [screenShares, spotlightId]);
-
-  const otherStreams = useMemo(() => {
-    return screenShares.filter((s) => s.id !== featuredStream?.id);
-  }, [screenShares, featuredStream]);
-
-  // Multi-Stream OBS Squad State
-  const [obsStreams, setObsStreams] = useState<ObsStreamItem[]>([]);
-  const [activeWhepMap, setActiveWhepMap] = useState<Record<string, boolean>>({});
-  const [obsSpotlightId, setObsSpotlightId] = useState<string | null>(null);
-
-  // Poll for active OBS streams in the room
-  useEffect(() => {
-    if (!roomName) return;
-    let isMounted = true;
-
-    const poll = async () => {
-      const list = await fetchRoomStreams(roomName);
-      if (isMounted) {
-        setObsStreams((prev) => {
-          const prevKeys = prev.map((s) => `${s.id}:${s.path}:${s.whepUrl}`).join('|');
-          const nextKeys = list.map((s) => `${s.id}:${s.path}:${s.whepUrl}`).join('|');
-          return prevKeys === nextKeys ? prev : list;
-        });
-      }
-    };
-
-    poll();
-    const interval = setInterval(poll, 2500);
-    return () => {
-      isMounted = false;
-      clearInterval(interval);
-    };
-  }, [roomName]);
-
-  // Streams to render: if server returned streams, use them; otherwise fallback to single room prober
-  const effectiveObsStreams = useMemo(() => {
-    if (obsStreams.length > 0) return obsStreams;
-    return roomName
-      ? [{ id: 'main', name: 'Principal', path: roomName, whepUrl: getWhepUrl(roomName) }]
-      : [];
-  }, [obsStreams, roomName]);
-
-  // Keep spotlight id valid for OBS streams
-  useEffect(() => {
-    if (effectiveObsStreams.length === 0) {
-      setObsSpotlightId(null);
-    } else if (!effectiveObsStreams.some((s) => s.id === obsSpotlightId)) {
-      setObsSpotlightId(effectiveObsStreams[0].id);
-    }
-  }, [effectiveObsStreams, obsSpotlightId]);
-
-  // Empty State (0 streams sharing via LiveKit WebRTC)
-  if (screenShares.length === 0) {
-    const isMultiObs = effectiveObsStreams.length >= 2;
-    const isSingleObs = effectiveObsStreams.length === 1 && (obsStreams.length > 0 || Boolean(activeWhepMap['main']));
-
-    // 1. Multi-Stream OBS Squad (2 or more OBS streams active in MediaMTX) -> Squad Grid / Spotlight
-    if (isMultiObs) {
-      const featuredObs = effectiveObsStreams.find((s) => s.id === obsSpotlightId) || effectiveObsStreams[0];
-      const otherObs = effectiveObsStreams.filter((s) => s.id !== featuredObs.id);
-
+  // Helper to render polymorphic stream tile (WebRTC or OBS)
+  const renderStreamTile = (
+    item: UnifiedStreamItem,
+    options: {
+      isSpotlighted?: boolean;
+      onToggleSpotlight?: () => void;
+      isThumbnail?: boolean;
+      onSelectThumbnail?: () => void;
+    } = {}
+  ) => {
+    if (item.type === 'webrtc') {
       return (
-        <div className="relative flex-1 bg-black/40 rounded-2xl overflow-hidden flex flex-col min-h-0">
-          {/* Top Multi-Stream Header Bar — Idêntico ao padrão WebRTC */}
-          <div className="absolute top-2 inset-x-2 sm:top-3 sm:inset-x-3 z-30 flex items-center justify-between pointer-events-none">
-            {/* Left: Stream Count */}
-            <div className="pointer-events-auto flex items-center gap-1.5 sm:gap-2 bg-black/60 backdrop-blur-md border border-white/15 px-2.5 sm:px-3 py-1 sm:py-1.5 rounded-2xl text-[11px] sm:text-xs text-white shadow-lg">
-              <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-              <span className="font-bold">{effectiveObsStreams.length}</span>
-              <span className="text-gray-300 hidden sm:inline">
-                transmissões OBS ao vivo (Squad)
-              </span>
-            </div>
-
-            {/* Right: Layout Switcher & HUD Toggle */}
-            <div className="pointer-events-auto flex items-center gap-1.5 sm:gap-2 bg-black/60 backdrop-blur-md border border-white/15 p-1 rounded-2xl shadow-lg">
-              <div className="flex items-center gap-1 border-r border-white/10 pr-1.5 mr-0.5">
-                <button
-                  onClick={() => setLayoutMode('grid')}
-                  title="Modo Grade (Grid)"
-                  className={`p-1.5 rounded-xl text-xs font-medium flex items-center gap-1.5 transition cursor-pointer ${
-                    layoutMode === 'grid'
-                      ? 'bg-indigo-600 text-white shadow'
-                      : 'text-gray-400 hover:text-white hover:bg-white/10'
-                  }`}
-                >
-                  <LayoutGrid className="w-3.5 h-3.5" />
-                  <span className="hidden sm:inline">Grade</span>
-                </button>
-
-                <button
-                  onClick={() => setLayoutMode('spotlight')}
-                  title="Modo Destaque (Spotlight)"
-                  className={`p-1.5 rounded-xl text-xs font-medium flex items-center gap-1.5 transition cursor-pointer ${
-                    layoutMode === 'spotlight'
-                      ? 'bg-indigo-600 text-white shadow'
-                      : 'text-gray-400 hover:text-white hover:bg-white/10'
-                  }`}
-                >
-                  <Square className="w-3.5 h-3.5" />
-                  <span className="hidden sm:inline">Destaque</span>
-                </button>
-              </div>
-
-              <button
-                onClick={onToggleHUD}
-                title="Estatísticas Técnicas (HUD)"
-                className={`p-1.5 rounded-xl transition cursor-pointer ${
-                  isHUDOpen
-                    ? 'bg-indigo-600 text-white shadow'
-                    : 'text-gray-400 hover:text-white hover:bg-white/10'
-                }`}
-              >
-                <Layers className="w-3.5 h-3.5" />
-              </button>
-            </div>
-          </div>
-
-          {/* Main Video View Area */}
-          <div className="flex-1 flex flex-col p-1 sm:p-2 min-h-0 pt-12 sm:pt-14">
-            {layoutMode === 'grid' ? (
-              <div
-                className={`flex-1 grid gap-2 sm:gap-3 min-h-0 ${
-                  effectiveObsStreams.length === 2
-                    ? 'grid-cols-1 md:grid-cols-2'
-                    : effectiveObsStreams.length === 3
-                    ? 'grid-cols-1 md:grid-cols-2 lg:grid-cols-3'
-                    : 'grid-cols-1 md:grid-cols-2'
-                }`}
-              >
-                {effectiveObsStreams.map((st) => (
-                  <div key={st.id} className="min-h-[160px] sm:min-h-[220px] flex-1 flex">
-                    <WhepTile
-                      whepUrl={st.whepUrl}
-                      roomName={roomName || 'Sala'}
-                      streamerName={st.name}
-                      volume={streamVolumes[st.id] ?? 1}
-                      onVolumeChange={(vol) => onStreamVolumeChange(st.id, vol)}
-                      onStateChange={(active) => {
-                        setActiveWhepMap((prev) => (prev[st.id] === active ? prev : { ...prev, [st.id]: active }));
-                      }}
-                      isSpotlighted={obsSpotlightId === st.id}
-                      onToggleSpotlight={() => {
-                        setObsSpotlightId(st.id);
-                        setLayoutMode('spotlight');
-                      }}
-                    />
-                  </div>
-                ))}
-              </div>
-            ) : (
-              <div className="flex-1 flex flex-col gap-3 min-h-0">
-                {/* Featured Main Stream */}
-                <div className="flex-1 min-h-0 flex">
-                  <WhepTile
-                    key={featuredObs.id}
-                    whepUrl={featuredObs.whepUrl}
-                    roomName={roomName || 'Sala'}
-                    streamerName={featuredObs.name}
-                    volume={streamVolumes[featuredObs.id] ?? 1}
-                    onVolumeChange={(vol) => onStreamVolumeChange(featuredObs.id, vol)}
-                    onStateChange={(active) => {
-                      setActiveWhepMap((prev) => (prev[featuredObs.id] === active ? prev : { ...prev, [featuredObs.id]: active }));
-                    }}
-                    isSpotlighted={true}
-                    onToggleSpotlight={() => setLayoutMode('grid')}
-                  />
-                </div>
-
-                {/* Other Streams Strip — Idêntico ao thumbnail strip do WebRTC */}
-                {otherObs.length > 0 && (
-                  <div className="flex items-center justify-center gap-3 overflow-x-auto py-1 px-1 custom-scrollbar">
-                    {otherObs.map((st) => (
-                      <WhepTile
-                        key={st.id}
-                        whepUrl={st.whepUrl}
-                        roomName={roomName || 'Sala'}
-                        streamerName={st.name}
-                        isThumbnail={true}
-                        volume={streamVolumes[st.id] ?? 1}
-                        onVolumeChange={(vol) => onStreamVolumeChange(st.id, vol)}
-                        onSelectThumbnail={() => setObsSpotlightId(st.id)}
-                        onStateChange={(active) => {
-                          setActiveWhepMap((prev) => (prev[st.id] === active ? prev : { ...prev, [st.id]: active }));
-                        }}
-                      />
-                    ))}
-                  </div>
-                )}
-              </div>
-            )}
-          </div>
-
-          {/* Reaction Overlay */}
-          <div className="absolute bottom-6 right-6 z-30 pointer-events-none flex flex-col items-end gap-2">
-            {activeReactions.map((r) => (
-              <div
-                key={r.id}
-                className="flex items-center gap-2 bg-black/80 backdrop-blur-md border border-white/15 px-3 py-1.5 rounded-full text-white text-sm shadow-2xl animate-float-up"
-              >
-                <span className="text-2xl">{r.emoji}</span>
-                <span className="text-xs font-semibold text-indigo-300">{r.sender}</span>
-              </div>
-            ))}
-          </div>
-        </div>
+        <StreamTile
+          key={item.id}
+          stream={item.webrtcStream}
+          volume={streamVolumes[item.volumeId] ?? 1}
+          onVolumeChange={(vol) => onStreamVolumeChange(item.volumeId, vol)}
+          isSpotlighted={options.isSpotlighted}
+          onToggleSpotlight={options.onToggleSpotlight}
+          isThumbnail={options.isThumbnail}
+          onSelectThumbnail={options.onSelectThumbnail}
+          isLocalScreenAudioMuted={isLocalScreenAudioMuted}
+          onToggleLocalScreenAudio={onToggleLocalScreenAudio}
+        />
       );
     }
 
-    // 2. Single OBS Stream Active -> Full container
-    if (isSingleObs) {
-      const single = effectiveObsStreams[0];
-      return (
-        <div className="relative flex-1 bg-black rounded-2xl overflow-hidden flex flex-col min-h-[400px]">
-          <div className="flex-1 relative">
-            <WhepTile
-              key={single.id}
-              whepUrl={single.whepUrl}
-              roomName={roomName || 'Sala'}
-              streamerName={single.name}
-              volume={streamVolumes[single.id] ?? 1}
-              onVolumeChange={(vol) => onStreamVolumeChange(single.id, vol)}
-              onStateChange={(active) => {
-                setActiveWhepMap((prev) => (prev[single.id] === active ? prev : { ...prev, [single.id]: active }));
-              }}
-            />
-          </div>
-          {/* Reaction Overlay */}
-          <div className="absolute bottom-6 right-6 z-30 pointer-events-none flex flex-col items-end gap-2">
-            {activeReactions.map((r) => (
-              <div
-                key={r.id}
-                className="flex items-center gap-2 bg-black/80 backdrop-blur-md border border-white/15 px-3 py-1.5 rounded-full text-white text-sm shadow-2xl animate-float-up"
-              >
-                <span className="text-2xl">{r.emoji}</span>
-                <span className="text-xs font-semibold text-indigo-300">{r.sender}</span>
-              </div>
-            ))}
-          </div>
-        </div>
-      );
-    }
+    return (
+      <WhepTile
+        key={item.id}
+        whepUrl={item.obsStream.whepUrl}
+        roomName={roomName || 'Sala'}
+        streamerName={item.name}
+        volume={streamVolumes[item.volumeId] ?? 1}
+        onVolumeChange={(vol) => onStreamVolumeChange(item.volumeId, vol)}
+        isSpotlighted={options.isSpotlighted}
+        onToggleSpotlight={options.onToggleSpotlight}
+        isThumbnail={options.isThumbnail}
+        onSelectThumbnail={options.onSelectThumbnail}
+        onStateChange={(active) => {
+          setActiveWhepMap((prev) =>
+            prev[item.rawId] === active ? prev : { ...prev, [item.rawId]: active }
+          );
+        }}
+      />
+    );
+  };
 
-    // 3. No active OBS streams yet -> Empty State with background auto-probing
+  // 1. EMPTY STATE (Nenhum stream WebRTC e nenhum stream OBS ativo)
+  if (unifiedStreams.length === 0) {
     return (
       <div className="relative flex-1 bg-black rounded-2xl overflow-hidden flex items-center justify-center border border-white/5 shadow-2xl group select-none min-h-[400px]">
-        {/* Prober in background for auto-detection of default room stream */}
+        {/* Background prober for auto-detection of default room stream */}
         <div className="hidden">
           <WhepTile
             key="main"
@@ -365,7 +263,7 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
           </div>
           <h3 className="text-xl font-bold text-white mb-2">Aguardando Transmissão</h3>
           <p className="text-sm text-gray-400 mb-6 leading-relaxed">
-            Ninguém está transmitindo no momento. Até <strong>múltiplos amigos</strong> podem transmitir via <strong>OBS Studio (SRT 60 FPS)</strong> simultaneamente!
+            Ninguém está transmitindo no momento. Compartilhe sua tela pelo navegador/desktop ou conecte via <strong>OBS Studio (SRT 60 FPS)</strong>!
           </p>
 
           {onOpenScreenShareConfig && (
@@ -380,7 +278,7 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
 
           <div className="flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-indigo-500/10 border border-indigo-500/20 text-xs text-indigo-300">
             <Radio className="w-3.5 h-3.5 text-emerald-400 animate-pulse" />
-            <span>Detecção automática de Squad Stream ativa</span>
+            <span>Detecção automática de transmissões ativa</span>
           </div>
         </div>
 
@@ -400,27 +298,38 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
     );
   }
 
+  const webrtcCount = screenShares.length;
+  const obsCount = effectiveObsStreams.length;
+
+  // 2. ACTIVE STREAMS VIEW (Híbrido: WebRTC + OBS em conjunto)
   return (
     <div className="relative flex-1 bg-black/40 rounded-2xl overflow-hidden flex flex-col min-h-0">
       {/* Top Multi-Stream Header Bar */}
       <div className="absolute top-2 inset-x-2 sm:top-3 sm:inset-x-3 z-30 flex items-center justify-between pointer-events-none">
-        {/* Left: Stream Count */}
+        {/* Left: Stream Count & Breakdown */}
         <div className="pointer-events-auto flex items-center gap-1.5 sm:gap-2 bg-black/60 backdrop-blur-md border border-white/15 px-2.5 sm:px-3 py-1 sm:py-1.5 rounded-2xl text-[11px] sm:text-xs text-white shadow-lg">
           <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-          <span className="font-bold">{screenShares.length}</span>
+          <span className="font-bold">{unifiedStreams.length}</span>
           <span className="text-gray-300 hidden sm:inline">
-            {screenShares.length === 1 ? 'tela ao vivo' : 'telas ao vivo'}
+            {unifiedStreams.length === 1 ? 'transmissão ao vivo' : 'transmissões ao vivo'}
+            {unifiedStreams.length > 1 && (
+              <span className="text-indigo-300 font-medium ml-1">
+                ({webrtcCount > 0 ? `${webrtcCount} WebRTC` : ''}
+                {webrtcCount > 0 && obsCount > 0 ? ' • ' : ''}
+                {obsCount > 0 ? `${obsCount} OBS` : ''})
+              </span>
+            )}
           </span>
         </div>
 
         {/* Right: Layout Switcher & HUD Toggle */}
         <div className="pointer-events-auto flex items-center gap-1.5 sm:gap-2 bg-black/60 backdrop-blur-md border border-white/15 p-1 rounded-2xl shadow-lg">
-          {screenShares.length > 1 && (
+          {unifiedStreams.length > 1 && (
             <div className="flex items-center gap-1 border-r border-white/10 pr-1.5 mr-0.5">
               <button
                 onClick={() => setLayoutMode('grid')}
                 title="Modo Grade (Grid)"
-                className={`p-1.5 rounded-xl text-xs font-medium flex items-center gap-1.5 transition ${
+                className={`p-1.5 rounded-xl text-xs font-medium flex items-center gap-1.5 transition cursor-pointer ${
                   layoutMode === 'grid'
                     ? 'bg-indigo-600 text-white shadow'
                     : 'text-gray-400 hover:text-white hover:bg-white/10'
@@ -433,7 +342,7 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
               <button
                 onClick={() => setLayoutMode('spotlight')}
                 title="Modo Destaque (Spotlight)"
-                className={`p-1.5 rounded-xl text-xs font-medium flex items-center gap-1.5 transition ${
+                className={`p-1.5 rounded-xl text-xs font-medium flex items-center gap-1.5 transition cursor-pointer ${
                   layoutMode === 'spotlight'
                     ? 'bg-indigo-600 text-white shadow'
                     : 'text-gray-400 hover:text-white hover:bg-white/10'
@@ -448,7 +357,7 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
           <button
             onClick={onToggleHUD}
             title="Estatísticas Técnicas (HUD)"
-            className={`p-1.5 rounded-xl transition ${
+            className={`p-1.5 rounded-xl transition cursor-pointer ${
               isHUDOpen
                 ? 'bg-indigo-600 text-white shadow'
                 : 'text-gray-400 hover:text-white hover:bg-white/10'
@@ -484,37 +393,31 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
 
       {/* Main Video View Area */}
       <div className="flex-1 flex flex-col p-1 sm:p-2 min-h-0 pt-12 sm:pt-14">
-        {layoutMode === 'grid' || screenShares.length === 1 ? (
+        {layoutMode === 'grid' || unifiedStreams.length === 1 ? (
           // GRID MODE LAYOUT
           <div
             className={`flex-1 grid gap-2 sm:gap-3 min-h-0 ${
-              screenShares.length === 1
+              unifiedStreams.length === 1
                 ? 'grid-cols-1'
-                : screenShares.length === 2
+                : unifiedStreams.length === 2
                 ? 'grid-cols-1 md:grid-cols-2'
-                : screenShares.length === 3
+                : unifiedStreams.length === 3
                 ? 'grid-cols-1 md:grid-cols-2 lg:grid-cols-3'
                 : 'grid-cols-1 md:grid-cols-2'
             }`}
           >
-            {screenShares.map((stream) => (
-              <div key={stream.id} className="min-h-[160px] sm:min-h-[220px] flex-1 flex">
-                <StreamTile
-                  stream={stream}
-                  volume={streamVolumes[stream.participantIdentity] ?? 1}
-                  onVolumeChange={(vol) => onStreamVolumeChange(stream.participantIdentity, vol)}
-                  isSpotlighted={spotlightId === stream.id && screenShares.length > 1}
-                  onToggleSpotlight={
-                    screenShares.length > 1
+            {unifiedStreams.map((item) => (
+              <div key={item.id} className="min-h-[160px] sm:min-h-[220px] flex-1 flex">
+                {renderStreamTile(item, {
+                  isSpotlighted: spotlightId === item.id && unifiedStreams.length > 1,
+                  onToggleSpotlight:
+                    unifiedStreams.length > 1
                       ? () => {
-                          setSpotlightId(stream.id);
+                          setSpotlightId(item.id);
                           setLayoutMode('spotlight');
                         }
-                      : undefined
-                  }
-                  isLocalScreenAudioMuted={isLocalScreenAudioMuted}
-                  onToggleLocalScreenAudio={onToggleLocalScreenAudio}
-                />
+                      : undefined,
+                })}
               </div>
             ))}
           </div>
@@ -524,31 +427,24 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
             {/* Featured Main Stream */}
             {featuredStream && (
               <div className="flex-1 min-h-0 flex">
-                <StreamTile
-                  stream={featuredStream}
-                  volume={streamVolumes[featuredStream.participantIdentity] ?? 1}
-                  onVolumeChange={(vol) =>
-                    onStreamVolumeChange(featuredStream.participantIdentity, vol)
-                  }
-                  isSpotlighted={true}
-                  onToggleSpotlight={() => setLayoutMode('grid')}
-                  isLocalScreenAudioMuted={isLocalScreenAudioMuted}
-                  onToggleLocalScreenAudio={onToggleLocalScreenAudio}
-                />
+                {renderStreamTile(featuredStream, {
+                  isSpotlighted: true,
+                  onToggleSpotlight: () => setLayoutMode('grid'),
+                })}
               </div>
             )}
 
             {/* Thumbnail Strip for other streams */}
             {otherStreams.length > 0 && (
               <div className="flex items-center justify-center gap-3 overflow-x-auto py-1 px-1 custom-scrollbar">
-                {otherStreams.map((stream) => (
-                  <StreamTile
-                    key={stream.id}
-                    stream={stream}
-                    isThumbnail={true}
-                    isSpotlighted={false}
-                    onSelectThumbnail={() => setSpotlightId(stream.id)}
-                  />
+                {otherStreams.map((item) => (
+                  <div key={item.id} className="shrink-0">
+                    {renderStreamTile(item, {
+                      isThumbnail: true,
+                      isSpotlighted: false,
+                      onSelectThumbnail: () => setSpotlightId(item.id),
+                    })}
+                  </div>
                 ))}
               </div>
             )}
