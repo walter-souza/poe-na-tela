@@ -53,9 +53,9 @@ export const Lobby: React.FC<LobbyProps> = ({ onJoin, isLoading, error }) => {
   const [passwordModalError, setPasswordModalError] = useState<string | null>(null);
   const [isNoiseSuppressionEnabled, setIsNoiseSuppressionEnabled] = useState<boolean>(() => {
     try {
-      return localStorage.getItem('poe-na-tela-noise-suppression') !== 'false';
+      return localStorage.getItem('poe-na-tela-noise-suppression') === 'true';
     } catch {
-      return true;
+      return false;
     }
   });
 

@@ -35,10 +35,12 @@ export class NoiseSuppressionProcessor implements TrackProcessor<Track.Kind.Audi
   private destNode?: MediaStreamAudioDestinationNode;
 
   async init(opts: AudioProcessorOptions): Promise<void> {
-    if (!opts.audioContext) {
-      throw new Error('AudioContext is required for NoiseSuppressionProcessor');
+    const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
+    if (!opts.audioContext || opts.audioContext.sampleRate !== 48000) {
+      this.audioContext = new AudioCtx({ sampleRate: 48000 });
+    } else {
+      this.audioContext = opts.audioContext;
     }
-    this.audioContext = opts.audioContext;
 
     // Resume audio context if suspended
     if (this.audioContext.state === 'suspended') {
