@@ -72,25 +72,7 @@ export function useLiveKit({ url, token, onDisconnected }: UseLiveKitOptions) {
   isNoiseSuppressionEnabledRef.current = isNoiseSuppressionEnabled;
   const activeProcessorRef = useRef<NoiseSuppressionProcessor | null>(null);
 
-  // Audio Booster for voice volume > 100% (up to 200%) without double-playback
-  interface AudioBooster {
-    source: MediaStreamAudioSourceNode;
-    gain: GainNode;
-    stream: MediaStream;
-  }
-  const audioBoostersRef = useRef<Map<string, AudioBooster>>(new Map());
-  const boostAudioContextRef = useRef<AudioContext | null>(null);
 
-  const getBoostAudioContext = useCallback(() => {
-    if (!boostAudioContextRef.current || boostAudioContextRef.current.state === 'closed') {
-      const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
-      boostAudioContextRef.current = new AudioCtx({ sampleRate: 48000 });
-    }
-    if (boostAudioContextRef.current.state === 'suspended') {
-      boostAudioContextRef.current.resume().catch(() => {});
-    }
-    return boostAudioContextRef.current;
-  }, []);
 
   // WebRTC Playout / Jitter Buffer (500ms to 1000ms configurable for smooth 60 FPS delivery)
   const PLAYOUT_BUFFER_KEY = 'poe-na-tela-playout-buffer';
@@ -566,36 +548,14 @@ export function useLiveKit({ url, token, onDisconnected }: UseLiveKitOptions) {
             ? userVolumesRef.current[participant.identity]
             : currentVolumeRef.current;
 
-          if (voiceVol > 1.0 && !isDeafenedRef.current && track.mediaStreamTrack) {
-            // Boosted above 100%: Mute native element so it NEVER plays double-audio
-            if (el) {
-              (el as HTMLAudioElement).volume = 0;
-              (el as HTMLAudioElement).muted = true;
-            }
+          if ('setVolume' in track) {
+            (track as any).setVolume(voiceVol);
+          }
+          if (el) {
             try {
-              const ctx = getBoostAudioContext();
-              const stream = new MediaStream([track.mediaStreamTrack]);
-              const source = ctx.createMediaStreamSource(stream);
-              const gain = ctx.createGain();
-              source.connect(gain);
-              gain.connect(ctx.destination);
-              gain.gain.setTargetAtTime(voiceVol, ctx.currentTime, 0.05);
-              audioBoostersRef.current.set(participant.identity, { source, gain, stream });
-            } catch (err) {
-              console.warn('Failed to apply initial audio boost:', err);
-              if (el) {
-                (el as HTMLAudioElement).volume = 1;
-                (el as HTMLAudioElement).muted = false;
-              }
-            }
-          } else {
-            // Normal volume (0% to 100%) - native crystal-clear playback
-            if (el) {
-              try {
-                (el as HTMLAudioElement).volume = Math.min(1, Math.max(0, voiceVol));
-                (el as HTMLAudioElement).muted = voiceVol === 0 || isDeafenedRef.current;
-              } catch {}
-            }
+              (el as HTMLAudioElement).volume = Math.min(1, Math.max(0, voiceVol));
+              (el as HTMLAudioElement).muted = voiceVol === 0 || isDeafenedRef.current;
+            } catch {}
           }
         }
       }
@@ -604,19 +564,11 @@ export function useLiveKit({ url, token, onDisconnected }: UseLiveKitOptions) {
       updateScreenShares(room);
     };
 
-    const handleTrackUnsubscribed = (track: Track, _pub: any, participant: RemoteParticipant) => {
+    const handleTrackUnsubscribed = (track: Track) => {
       if (!isSubscribed) return;
 
       if (track.kind === Track.Kind.Audio) {
         track.detach();
-        const booster = audioBoostersRef.current.get(participant.identity);
-        if (booster) {
-          try {
-            booster.gain.disconnect();
-            booster.source.disconnect();
-          } catch {}
-          audioBoostersRef.current.delete(participant.identity);
-        }
       }
 
       updateParticipantList(room);
@@ -734,17 +686,6 @@ export function useLiveKit({ url, token, onDisconnected }: UseLiveKitOptions) {
         activeProcessorRef.current.destroy().catch(() => {});
         activeProcessorRef.current = null;
       }
-      audioBoostersRef.current.forEach((booster) => {
-        try {
-          booster.gain.disconnect();
-          booster.source.disconnect();
-        } catch {}
-      });
-      audioBoostersRef.current.clear();
-      if (boostAudioContextRef.current && boostAudioContextRef.current.state !== 'closed') {
-        boostAudioContextRef.current.close().catch(() => {});
-        boostAudioContextRef.current = null;
-      }
       room.disconnect();
     };
   }, [url, token, collectStats, updateParticipantList, updateScreenShares]);
@@ -806,59 +747,27 @@ export function useLiveKit({ url, token, onDisconnected }: UseLiveKitOptions) {
     if (!room) return;
 
     // Local participant does not need audio playback adjustment
-    const audioElements = document.querySelectorAll(
-      `audio[data-participant="${participantIdentity}"][data-source="microphone"]`
-    ) as NodeListOf<HTMLAudioElement>;
+    if (room.localParticipant?.identity === participantIdentity) return;
 
-    if (clamped > 1.0 && !isDeafenedRef.current) {
-      // Boosted above 100%: Mute HTML element so it NEVER plays double-audio
-      audioElements.forEach((el) => {
-        el.volume = 0;
-        el.muted = true;
-      });
-
-      // Route through dedicated Web Audio GainNode
-      const participant = room.remoteParticipants.get(participantIdentity);
-      const micPub = participant?.getTrackPublication(Track.Source.Microphone);
-      const mediaTrack = micPub?.track?.mediaStreamTrack;
-
-      if (mediaTrack) {
-        try {
-          const ctx = getBoostAudioContext();
-          let booster = audioBoostersRef.current.get(participantIdentity);
-          if (!booster) {
-            const stream = new MediaStream([mediaTrack]);
-            const source = ctx.createMediaStreamSource(stream);
-            const gain = ctx.createGain();
-            source.connect(gain);
-            gain.connect(ctx.destination);
-            booster = { source, gain, stream };
-            audioBoostersRef.current.set(participantIdentity, booster);
-          }
-          booster.gain.gain.setTargetAtTime(clamped, ctx.currentTime, 0.05);
-        } catch (err) {
-          console.warn('Failed to apply audio boost:', err);
+    const participant = room.remoteParticipants.get(participantIdentity);
+    if (participant) {
+      participant.setVolume(clamped, Track.Source.Microphone);
+      participant.audioTrackPublications.forEach((pub) => {
+        if (pub.source === Track.Source.Microphone && pub.track && 'setVolume' in pub.track) {
+          (pub.track as any).setVolume(clamped);
         }
-      }
-    } else {
-      // Normal volume (0% to 100%) or deafened:
-      // Disconnect booster if it was active
-      const booster = audioBoostersRef.current.get(participantIdentity);
-      if (booster) {
-        try {
-          booster.gain.disconnect();
-          booster.source.disconnect();
-        } catch {}
-        audioBoostersRef.current.delete(participantIdentity);
-      }
-
-      // Play natively through HTMLAudioElement with pristine zero-artifact audio
-      audioElements.forEach((el) => {
-        el.muted = clamped === 0 || isDeafenedRef.current;
-        el.volume = isDeafenedRef.current ? 0 : Math.min(1, clamped);
       });
     }
-  }, [getBoostAudioContext]);
+
+    document
+      .querySelectorAll(`audio[data-participant="${participantIdentity}"][data-source="microphone"]`)
+      .forEach((el) => {
+        try {
+          (el as HTMLAudioElement).volume = Math.min(1, Math.max(0, clamped));
+          (el as HTMLAudioElement).muted = clamped === 0 || isDeafenedRef.current;
+        } catch {}
+      });
+  }, []);
 
   // Set global audio volume for all remote participants and audio elements
   const setGlobalVolume = (volume: number) => {
@@ -1230,21 +1139,6 @@ export function useLiveKit({ url, token, onDisconnected }: UseLiveKitOptions) {
       });
     });
 
-    // Update Web Audio boosters if any are active
-    audioBoostersRef.current.forEach((booster, participantId) => {
-      try {
-        const ctx = boostAudioContextRef.current;
-        if (ctx) {
-          if (nextDeafen) {
-            booster.gain.gain.setTargetAtTime(0, ctx.currentTime, 0.05);
-          } else {
-            const vol = userVolumesRef.current[participantId] ?? 1.0;
-            booster.gain.gain.setTargetAtTime(vol, ctx.currentTime, 0.05);
-          }
-        }
-      } catch {}
-    });
-
     document.querySelectorAll('audio').forEach((el) => {
       const audioElement = el as HTMLAudioElement;
       if (nextDeafen) {
@@ -1315,17 +1209,6 @@ export function useLiveKit({ url, token, onDisconnected }: UseLiveKitOptions) {
     if (activeProcessorRef.current) {
       activeProcessorRef.current.destroy().catch(() => {});
       activeProcessorRef.current = null;
-    }
-    audioBoostersRef.current.forEach((booster) => {
-      try {
-        booster.gain.disconnect();
-        booster.source.disconnect();
-      } catch {}
-    });
-    audioBoostersRef.current.clear();
-    if (boostAudioContextRef.current && boostAudioContextRef.current.state !== 'closed') {
-      boostAudioContextRef.current.close().catch(() => {});
-      boostAudioContextRef.current = null;
     }
     roomRef.current?.disconnect();
   };
