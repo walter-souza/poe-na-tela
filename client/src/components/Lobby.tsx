@@ -11,11 +11,13 @@ import {
   Trash2,
   Users,
   Play,
+  Wand2,
 } from 'lucide-react';
 import { PasswordModal } from './PasswordModal';
 import { sanitizeRoomName, sanitizeUserName } from '../utils/sanitize';
 import type { FavoriteRoom, ActiveRoomInfo } from '../types';
 import { getRoomsUrl, getRoomInfoUrl } from '../utils/api';
+import { isNoiseSuppressionSupported, NoiseSuppressionProcessor } from '../utils/noiseSuppression';
 
 interface LobbyProps {
   onJoin: (roomName: string, userName: string, isPublisher: boolean, passcode?: string) => void;
@@ -49,10 +51,18 @@ export const Lobby: React.FC<LobbyProps> = ({ onJoin, isLoading, error }) => {
   const [activeRooms, setActiveRooms] = useState<Record<string, ActiveRoomInfo>>({});
   const [passwordPromptRoom, setPasswordPromptRoom] = useState<string | null>(null);
   const [passwordModalError, setPasswordModalError] = useState<string | null>(null);
+  const [isNoiseSuppressionEnabled, setIsNoiseSuppressionEnabled] = useState<boolean>(() => {
+    try {
+      return localStorage.getItem('poe-na-tela-noise-suppression') !== 'false';
+    } catch {
+      return true;
+    }
+  });
 
   const audioContextRef = useRef<AudioContext | null>(null);
   const analyserRef = useRef<AnalyserNode | null>(null);
   const micStreamRef = useRef<MediaStream | null>(null);
+  const processorRef = useRef<NoiseSuppressionProcessor | null>(null);
   const animFrameRef = useRef<number | null>(null);
 
   // Fetch active rooms from backend API
@@ -180,8 +190,33 @@ export const Lobby: React.FC<LobbyProps> = ({ onJoin, isLoading, error }) => {
       analyser.fftSize = 256;
       analyserRef.current = analyser;
 
-      const source = audioCtx.createMediaStreamSource(stream);
-      source.connect(analyser);
+      if (isNoiseSuppressionEnabled && isNoiseSuppressionSupported()) {
+        try {
+          const processor = new NoiseSuppressionProcessor();
+          processorRef.current = processor;
+          const mockTrack = stream.getAudioTracks()[0];
+          await processor.init({
+            kind: 'audio' as any,
+            track: mockTrack,
+            audioContext: audioCtx,
+          });
+          if (processor.processedTrack) {
+            const processedStream = new MediaStream([processor.processedTrack]);
+            const source = audioCtx.createMediaStreamSource(processedStream);
+            source.connect(analyser);
+          } else {
+            const source = audioCtx.createMediaStreamSource(stream);
+            source.connect(analyser);
+          }
+        } catch (err) {
+          console.warn('Microphone test noise suppression fallback:', err);
+          const source = audioCtx.createMediaStreamSource(stream);
+          source.connect(analyser);
+        }
+      } else {
+        const source = audioCtx.createMediaStreamSource(stream);
+        source.connect(analyser);
+      }
 
       const bufferLength = analyser.frequencyBinCount;
       const dataArray = new Uint8Array(bufferLength);
@@ -209,6 +244,10 @@ export const Lobby: React.FC<LobbyProps> = ({ onJoin, isLoading, error }) => {
       cancelAnimationFrame(animFrameRef.current);
       animFrameRef.current = null;
     }
+    if (processorRef.current) {
+      processorRef.current.destroy().catch(() => {});
+      processorRef.current = null;
+    }
     if (micStreamRef.current) {
       micStreamRef.current.getTracks().forEach((t) => t.stop());
       micStreamRef.current = null;
@@ -221,6 +260,18 @@ export const Lobby: React.FC<LobbyProps> = ({ onJoin, isLoading, error }) => {
     }
     setIsMicTesting(false);
     setMicLevel(0);
+  };
+
+  const toggleNoiseSuppressionInLobby = () => {
+    const next = !isNoiseSuppressionEnabled;
+    setIsNoiseSuppressionEnabled(next);
+    localStorage.setItem('poe-na-tela-noise-suppression', String(next));
+    if (isMicTesting) {
+      stopMicTest();
+      setTimeout(() => {
+        startMicTest();
+      }, 150);
+    }
   };
 
   useEffect(() => {
@@ -348,8 +399,8 @@ export const Lobby: React.FC<LobbyProps> = ({ onJoin, isLoading, error }) => {
               </div>
             </div>
 
-            {/* Mic Test */}
-            <div className="p-2.5 bg-white/5 rounded-2xl border border-white/5 space-y-1.5">
+            {/* Mic Test & Noise Suppression */}
+            <div className="p-2.5 bg-white/5 rounded-2xl border border-white/5 space-y-2">
               <div className="flex items-center justify-between text-xs">
                 <span className="text-gray-400 flex items-center gap-1.5 font-medium">
                   <Mic className="w-3.5 h-3.5 text-indigo-400" />
@@ -372,6 +423,27 @@ export const Lobby: React.FC<LobbyProps> = ({ onJoin, isLoading, error }) => {
                   />
                 </div>
               )}
+
+              {/* Noise Suppression Toggle */}
+              <div className="pt-1.5 border-t border-white/5 flex items-center justify-between text-xs">
+                <span className="text-gray-400 flex items-center gap-1.5 font-medium">
+                  <Wand2 className="w-3.5 h-3.5 text-violet-400" />
+                  Supressão de Ruído (IA)
+                </span>
+                <button
+                  type="button"
+                  onClick={toggleNoiseSuppressionInLobby}
+                  title="Elimina ruído de teclado mecânico, cliques e ruído de fundo"
+                  className={`text-[11px] px-2.5 py-0.5 rounded-md font-semibold transition cursor-pointer flex items-center gap-1 ${
+                    isNoiseSuppressionEnabled
+                      ? 'bg-violet-600/30 text-violet-300 border border-violet-500/40 shadow-sm shadow-violet-500/20'
+                      : 'bg-white/5 text-gray-400 border border-white/10 hover:text-white'
+                  }`}
+                >
+                  <span className={`w-1.5 h-1.5 rounded-full ${isNoiseSuppressionEnabled ? 'bg-violet-400 animate-pulse' : 'bg-gray-500'}`} />
+                  {isNoiseSuppressionEnabled ? 'Ativada' : 'Desativada'}
+                </button>
+              </div>
             </div>
 
             {/* Submit Button */}

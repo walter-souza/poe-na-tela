@@ -13,17 +13,20 @@ import {
   Sparkles,
   Share2,
   Check,
+  Wand2,
 } from 'lucide-react';
 
 interface ControlsBarProps {
   isMicEnabled: boolean;
   isDeafened: boolean;
+  isNoiseSuppressionEnabled?: boolean;
   isScreenSharing: boolean;
   isChatOpen: boolean;
   isHUDOpen: boolean;
   roomName: string;
   onToggleMic: () => void;
   onToggleDeafen: () => void;
+  onToggleNoiseSuppression?: () => void;
   onToggleScreenShare: () => void;
   onOpenScreenShareConfig: () => void;
   onToggleChat: () => void;
@@ -34,12 +37,14 @@ interface ControlsBarProps {
 export const ControlsBar: React.FC<ControlsBarProps> = ({
   isMicEnabled,
   isDeafened,
+  isNoiseSuppressionEnabled,
   isScreenSharing,
   isChatOpen,
   isHUDOpen,
   roomName,
   onToggleMic,
   onToggleDeafen,
+  onToggleNoiseSuppression,
   onToggleScreenShare,
   onOpenScreenShareConfig,
   onToggleChat,
@@ -87,6 +92,28 @@ export const ControlsBar: React.FC<ControlsBarProps> = ({
           {isMicEnabled ? <Mic className="w-4 h-4" /> : <MicOff className="w-4 h-4" />}
           <span className="hidden md:inline">{isMicEnabled ? 'Microfone Ativo' : 'Microfone Mudo'}</span>
         </button>
+
+        {/* Supressão de Ruído (IA RNNoise) */}
+        {onToggleNoiseSuppression && (
+          <button
+            onClick={onToggleNoiseSuppression}
+            title={
+              isNoiseSuppressionEnabled
+                ? 'Supressão de Ruído por IA Ativa (Elimina teclas mecânicas e cliques)'
+                : 'Supressão de Ruído Desativada'
+            }
+            className={`flex items-center gap-1.5 p-2.5 sm:px-3 sm:py-2.5 rounded-2xl border transition shadow-lg ${
+              isNoiseSuppressionEnabled
+                ? 'bg-violet-600/30 border-violet-500/50 text-violet-300 hover:bg-violet-600/40 shadow-violet-600/20'
+                : 'bg-white/5 hover:bg-white/10 border-white/10 text-gray-400 hover:text-gray-200'
+            }`}
+          >
+            <Wand2 className="w-4 h-4" />
+            <span className="hidden xl:inline text-xs font-medium">
+              {isNoiseSuppressionEnabled ? 'IA Ruído' : 'Sem IA'}
+            </span>
+          </button>
+        )}
 
         {/* Deafen (Áudio) */}
         <button

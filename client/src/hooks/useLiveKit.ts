@@ -12,6 +12,7 @@ import {
 import type { StreamQualityConfig, StreamStats, ChatMessage, ReactionEvent, ParticipantInfo, ScreenShareItem } from '../types';
 import { playJoinSound, playLeaveSound } from '../utils/soundEffects';
 import { startKeepAlive, stopKeepAlive } from '../utils/keepAlive';
+import { isNoiseSuppressionSupported, NoiseSuppressionProcessor } from '../utils/noiseSuppression';
 
 export interface UseLiveKitOptions {
   url: string;
@@ -50,6 +51,20 @@ export function useLiveKit({ url, token, onDisconnected }: UseLiveKitOptions) {
   const [reaction, setReaction] = useState<ReactionEvent | null>(null);
   const [hostName, setHostName] = useState<string>('');
 
+  // Noise Suppression (RNNoise AI)
+  const NOISE_SUPPRESSION_KEY = 'poe-na-tela-noise-suppression';
+  const [isNoiseSuppressionEnabled, setIsNoiseSuppressionEnabledState] = useState<boolean>(() => {
+    try {
+      const saved = localStorage.getItem(NOISE_SUPPRESSION_KEY);
+      return saved !== 'false';
+    } catch {
+      return true;
+    }
+  });
+  const isNoiseSuppressionEnabledRef = useRef<boolean>(true);
+  isNoiseSuppressionEnabledRef.current = isNoiseSuppressionEnabled;
+  const activeProcessorRef = useRef<NoiseSuppressionProcessor | null>(null);
+
   // WebRTC Playout / Jitter Buffer (500ms to 1000ms configurable for smooth 60 FPS delivery)
   const PLAYOUT_BUFFER_KEY = 'poe-na-tela-playout-buffer';
   const [playoutBufferMs, setPlayoutBufferMsState] = useState<number>(() => {
@@ -69,6 +84,36 @@ export function useLiveKit({ url, token, onDisconnected }: UseLiveKitOptions) {
   const prevStatsRef = useRef<{ bytes: number; frames: number; timestamp: number } | null>(null);
   const currentVolumeRef = useRef<number>(1);
   const desktopTracksRef = useRef<{ videoTrack?: LocalVideoTrack; audioTrack?: LocalAudioTrack }>({});
+
+  const applyNoiseSuppression = useCallback(async (track: LocalAudioTrack, enable: boolean) => {
+    try {
+      if (enable) {
+        if (!isNoiseSuppressionSupported()) {
+          console.warn('Noise suppression is not supported in this browser environment');
+          return;
+        }
+
+        // Ensure audioContext exists on track
+        if (!(track as any).audioContext) {
+          const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
+          if (AudioCtx) {
+            track.setAudioContext(new AudioCtx({ sampleRate: 48000 }));
+          }
+        }
+
+        const processor = new NoiseSuppressionProcessor();
+        activeProcessorRef.current = processor;
+        await track.setProcessor(processor);
+      } else {
+        if (activeProcessorRef.current || (track as any).processor) {
+          await track.stopProcessor();
+          activeProcessorRef.current = null;
+        }
+      }
+    } catch (err) {
+      console.error('Failed to apply noise suppression to track:', err);
+    }
+  }, []);
 
   // Helper to apply WebRTC playoutDelayHint & jitterBufferTarget to an individual track's receiver
   const applyReceiverPlayoutBuffer = useCallback((track: Track, bufferMs: number) => {
@@ -626,6 +671,10 @@ export function useLiveKit({ url, token, onDisconnected }: UseLiveKitOptions) {
       room.off(RoomEvent.AudioPlaybackStatusChanged, handleAudioPlaybackStatusChanged);
       room.off(RoomEvent.TrackSubscribed, handleTrackSubscribed);
       room.off(RoomEvent.TrackUnsubscribed, handleTrackUnsubscribed);
+      if (activeProcessorRef.current) {
+        activeProcessorRef.current.destroy().catch(() => {});
+        activeProcessorRef.current = null;
+      }
       room.disconnect();
     };
   }, [url, token, collectStats, updateParticipantList, updateScreenShares]);
@@ -1022,14 +1071,36 @@ export function useLiveKit({ url, token, onDisconnected }: UseLiveKitOptions) {
     if (!room) return;
 
     const nextState = !isMicEnabled;
-    await room.localParticipant.setMicrophoneEnabled(nextState, {
+    const pub = await room.localParticipant.setMicrophoneEnabled(nextState, {
       echoCancellation: true,
       noiseSuppression: true,
       autoGainControl: true,
     });
     setIsMicEnabled(nextState);
+    if (nextState && isNoiseSuppressionEnabledRef.current && pub?.track) {
+      await applyNoiseSuppression(pub.track as LocalAudioTrack, true);
+    }
     updateParticipantList(room);
   };
+
+  // Toggle Noise Suppression (AI RNNoise)
+  const toggleNoiseSuppression = useCallback(async () => {
+    const next = !isNoiseSuppressionEnabled;
+    setIsNoiseSuppressionEnabledState(next);
+    isNoiseSuppressionEnabledRef.current = next;
+    try {
+      localStorage.setItem(NOISE_SUPPRESSION_KEY, String(next));
+    } catch {}
+
+    const room = roomRef.current;
+    if (!room) return;
+
+    const micPub = room.localParticipant.getTrackPublication(Track.Source.Microphone);
+    const micTrack = micPub?.track as LocalAudioTrack | undefined;
+    if (micTrack) {
+      await applyNoiseSuppression(micTrack, next);
+    }
+  }, [isNoiseSuppressionEnabled, applyNoiseSuppression]);
 
   // Toggle Deafen
   const toggleDeafen = () => {
@@ -1115,6 +1186,10 @@ export function useLiveKit({ url, token, onDisconnected }: UseLiveKitOptions) {
   const handleManualDisconnect = () => {
     isExplicitDisconnectRef.current = true;
     stopKeepAlive();
+    if (activeProcessorRef.current) {
+      activeProcessorRef.current.destroy().catch(() => {});
+      activeProcessorRef.current = null;
+    }
     roomRef.current?.disconnect();
   };
 
@@ -1125,6 +1200,8 @@ export function useLiveKit({ url, token, onDisconnected }: UseLiveKitOptions) {
     isLocalScreenAudioMuted,
     isMicEnabled,
     isDeafened,
+    isNoiseSuppressionEnabled,
+    isNoiseSuppressionSupported: isNoiseSuppressionSupported(),
     canPlaybackAudio,
     unlockAudio,
     setGlobalVolume,
@@ -1147,6 +1224,7 @@ export function useLiveKit({ url, token, onDisconnected }: UseLiveKitOptions) {
     toggleLocalScreenAudio,
     toggleMic,
     toggleDeafen,
+    toggleNoiseSuppression,
     sendMessage,
     sendReaction,
     disconnect: handleManualDisconnect,

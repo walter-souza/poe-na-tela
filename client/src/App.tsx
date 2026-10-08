@@ -229,6 +229,7 @@ function StreamRoom({
     isLocalScreenAudioMuted,
     isMicEnabled,
     isDeafened,
+    isNoiseSuppressionEnabled,
     canPlaybackAudio,
     unlockAudio,
     setStreamVolume,
@@ -247,6 +248,7 @@ function StreamRoom({
     toggleLocalScreenAudio,
     toggleMic,
     toggleDeafen,
+    toggleNoiseSuppression,
     sendMessage,
     sendReaction,
     disconnect,
@@ -346,12 +348,14 @@ function StreamRoom({
       <ControlsBar
         isMicEnabled={isMicEnabled}
         isDeafened={isDeafened}
+        isNoiseSuppressionEnabled={isNoiseSuppressionEnabled}
         isScreenSharing={isScreenSharing}
         isChatOpen={isChatOpen}
         isHUDOpen={isHUDOpen}
         roomName={session.roomName}
         onToggleMic={toggleMic}
         onToggleDeafen={toggleDeafen}
+        onToggleNoiseSuppression={toggleNoiseSuppression}
         onToggleScreenShare={handleToggleScreenShare}
         onOpenScreenShareConfig={() => setIsScreenShareModalOpen(true)}
         onToggleChat={() => setIsChatOpen(!isChatOpen)}
