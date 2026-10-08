@@ -133,6 +133,26 @@ app.post(['/api/token', '/token'], async (req: Request, res: Response): Promise<
       // Fallback to roomStore
     }
 
+    // 2. Check if a participant with this name is already in the room
+    if (isActiveInLiveKit) {
+      try {
+        const participants = await listParticipantsWithTimeout(sanitizedRoom);
+        const nameLower = sanitizedParticipant.toLowerCase();
+        const isNameTaken = participants.some(
+          (p) => (p.identity && p.identity.toLowerCase() === nameLower) || (p.name && p.name.toLowerCase() === nameLower)
+        );
+
+        if (isNameTaken) {
+          res.status(409).json({
+            error: `O nome "${sanitizedParticipant}" já está em uso nesta sala. Por favor, escolha outro nome para entrar.`,
+          });
+          return;
+        }
+      } catch (err: any) {
+        console.warn('Could not verify existing participants in room:', err?.message || err);
+      }
+    }
+
     const existingConfig = roomStore.get(sanitizedRoom);
 
     if (isActiveInLiveKit && existingConfig) {
@@ -204,6 +224,16 @@ async function listRoomsWithTimeout(names?: string[]): Promise<any[]> {
     setTimeout(() => reject(new Error('LiveKit timeout (2s)')), 2000)
   );
   return Promise.race([roomService.listRooms(names), timeoutPromise]);
+}
+
+/**
+ * Helper to fetch participants in a room with a strict 2-second timeout
+ */
+async function listParticipantsWithTimeout(roomName: string): Promise<any[]> {
+  const timeoutPromise = new Promise<any[]>((_, reject) =>
+    setTimeout(() => reject(new Error('LiveKit timeout (2s)')), 2000)
+  );
+  return Promise.race([roomService.listParticipants(roomName), timeoutPromise]);
 }
 
 /**
