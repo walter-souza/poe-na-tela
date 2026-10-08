@@ -41,7 +41,14 @@ export function useLiveKit({ url, token, onDisconnected }: UseLiveKitOptions) {
   const streamVolumesRef = useRef<Record<string, number>>({});
   streamVolumesRef.current = streamVolumes;
 
-  const [userVolumes, setUserVolumes] = useState<Record<string, number>>({});
+  const USER_VOLUMES_STORAGE_KEY = 'poe-na-tela-user-volumes';
+  const [userVolumes, setUserVolumes] = useState<Record<string, number>>(() => {
+    try {
+      const saved = localStorage.getItem(USER_VOLUMES_STORAGE_KEY);
+      if (saved) return JSON.parse(saved);
+    } catch {}
+    return {};
+  });
   const userVolumesRef = useRef<Record<string, number>>({});
   userVolumesRef.current = userVolumes;
 
@@ -423,6 +430,7 @@ export function useLiveKit({ url, token, onDisconnected }: UseLiveKitOptions) {
     const room = new Room({
       adaptiveStream: true,
       dynacast: true,
+      webAudioMix: true,
       audioCaptureDefaults: {
         autoGainControl: true,
         noiseSuppression: true,
@@ -543,8 +551,10 @@ export function useLiveKit({ url, token, onDisconnected }: UseLiveKitOptions) {
             (track as any).setVolume(voiceVol);
           }
           if (el) {
-            (el as HTMLAudioElement).volume = voiceVol;
-            (el as HTMLAudioElement).muted = voiceVol === 0 || isDeafenedRef.current;
+            try {
+              (el as HTMLAudioElement).volume = Math.min(1, Math.max(0, voiceVol));
+              (el as HTMLAudioElement).muted = voiceVol === 0 || isDeafenedRef.current;
+            } catch {}
           }
         }
       }
@@ -721,9 +731,16 @@ export function useLiveKit({ url, token, onDisconnected }: UseLiveKitOptions) {
   }, []);
 
   // Set individual participant microphone audio volume (ONLY affects local hearing of that participant's voice)
+  // Supports volume range from 0 to 2.0 (0% to 200%, where 1.0 is 100% normal)
   const setUserVolume = useCallback((participantIdentity: string, volume: number) => {
-    const clamped = Math.max(0, Math.min(1, volume));
-    setUserVolumes((prev) => ({ ...prev, [participantIdentity]: clamped }));
+    const clamped = Math.max(0, Math.min(2, volume));
+    setUserVolumes((prev) => {
+      const updated = { ...prev, [participantIdentity]: clamped };
+      try {
+        localStorage.setItem(USER_VOLUMES_STORAGE_KEY, JSON.stringify(updated));
+      } catch {}
+      return updated;
+    });
 
     const room = roomRef.current;
     if (!room) return;
@@ -744,8 +761,10 @@ export function useLiveKit({ url, token, onDisconnected }: UseLiveKitOptions) {
     document
       .querySelectorAll(`audio[data-participant="${participantIdentity}"][data-source="microphone"]`)
       .forEach((el) => {
-        (el as HTMLAudioElement).volume = clamped;
-        (el as HTMLAudioElement).muted = clamped === 0 || isDeafenedRef.current;
+        try {
+          (el as HTMLAudioElement).volume = Math.min(1, Math.max(0, clamped));
+          (el as HTMLAudioElement).muted = clamped === 0 || isDeafenedRef.current;
+        } catch {}
       });
   }, []);
 

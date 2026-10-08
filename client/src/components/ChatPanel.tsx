@@ -295,15 +295,24 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({
                       <input
                         type="range"
                         min="0"
-                        max="1"
+                        max="2"
                         step="0.01"
                         value={isUserMuted ? 0 : userVol}
                         onChange={(e) => onUserVolumeChange(p.identity, parseFloat(e.target.value))}
-                        title="Ajustar volume da voz deste amigo para você"
+                        title="Ajustar volume da voz deste amigo para você (0% a 200%, 100% padrão)"
                         className="flex-1 h-1.5 bg-white/20 rounded-lg appearance-none cursor-pointer accent-indigo-500"
                       />
 
-                      <span className="text-[10px] font-mono text-gray-300 min-w-[32px] text-right shrink-0">
+                      <span
+                        className={`text-[10px] font-mono min-w-[36px] text-right shrink-0 ${
+                          isUserMuted
+                            ? 'text-gray-400'
+                            : userVol > 1
+                            ? 'text-amber-400 font-semibold'
+                            : 'text-gray-300'
+                        }`}
+                        title={userVol > 1 ? 'Volume amplificado (+dB)' : undefined}
+                      >
                         {isUserMuted ? 'Mudo' : `${Math.round(userVol * 100)}%`}
                       </span>
                     </div>
