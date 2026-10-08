@@ -42,6 +42,18 @@ export function getWhepUrl(roomName: string): string {
   return `https://stream.194.61.238.98.sslip.io/${encodeURIComponent(roomName)}/whep`;
 }
 
+/**
+ * Returns the ready-to-use SRT streaming URL for OBS Studio.
+ * When userName is provided, builds a squad multi-stream streamid (e.g. srt://host:8890?streamid=publish:sala/usuario).
+ */
+export function getObsSrtUrl(roomName: string, userName?: string): string {
+  const srtHost = import.meta.env.VITE_SRT_HOST || '194.61.238.98:8890';
+  const cleanRoom = roomName.trim();
+  const cleanUser = userName ? userName.trim() : '';
+  const path = cleanUser ? `${cleanRoom}/${cleanUser}` : cleanRoom;
+  return `srt://${srtHost}?streamid=publish:${path}`;
+}
+
 export interface ObsStreamItem {
   id: string;
   name: string;

@@ -353,6 +353,7 @@ function StreamRoom({
         isChatOpen={isChatOpen}
         isHUDOpen={isHUDOpen}
         roomName={session.roomName}
+        userName={session.userName}
         onToggleMic={toggleMic}
         onToggleDeafen={toggleDeafen}
         onToggleNoiseSuppression={toggleNoiseSuppression}

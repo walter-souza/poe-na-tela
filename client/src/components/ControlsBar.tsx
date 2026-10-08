@@ -14,7 +14,9 @@ import {
   Share2,
   Check,
   Wand2,
+  Tv,
 } from 'lucide-react';
+import { getObsSrtUrl } from '../utils/api';
 
 interface ControlsBarProps {
   isMicEnabled: boolean;
@@ -24,6 +26,7 @@ interface ControlsBarProps {
   isChatOpen: boolean;
   isHUDOpen: boolean;
   roomName: string;
+  userName?: string;
   onToggleMic: () => void;
   onToggleDeafen: () => void;
   onToggleNoiseSuppression?: () => void;
@@ -42,6 +45,7 @@ export const ControlsBar: React.FC<ControlsBarProps> = ({
   isChatOpen,
   isHUDOpen,
   roomName,
+  userName,
   onToggleMic,
   onToggleDeafen,
   onToggleNoiseSuppression,
@@ -52,12 +56,20 @@ export const ControlsBar: React.FC<ControlsBarProps> = ({
   onLeave,
 }) => {
   const [copied, setCopied] = useState(false);
+  const [copiedObs, setCopiedObs] = useState(false);
 
   const handleCopyInvite = () => {
     const inviteUrl = `${window.location.origin}${window.location.pathname}?room=${encodeURIComponent(roomName)}`;
     navigator.clipboard.writeText(inviteUrl);
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
+  };
+
+  const handleCopyObsLink = () => {
+    const obsUrl = getObsSrtUrl(roomName, userName);
+    navigator.clipboard.writeText(obsUrl);
+    setCopiedObs(true);
+    setTimeout(() => setCopiedObs(false), 2000);
   };
   return (
     <div className="h-16 md:h-20 bg-[#0d0f17] border-t border-white/10 px-2 sm:px-4 md:px-6 flex items-center justify-between shadow-2xl select-none safe-area-bottom">
@@ -153,6 +165,26 @@ export const ControlsBar: React.FC<ControlsBarProps> = ({
             </button>
           )}
         </div>
+
+        {/* Transmitir via OBS Studio (Copiar Link SRT 60 FPS) */}
+        <button
+          onClick={handleCopyObsLink}
+          title="Copiar Link de Transmissão para OBS Studio (SRT 60 FPS com sala e usuário configurados)"
+          className={`flex items-center gap-1.5 p-2 sm:px-3 sm:py-2.5 rounded-2xl border text-xs font-semibold transition shadow-lg ${
+            copiedObs
+              ? 'bg-emerald-600/30 border-emerald-500/50 text-emerald-300 shadow-emerald-600/20'
+              : 'bg-white/5 hover:bg-white/10 border-white/10 text-gray-300 hover:text-white'
+          }`}
+        >
+          {copiedObs ? (
+            <Check className="w-4 h-4 text-emerald-400" />
+          ) : (
+            <Tv className="w-4 h-4 text-purple-400" />
+          )}
+          <span className="hidden lg:inline">
+            {copiedObs ? 'Link OBS Copiado!' : 'Link OBS'}
+          </span>
+        </button>
       </div>
 
       {/* Right Controls */}
