@@ -81,6 +81,71 @@ export function useLiveKit({ url, token, onDisconnected }: UseLiveKitOptions) {
     return boostAudioContextRef.current;
   }, []);
 
+  // Real-time Client-Side Voice Activity Detection (VAD) via Web Audio API (< 20ms response)
+  interface VadNode {
+    source: MediaStreamAudioSourceNode;
+    analyser: AnalyserNode;
+    buffer: Uint8Array<ArrayBuffer>;
+    track: MediaStreamTrack;
+  }
+
+  const vadContextRef = useRef<AudioContext | null>(null);
+  const vadNodesRef = useRef<Map<string, VadNode>>(new Map());
+  const vadSpeakingMapRef = useRef<Map<string, boolean>>(new Map());
+  const vadLastSpokeAtRef = useRef<Map<string, number>>(new Map());
+  const vadIntervalRef = useRef<number | null>(null);
+
+  const getVadAudioContext = useCallback((): AudioContext => {
+    if (!vadContextRef.current || vadContextRef.current.state === 'closed') {
+      const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
+      vadContextRef.current = new AudioCtx({ sampleRate: 48000 });
+    }
+    if (vadContextRef.current.state === 'suspended') {
+      vadContextRef.current.resume().catch(() => {});
+    }
+    return vadContextRef.current;
+  }, []);
+
+  const unregisterVadTrack = useCallback((identity?: string) => {
+    if (!identity) return;
+    const node = vadNodesRef.current.get(identity);
+    if (node) {
+      try {
+        node.source.disconnect();
+        node.analyser.disconnect();
+      } catch {}
+      vadNodesRef.current.delete(identity);
+    }
+    vadSpeakingMapRef.current.delete(identity);
+    vadLastSpokeAtRef.current.delete(identity);
+  }, []);
+
+  const registerVadTrack = useCallback((identity: string, mediaTrack: MediaStreamTrack) => {
+    if (!identity || !mediaTrack || mediaTrack.readyState === 'ended') return;
+
+    const existing = vadNodesRef.current.get(identity);
+    if (existing && existing.track === mediaTrack) return;
+
+    unregisterVadTrack(identity);
+
+    try {
+      const ctx = getVadAudioContext();
+      const stream = new MediaStream([mediaTrack]);
+      const source = ctx.createMediaStreamSource(stream);
+      const analyser = ctx.createAnalyser();
+      analyser.fftSize = 64; // 32 frequency bins for minimal compute overhead
+      analyser.smoothingTimeConstant = 0.2; // fast attack response
+      analyser.minDecibels = -70;
+      analyser.maxDecibels = -10;
+      source.connect(analyser); // NOT connected to destination to avoid loopback/echo
+
+      const buffer = new Uint8Array(analyser.frequencyBinCount);
+      vadNodesRef.current.set(identity, { source, analyser, buffer, track: mediaTrack });
+    } catch (err) {
+      console.warn(`[VAD] Failed to register track for ${identity}:`, err);
+    }
+  }, [getVadAudioContext, unregisterVadTrack]);
+
   const [remoteScreenTrack, setRemoteScreenTrack] = useState<Track | null>(null);
   const [localScreenTrack, setLocalScreenTrack] = useState<Track | null>(null);
   const [stats, setStats] = useState<StreamStats | null>(null);
@@ -378,16 +443,21 @@ export function useLiveKit({ url, token, onDisconnected }: UseLiveKitOptions) {
     }
   }, []);
 
-  // Update participant list
+  // Update participant list with real-time VAD voice status
   const updateParticipantList = useCallback((room: Room) => {
     const list: ParticipantInfo[] = [];
 
     // Local participant
     if (room.localParticipant) {
+      const localVad = vadSpeakingMapRef.current.get(room.localParticipant.identity);
+      const isSpeaking = room.localParticipant.isMicrophoneEnabled
+        ? (localVad !== undefined ? localVad : room.localParticipant.isSpeaking)
+        : false;
+
       list.push({
         identity: room.localParticipant.identity,
         name: room.localParticipant.name || room.localParticipant.identity,
-        isSpeaking: room.localParticipant.isSpeaking,
+        isSpeaking,
         isScreenSharing: room.localParticipant.isScreenShareEnabled,
         isMuted: !room.localParticipant.isMicrophoneEnabled,
       });
@@ -395,10 +465,13 @@ export function useLiveKit({ url, token, onDisconnected }: UseLiveKitOptions) {
 
     // Remote participants
     room.remoteParticipants.forEach((p) => {
+      const remoteVad = vadSpeakingMapRef.current.get(p.identity);
+      const isSpeaking = remoteVad !== undefined ? remoteVad : p.isSpeaking;
+
       list.push({
         identity: p.identity,
         name: p.name || p.identity,
-        isSpeaking: p.isSpeaking,
+        isSpeaking,
         isScreenSharing: p.isScreenShareEnabled,
         isMuted: !p.isMicrophoneEnabled,
       });
@@ -406,6 +479,61 @@ export function useLiveKit({ url, token, onDisconnected }: UseLiveKitOptions) {
 
     setParticipants(list);
   }, []);
+
+  // Real-time audio activity detector (runs every 40ms, updates React ONLY on state change)
+  const checkAudioActivity = useCallback(() => {
+    const room = roomRef.current;
+    if (!room || room.state !== ConnectionState.Connected) return;
+
+    const now = Date.now();
+    let stateChanged = false;
+
+    vadNodesRef.current.forEach((node, identity) => {
+      if (node.track.readyState === 'ended') {
+        unregisterVadTrack(identity);
+        stateChanged = true;
+        return;
+      }
+
+      // If local participant and mic is disabled, force not speaking
+      if (identity === room.localParticipant?.identity && !room.localParticipant.isMicrophoneEnabled) {
+        if (vadSpeakingMapRef.current.get(identity)) {
+          vadSpeakingMapRef.current.set(identity, false);
+          stateChanged = true;
+        }
+        return;
+      }
+
+      node.analyser.getByteFrequencyData(node.buffer as any);
+      let sum = 0;
+      let max = 0;
+      for (let i = 0; i < node.buffer.length; i++) {
+        const val = node.buffer[i];
+        sum += val;
+        if (val > max) max = val;
+      }
+      const avg = sum / node.buffer.length;
+
+      // Sensitivity: avg > 8 or peak frequency > 35 indicates speech
+      const isAboveThreshold = avg > 8 || max > 35;
+      if (isAboveThreshold) {
+        vadLastSpokeAtRef.current.set(identity, now);
+      }
+
+      const lastSpoke = vadLastSpokeAtRef.current.get(identity) || 0;
+      const shouldBeSpeaking = now - lastSpoke < 350; // 350ms smooth hold time
+      const currentSpeaking = vadSpeakingMapRef.current.get(identity) || false;
+
+      if (shouldBeSpeaking !== currentSpeaking) {
+        vadSpeakingMapRef.current.set(identity, shouldBeSpeaking);
+        stateChanged = true;
+      }
+    });
+
+    if (stateChanged) {
+      updateParticipantList(room);
+    }
+  }, [unregisterVadTrack, updateParticipantList]);
 
   // WebRTC Real-time Stats Collector for both Host (publisher) and Viewer (subscriber)
   const collectStats = useCallback(async () => {
@@ -613,6 +741,25 @@ export function useLiveKit({ url, token, onDisconnected }: UseLiveKitOptions) {
       room.startAudio().catch(() => {});
       setCanPlaybackAudio(room.canPlaybackAudio);
 
+      // Start real-time Client-Side VAD (< 20ms response)
+      try {
+        getVadAudioContext();
+        room.remoteParticipants.forEach((p) => {
+          const micPub = p.getTrackPublication(Track.Source.Microphone);
+          if (micPub?.track?.mediaStreamTrack) {
+            registerVadTrack(p.identity, micPub.track.mediaStreamTrack);
+          }
+        });
+        const localMicPub = room.localParticipant?.getTrackPublication(Track.Source.Microphone);
+        if (localMicPub?.track?.mediaStreamTrack) {
+          registerVadTrack(room.localParticipant.identity, localMicPub.track.mediaStreamTrack);
+        }
+        if (vadIntervalRef.current) clearInterval(vadIntervalRef.current);
+        vadIntervalRef.current = window.setInterval(checkAudioActivity, 40);
+      } catch (vadErr) {
+        console.warn('Failed to start VAD on connect:', vadErr);
+      }
+
       if (statsIntervalRef.current) clearInterval(statsIntervalRef.current);
       statsIntervalRef.current = window.setInterval(collectStats, 1000);
     };
@@ -625,6 +772,20 @@ export function useLiveKit({ url, token, onDisconnected }: UseLiveKitOptions) {
       setLocalScreenTrack(null);
       setScreenShares([]);
       if (statsIntervalRef.current) clearInterval(statsIntervalRef.current);
+
+      if (vadIntervalRef.current) {
+        clearInterval(vadIntervalRef.current);
+        vadIntervalRef.current = null;
+      }
+      vadNodesRef.current.forEach((node) => {
+        try {
+          node.source.disconnect();
+          node.analyser.disconnect();
+        } catch {}
+      });
+      vadNodesRef.current.clear();
+      vadSpeakingMapRef.current.clear();
+      vadLastSpokeAtRef.current.clear();
 
       if (isExplicitDisconnectRef.current) {
         onDisconnectedRef.current?.();
@@ -687,6 +848,11 @@ export function useLiveKit({ url, token, onDisconnected }: UseLiveKitOptions) {
             : currentVolumeRef.current;
 
           applyParticipantVolume(participant.identity, voiceVol, track);
+
+          // Register in real-time VAD for 0ms voice activity feedback
+          if (track.mediaStreamTrack) {
+            registerVadTrack(participant.identity, track.mediaStreamTrack);
+          }
         }
       }
 
@@ -701,6 +867,9 @@ export function useLiveKit({ url, token, onDisconnected }: UseLiveKitOptions) {
         track.detach();
         const participantId = participant?.identity;
         if (participantId) {
+          if (track.source !== Track.Source.ScreenShareAudio) {
+            unregisterVadTrack(participantId);
+          }
           const booster = audioBoostersRef.current.get(participantId);
           if (booster) {
             try {
@@ -769,6 +938,7 @@ export function useLiveKit({ url, token, onDisconnected }: UseLiveKitOptions) {
 
     const handleParticipantDisconnected = (participant: RemoteParticipant) => {
       if (!isSubscribed) return;
+      unregisterVadTrack(participant.identity);
       updateParticipantList(room);
       updateScreenShares(room);
       const name = participant.name || participant.identity || 'Um usuário';
@@ -798,8 +968,18 @@ export function useLiveKit({ url, token, onDisconnected }: UseLiveKitOptions) {
     room.on(RoomEvent.TrackUnsubscribed, handleTrackUnsubscribed);
     room.on(RoomEvent.TrackPublished, () => updateScreenShares(room));
     room.on(RoomEvent.TrackUnpublished, () => updateScreenShares(room));
-    room.on(RoomEvent.LocalTrackPublished, () => updateScreenShares(room));
-    room.on(RoomEvent.LocalTrackUnpublished, () => updateScreenShares(room));
+    room.on(RoomEvent.LocalTrackPublished, (pub) => {
+      updateScreenShares(room);
+      if (pub.source === Track.Source.Microphone && pub.track?.mediaStreamTrack) {
+        registerVadTrack(room.localParticipant.identity, pub.track.mediaStreamTrack);
+      }
+    });
+    room.on(RoomEvent.LocalTrackUnpublished, (pub) => {
+      updateScreenShares(room);
+      if (pub.source === Track.Source.Microphone) {
+        unregisterVadTrack(room.localParticipant?.identity);
+      }
+    });
     room.on(RoomEvent.ParticipantConnected, handleParticipantConnected);
     room.on(RoomEvent.ParticipantDisconnected, handleParticipantDisconnected);
     room.on(RoomEvent.ActiveSpeakersChanged, () => updateParticipantList(room));
@@ -818,6 +998,23 @@ export function useLiveKit({ url, token, onDisconnected }: UseLiveKitOptions) {
       isSubscribed = false;
       stopKeepAlive();
       if (statsIntervalRef.current) clearInterval(statsIntervalRef.current);
+      if (vadIntervalRef.current) {
+        clearInterval(vadIntervalRef.current);
+        vadIntervalRef.current = null;
+      }
+      vadNodesRef.current.forEach((node) => {
+        try {
+          node.source.disconnect();
+          node.analyser.disconnect();
+        } catch {}
+      });
+      vadNodesRef.current.clear();
+      vadSpeakingMapRef.current.clear();
+      vadLastSpokeAtRef.current.clear();
+      if (vadContextRef.current && vadContextRef.current.state !== 'closed') {
+        vadContextRef.current.close().catch(() => {});
+        vadContextRef.current = null;
+      }
       room.off(RoomEvent.Connected, handleConnected);
       room.off(RoomEvent.Disconnected, handleDisconnected);
       room.off(RoomEvent.AudioPlaybackStatusChanged, handleAudioPlaybackStatusChanged);
@@ -840,7 +1037,17 @@ export function useLiveKit({ url, token, onDisconnected }: UseLiveKitOptions) {
       }
       room.disconnect();
     };
-  }, [url, token, collectStats, updateParticipantList, updateScreenShares]);
+  }, [
+    url,
+    token,
+    collectStats,
+    updateParticipantList,
+    updateScreenShares,
+    checkAudioActivity,
+    getVadAudioContext,
+    registerVadTrack,
+    unregisterVadTrack,
+  ]);
 
   // Unlock browser audio autoplay policy
   const unlockAudio = async () => {
@@ -849,6 +1056,9 @@ export function useLiveKit({ url, token, onDisconnected }: UseLiveKitOptions) {
     try {
       await room.startAudio();
       setCanPlaybackAudio(room.canPlaybackAudio);
+      if (vadContextRef.current?.state === 'suspended') {
+        await vadContextRef.current.resume().catch(() => {});
+      }
     } catch (e) {
       console.error('Failed to unlock audio playback:', e);
     }
@@ -1233,12 +1443,20 @@ export function useLiveKit({ url, token, onDisconnected }: UseLiveKitOptions) {
         autoGainControl: true,
       });
       setIsMicEnabled(nextState);
-      if (nextState && isNoiseSuppressionEnabledRef.current && pub?.track) {
-        try {
-          await applyNoiseSuppression(pub.track as LocalAudioTrack, true);
-        } catch (suppressErr) {
-          console.warn('Noise suppression could not be applied, continuing with raw mic:', suppressErr);
+      if (nextState) {
+        const localTrack = pub?.track as LocalAudioTrack | undefined;
+        if (localTrack?.mediaStreamTrack) {
+          registerVadTrack(room.localParticipant.identity, localTrack.mediaStreamTrack);
         }
+        if (isNoiseSuppressionEnabledRef.current && pub?.track) {
+          try {
+            await applyNoiseSuppression(pub.track as LocalAudioTrack, true);
+          } catch (suppressErr) {
+            console.warn('Noise suppression could not be applied, continuing with raw mic:', suppressErr);
+          }
+        }
+      } else {
+        unregisterVadTrack(room.localParticipant.identity);
       }
       updateParticipantList(room);
     } catch (err) {
