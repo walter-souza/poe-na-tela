@@ -8,7 +8,7 @@ export interface StreamQualityConfig {
   bitrateKbps: number; // e.g. 6000 for 6 Mbps
   codec: VideoCodecPreference;
   includeAudio: boolean;
-  contentHint: 'motion' | 'detail';
+  contentHint?: 'motion' | 'detail';
   isolateRoomAudio?: boolean; // WebRTC restrictOwnAudio to prevent voice chat loopback
   sourceId?: string; // Specific window or screen ID in Desktop App
 }

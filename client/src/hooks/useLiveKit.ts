@@ -1310,12 +1310,9 @@ export function useLiveKit({ url, token, onDisconnected }: UseLiveKitOptions) {
       if (videoTrackPub && videoTrackPub.track) {
         const mediaTrack = videoTrackPub.track.mediaStreamTrack;
 
-        // Determine effective contentHint and degradation preference:
-        const isDetailMode = config?.contentHint === 'detail';
-        const effectiveContentHint = isDetailMode ? 'detail' : (config?.contentHint || 'motion');
-
+        // Unified mode: 'motion' contentHint + balanced degradation ensures 60 FPS smoothness while preserving crisp text
         if (mediaTrack) {
-          mediaTrack.contentHint = effectiveContentHint;
+          mediaTrack.contentHint = 'motion';
         }
 
         // Apply degradation preference & encoding parameters to allow smooth adaptation under network stress without freezing
@@ -1324,9 +1321,7 @@ export function useLiveKit({ url, token, onDisconnected }: UseLiveKitOptions) {
           if (sender && typeof sender.getParameters === 'function') {
             const params = sender.getParameters();
             if (params) {
-              // For detail mode: maintain-resolution guarantees crisp native text.
-              // For motion/games mode: balanced dynamically trades off bitrate and framerate without stalling playback.
-              params.degradationPreference = isDetailMode ? 'maintain-resolution' : 'balanced';
+              params.degradationPreference = 'balanced';
 
               if (params.encodings && params.encodings.length > 0) {
                 params.encodings[0].maxFramerate = targetFps;
