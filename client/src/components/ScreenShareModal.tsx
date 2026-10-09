@@ -55,12 +55,12 @@ export const ScreenShareModal: React.FC<ScreenShareModalProps> = ({
     const is60 = frameRate === 60;
     const finalBitrate =
       resolution === '4k'
-        ? (is60 ? 14000 : 8000)
+        ? (is60 ? 12000 : 7000)
         : resolution === '1440p'
-        ? (is60 ? 9000 : 5500)
+        ? (is60 ? 7000 : 4500)
         : resolution === '1080p'
-        ? (is60 ? 6000 : 3600)
-        : (is60 ? 3500 : 2200);
+        ? (is60 ? 4500 : 3000)
+        : (is60 ? 2800 : 1800);
 
     onConfirm({
       resolution,

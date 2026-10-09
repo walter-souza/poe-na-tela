@@ -691,7 +691,7 @@ export function useLiveKit({ url, token, onDisconnected }: UseLiveKitOptions) {
       publishDefaults: {
         videoCodec: 'h264',
         screenShareEncoding: {
-          maxBitrate: 8000000,
+          maxBitrate: 3500000,
           maxFramerate: 60,
           priority: 'high',
         },
@@ -701,7 +701,7 @@ export function useLiveKit({ url, token, onDisconnected }: UseLiveKitOptions) {
         },
         dtx: false,
         red: true,
-        simulcast: true,
+        simulcast: false,
       },
     });
 
@@ -1142,12 +1142,12 @@ export function useLiveKit({ url, token, onDisconnected }: UseLiveKitOptions) {
       const targetBitrate = config?.bitrateKbps
         ? config.bitrateKbps * 1000
         : config?.resolution === '4k'
-        ? (is60Fps ? 14000000 : 8000000)
+        ? (is60Fps ? 12000000 : 7000000)
         : config?.resolution === '1440p'
-        ? (is60Fps ? 9000000 : 5500000)
+        ? (is60Fps ? 7000000 : 4500000)
         : config?.resolution === '1080p'
-        ? (is60Fps ? 6000000 : 3600000)
-        : (is60Fps ? 3500000 : 2200000);
+        ? (is60Fps ? 4500000 : 3000000)
+        : (is60Fps ? 2800000 : 1800000);
 
       const screenResolution =
         config?.resolution === '4k'
@@ -1214,7 +1214,7 @@ export function useLiveKit({ url, token, onDisconnected }: UseLiveKitOptions) {
               maxFramerate: targetFps,
               priority: 'high',
             },
-            simulcast: true,
+            simulcast: false,
           });
 
           try {
@@ -1290,7 +1290,7 @@ export function useLiveKit({ url, token, onDisconnected }: UseLiveKitOptions) {
           },
           dtx: false,
           red: true,
-          simulcast: true,
+          simulcast: false,
           videoCodec: (config?.codec as any) || 'h264',
           videoEncoding: {
             maxBitrate: targetBitrate,
