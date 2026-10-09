@@ -166,20 +166,10 @@ export function useLiveKit({ url, token, onDisconnected }: UseLiveKitOptions) {
   isNoiseSuppressionEnabledRef.current = isNoiseSuppressionEnabled;
   const activeProcessorRef = useRef<NoiseSuppressionProcessor | null>(null);
 
-  // WebRTC Playout / Jitter Buffer (500ms to 1000ms configurable for smooth 60 FPS delivery)
-  const PLAYOUT_BUFFER_KEY = 'poe-na-tela-playout-buffer';
-  const [playoutBufferMs, setPlayoutBufferMsState] = useState<number>(() => {
-    try {
-      const saved = localStorage.getItem(PLAYOUT_BUFFER_KEY);
-      if (saved) {
-        const val = parseInt(saved, 10);
-        if (!isNaN(val) && val >= 100 && val <= 2000) return val;
-      }
-    } catch {}
-    return 600; // Default 600ms buffer (Fluidez Gamer)
-  });
-  const playoutBufferMsRef = useRef<number>(600);
-  playoutBufferMsRef.current = playoutBufferMs;
+  // WebRTC Playout / Jitter Buffer (Estabilizado padrão em 800ms [faixa de 600-1000ms] para máxima fluidez e zero congelamentos)
+  const DEFAULT_STREAM_BUFFER_MS = 800;
+  const [playoutBufferMs] = useState<number>(DEFAULT_STREAM_BUFFER_MS);
+  const playoutBufferMsRef = useRef<number>(DEFAULT_STREAM_BUFFER_MS);
 
   const statsIntervalRef = useRef<number | null>(null);
   const prevStatsRef = useRef<{ bytes: number; frames: number; timestamp: number } | null>(null);
@@ -323,13 +313,13 @@ export function useLiveKit({ url, token, onDisconnected }: UseLiveKitOptions) {
   );
 
   // Helper to apply WebRTC playoutDelayHint & jitterBufferTarget to an individual track's receiver
-  const applyReceiverPlayoutBuffer = useCallback((track: Track, bufferMs: number) => {
+  const applyReceiverPlayoutBuffer = useCallback((track: Track, bufferMs: number = DEFAULT_STREAM_BUFFER_MS) => {
     try {
       const isScreen =
         track.source === Track.Source.ScreenShare ||
         track.source === Track.Source.ScreenShareAudio;
 
-      // Screen share video & game audio get the configured buffer (500-1000ms).
+      // Screen share video & game audio get the stabilized anti-freeze buffer (800ms).
       // Voice chat (microphone) stays at low latency (<= 150ms) to preserve natural conversation.
       const targetMs = isScreen ? bufferMs : Math.min(bufferMs, 150);
       const targetSec = targetMs / 1000;
@@ -349,7 +339,7 @@ export function useLiveKit({ url, token, onDisconnected }: UseLiveKitOptions) {
   }, []);
 
   // Helper to update all active receivers across the Room & PeerConnection
-  const applyBufferToAllReceivers = useCallback((bufferMs: number) => {
+  const applyBufferToAllReceivers = useCallback((bufferMs: number = DEFAULT_STREAM_BUFFER_MS) => {
     const room = roomRef.current;
     if (!room) return;
 
@@ -387,12 +377,9 @@ export function useLiveKit({ url, token, onDisconnected }: UseLiveKitOptions) {
   }, [applyReceiverPlayoutBuffer]);
 
   const setPlayoutBufferMs = useCallback((bufferMs: number) => {
-    setPlayoutBufferMsState(bufferMs);
-    playoutBufferMsRef.current = bufferMs;
-    try {
-      localStorage.setItem(PLAYOUT_BUFFER_KEY, bufferMs.toString());
-    } catch {}
-    applyBufferToAllReceivers(bufferMs);
+    const clamped = Math.max(600, Math.min(1000, bufferMs));
+    playoutBufferMsRef.current = clamped;
+    applyBufferToAllReceivers(clamped);
   }, [applyBufferToAllReceivers]);
 
   // Update screen shares list from room participants
@@ -714,7 +701,7 @@ export function useLiveKit({ url, token, onDisconnected }: UseLiveKitOptions) {
         },
         dtx: false,
         red: true,
-        simulcast: false,
+        simulcast: true,
       },
     });
 
@@ -1227,7 +1214,7 @@ export function useLiveKit({ url, token, onDisconnected }: UseLiveKitOptions) {
               maxFramerate: targetFps,
               priority: 'high',
             },
-            simulcast: false,
+            simulcast: true,
           });
 
           try {
@@ -1235,7 +1222,7 @@ export function useLiveKit({ url, token, onDisconnected }: UseLiveKitOptions) {
             if (sender && typeof sender.getParameters === 'function') {
               const params = sender.getParameters();
               if (params) {
-                params.degradationPreference = 'maintain-framerate';
+                params.degradationPreference = 'balanced';
                 if (params.encodings && params.encodings.length > 0) {
                   params.encodings[0].maxFramerate = targetFps;
                   params.encodings[0].maxBitrate = targetBitrate;
@@ -1303,7 +1290,7 @@ export function useLiveKit({ url, token, onDisconnected }: UseLiveKitOptions) {
           },
           dtx: false,
           red: true,
-          simulcast: false,
+          simulcast: true,
           videoCodec: (config?.codec as any) || 'h264',
           videoEncoding: {
             maxBitrate: targetBitrate,
@@ -1322,40 +1309,28 @@ export function useLiveKit({ url, token, onDisconnected }: UseLiveKitOptions) {
       const videoTrackPub = room.localParticipant.getTrackPublication(Track.Source.ScreenShare);
       if (videoTrackPub && videoTrackPub.track) {
         const mediaTrack = videoTrackPub.track.mediaStreamTrack;
-        const trackSettings = mediaTrack && typeof mediaTrack.getSettings === 'function' ? mediaTrack.getSettings() : null;
-        const displaySurface = (trackSettings as any)?.displaySurface; // 'monitor' | 'window' | 'browser'
 
         // Determine effective contentHint and degradation preference:
         const isDetailMode = config?.contentHint === 'detail';
-        const isWindowOrTab = displaySurface === 'window' || displaySurface === 'browser';
-        const effectiveContentHint = isDetailMode || (isWindowOrTab && !config?.contentHint) ? 'detail' : (config?.contentHint || 'motion');
+        const effectiveContentHint = isDetailMode ? 'detail' : (config?.contentHint || 'motion');
 
         if (mediaTrack) {
           mediaTrack.contentHint = effectiveContentHint;
         }
 
-        // Apply degradation preference & encoding parameters to prevent WebRTC from dropping resolution on windows/tabs
+        // Apply degradation preference & encoding parameters to allow smooth adaptation under network stress without freezing
         try {
           const sender = (videoTrackPub.track as any).sender as RTCRtpSender;
           if (sender && typeof sender.getParameters === 'function') {
             const params = sender.getParameters();
             if (params) {
-              // For detail mode: maintain-resolution guarantees crisp native text and UI.
-              // For window or tab in motion mode: balanced avoids aggressive 480p downscaling.
-              // For full-screen monitor in motion mode: maintain-framerate ensures 30 FPS.
-              if (isDetailMode) {
-                params.degradationPreference = 'maintain-resolution';
-              } else if (isWindowOrTab) {
-                params.degradationPreference = 'balanced';
-              } else {
-                params.degradationPreference = 'maintain-framerate';
-              }
+              // For detail mode: maintain-resolution guarantees crisp native text.
+              // For motion/games mode: balanced dynamically trades off bitrate and framerate without stalling playback.
+              params.degradationPreference = isDetailMode ? 'maintain-resolution' : 'balanced';
 
               if (params.encodings && params.encodings.length > 0) {
                 params.encodings[0].maxFramerate = targetFps;
                 params.encodings[0].maxBitrate = targetBitrate;
-                // Force scaleResolutionDownBy = 1.0 to prevent WebRTC from downscaling windows/tabs
-                params.encodings[0].scaleResolutionDownBy = 1.0;
                 params.encodings[0].networkPriority = 'high';
                 params.encodings[0].priority = 'high';
               }

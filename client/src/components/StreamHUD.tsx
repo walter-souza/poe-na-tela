@@ -7,7 +7,6 @@ interface StreamHUDProps {
   isOpen: boolean;
   onClose: () => void;
   playoutBufferMs?: number;
-  onPlayoutBufferChange?: (bufferMs: number) => void;
 }
 
 export const StreamHUD: React.FC<StreamHUDProps> = ({
@@ -15,7 +14,6 @@ export const StreamHUD: React.FC<StreamHUDProps> = ({
   isOpen,
   onClose,
   playoutBufferMs,
-  onPlayoutBufferChange,
 }) => {
   if (!isOpen || !stats) return null;
 
@@ -32,7 +30,7 @@ export const StreamHUD: React.FC<StreamHUDProps> = ({
   };
 
   const bitrateMbps = (stats.bitrateKbps / 1000).toFixed(2);
-  const currentBuffer = stats.bufferDelayMs ?? stats.playoutBufferMs ?? playoutBufferMs ?? 600;
+  const currentBuffer = stats.bufferDelayMs ?? stats.playoutBufferMs ?? playoutBufferMs ?? 800;
 
   return (
     <div className="absolute top-2 left-2 sm:top-4 sm:left-4 z-40 bg-black/90 backdrop-blur-md border border-white/10 rounded-2xl p-3 sm:p-4 text-xs font-mono text-gray-200 shadow-2xl w-[calc(100vw-1rem)] max-w-sm sm:w-auto sm:min-w-[300px] transition-all">
@@ -96,57 +94,23 @@ export const StreamHUD: React.FC<StreamHUDProps> = ({
         </div>
       </div>
 
-      {/* Playout Buffer Metric */}
+      {/* Playout Buffer Metric (Padronizado e Estabilizado para 60 FPS) */}
       <div className="mt-2.5 bg-white/5 p-2 rounded-xl border border-white/5 flex items-center justify-between">
         <div className="flex items-center gap-1.5 text-gray-400">
           <Clock className="w-3.5 h-3.5 text-emerald-400" />
-          <span>Buffer Playout Ativo</span>
+          <span>Buffer Playout</span>
         </div>
-        <div className="font-bold text-emerald-300 font-mono">
-          ~{currentBuffer} ms
+        <div className="flex items-center gap-1.5">
+          <span className="text-[10px] bg-emerald-500/20 text-emerald-300 font-bold px-1.5 py-0.5 rounded border border-emerald-500/30">
+            Estabilizado (~{currentBuffer}ms)
+          </span>
           {stats.jitterMs > 0 && (
-            <span className="text-[10px] text-gray-500 font-normal ml-1">
-              (±{stats.jitterMs}ms)
+            <span className="text-[10px] text-gray-500 font-normal">
+              ±{stats.jitterMs}ms
             </span>
           )}
         </div>
       </div>
-
-      {/* Latency & Buffer Mode Selector */}
-      {onPlayoutBufferChange && (
-        <div className="mt-2.5 pt-2.5 border-t border-white/10">
-          <div className="text-[11px] text-gray-400 mb-1.5 flex items-center justify-between">
-            <span className="font-semibold text-gray-300">Ajuste de Buffer (Fluidez)</span>
-            <span className="text-[10px] text-indigo-400 font-mono">
-              {playoutBufferMs || 600}ms alvo
-            </span>
-          </div>
-          <div className="grid grid-cols-3 gap-1.5">
-            {[
-              { ms: 150, label: '⚡ 150ms', tip: 'Tempo Real' },
-              { ms: 600, label: '🎮 600ms', tip: 'Fluidez Gamer' },
-              { ms: 1000, label: '🎬 1000ms', tip: 'Estabilidade Máx.' },
-            ].map(({ ms, label, tip }) => {
-              const isSelected = (playoutBufferMs || 600) === ms;
-              return (
-                <button
-                  key={ms}
-                  type="button"
-                  title={tip}
-                  onClick={() => onPlayoutBufferChange(ms)}
-                  className={`py-1 px-1.5 rounded-lg text-center transition font-semibold text-[10px] sm:text-[11px] ${
-                    isSelected
-                      ? 'bg-indigo-600 text-white shadow-sm border border-indigo-400/50'
-                      : 'bg-white/5 hover:bg-white/10 text-gray-300 border border-white/5'
-                  }`}
-                >
-                  {label}
-                </button>
-              );
-            })}
-          </div>
-        </div>
-      )}
 
       <div className="mt-2.5 pt-2 border-t border-white/10 flex items-center justify-between text-gray-400">
         <div className="flex items-center gap-1">

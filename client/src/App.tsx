@@ -241,7 +241,6 @@ function StreamRoom({
     participants,
     stats,
     playoutBufferMs,
-    setPlayoutBufferMs,
     reaction,
     startScreenShare,
     stopScreenShare,
@@ -284,7 +283,6 @@ function StreamRoom({
             isOpen={isHUDOpen}
             onClose={() => setIsHUDOpen(false)}
             playoutBufferMs={playoutBufferMs}
-            onPlayoutBufferChange={setPlayoutBufferMs}
           />
 
           <VideoPlayer
