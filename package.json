@@ -1,6 +1,6 @@
 {
   "name": "poe-na-tela",
-  "version": "1.8.5",
+  "version": "1.8.6",
   "private": true,
   "description": "Põe na Tela! — Plataforma de streaming de jogos em 60 FPS para amigos",
   "scripts": {

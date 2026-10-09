@@ -61,6 +61,7 @@ function sanitizeRoomName(name: string): string {
   return name
     .normalize('NFC')
     .trim()
+    .toLowerCase()
     .replace(/[\/\?\\#%<>"'`\r\n\t\0]/g, '')
     .replace(/\s+/g, ' ')
     .slice(0, 64);
@@ -273,7 +274,12 @@ app.get(['/api/rooms', '/rooms'], async (_req: Request, res: Response) => {
 /**
  * Check if a room exists, requires a password, or has active viewers
  */
-app.get(['/api/room/:roomName/info', '/room/:roomName/info'], async (req: Request, res: Response) => {
+app.get([
+  '/api/room/:roomName/info',
+  '/room/:roomName/info',
+  '/api/room-info/:roomName',
+  '/room-info/:roomName'
+], async (req: Request, res: Response) => {
   const roomName = sanitizeRoomName(req.params.roomName);
   let numParticipants = 0;
   let isActive = false;

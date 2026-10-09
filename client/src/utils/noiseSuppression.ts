@@ -36,7 +36,7 @@ export class NoiseSuppressionProcessor implements TrackProcessor<Track.Kind.Audi
 
   async init(opts: AudioProcessorOptions): Promise<void> {
     const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
-    if (!opts.audioContext || opts.audioContext.sampleRate !== 48000) {
+    if (!opts.audioContext || opts.audioContext.state === 'closed' || opts.audioContext.sampleRate !== 48000) {
       this.audioContext = new AudioCtx({ sampleRate: 48000 });
     } else {
       this.audioContext = opts.audioContext;

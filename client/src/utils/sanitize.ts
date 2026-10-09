@@ -8,6 +8,7 @@ export function sanitizeRoomName(name: string): string {
   return name
     .normalize('NFC')
     .trim()
+    .toLowerCase()
     .replace(/[\/\?\\#%<>"'`\r\n\t\0]/g, '')
     .replace(/\s+/g, ' ')
     .slice(0, 64);
