@@ -9,8 +9,11 @@ import { ScreenShareModal } from './components/ScreenShareModal';
 import { MaintenanceScreen } from './components/MaintenanceScreen';
 import { Lobby } from './components/Lobby';
 import { InviteModal } from './components/InviteModal';
-import { getHealthUrl, getTokenUrl } from './utils/api';
-import type { StreamQualityConfig } from './types';
+import { ChannelSidebar } from './components/ChannelSidebar';
+import { CreateChannelModal } from './components/CreateChannelModal';
+import { useAuth } from './context/AuthContext';
+import { getHealthUrl, getTokenUrl, getApiBaseUrl } from './utils/api';
+import type { StreamQualityConfig, Channel } from './types';
 
 export function App() {
   const [session, setSession] = useState<{
@@ -224,6 +227,14 @@ function StreamRoom({
   isScreenShareModalOpen,
   setIsScreenShareModalOpen,
 }: StreamRoomProps) {
+  const { profile, session: authSession } = useAuth();
+  const [channels, setChannels] = useState<Channel[]>([]);
+  const [activeTextChannelId, setActiveTextChannelId] = useState<string>('');
+  const [activeVoiceChannelId, setActiveVoiceChannelId] = useState<string>('');
+  const [isVoiceConnected, setIsVoiceConnected] = useState<boolean>(true);
+  const [isOwner, setIsOwner] = useState<boolean>(false);
+  const [isCreateChannelOpen, setIsCreateChannelOpen] = useState<boolean>(false);
+
   const {
     isScreenSharing,
     isLocalScreenAudioMuted,
@@ -257,6 +268,82 @@ function StreamRoom({
     onDisconnected: onLeave,
   });
 
+  // Carregar canais da sala persistente
+  useEffect(() => {
+    const fetchChannels = async () => {
+      try {
+        const res = await fetch(`${getApiBaseUrl()}/api/rooms/${session.roomName}/channels`);
+        if (res.ok) {
+          const data = await res.json();
+          if (Array.isArray(data.channels) && data.channels.length > 0) {
+            setChannels(data.channels);
+            const textChan = data.channels.find((c: Channel) => c.type === 'text');
+            const voiceChan = data.channels.find((c: Channel) => c.type === 'voice');
+            if (textChan) setActiveTextChannelId(textChan.id);
+            if (voiceChan) setActiveVoiceChannelId(voiceChan.id);
+            if (profile?.id && data.ownerId === profile.id) {
+              setIsOwner(true);
+            }
+          }
+        }
+      } catch (err) {
+        console.warn('Erro ao carregar canais da sala:', err);
+      }
+    };
+    fetchChannels();
+  }, [session.roomName, profile]);
+
+  const handleSelectTextChannel = (channel: Channel) => {
+    setActiveTextChannelId(channel.id);
+  };
+
+  const handleSelectVoiceChannel = (channel: Channel) => {
+    setActiveVoiceChannelId(channel.id);
+    setIsVoiceConnected(true);
+  };
+
+  const handleDisconnectVoice = () => {
+    setIsVoiceConnected(false);
+  };
+
+  const handleChannelCreated = (newChan: Channel) => {
+    setChannels((prev) => [...prev, newChan]);
+    if (newChan.type === 'text') {
+      setActiveTextChannelId(newChan.id);
+    }
+  };
+
+  const handleDeleteChannel = async (channelId: string) => {
+    try {
+      const token = authSession?.access_token;
+      const res = await fetch(
+        `${getApiBaseUrl()}/api/rooms/${session.roomName}/channels/${channelId}`,
+        {
+          method: 'DELETE',
+          headers: {
+            ...(token ? { Authorization: `Bearer ${token}` } : {}),
+          },
+        }
+      );
+      if (res.ok) {
+        setChannels((prev) => {
+          const updated = prev.filter((c) => c.id !== channelId);
+          if (activeTextChannelId === channelId) {
+            const nextText = updated.find((c) => c.type === 'text');
+            if (nextText) setActiveTextChannelId(nextText.id);
+          }
+          if (activeVoiceChannelId === channelId) {
+            const nextVoice = updated.find((c) => c.type === 'voice');
+            if (nextVoice) setActiveVoiceChannelId(nextVoice.id);
+          }
+          return updated;
+        });
+      }
+    } catch (err) {
+      console.warn('Erro ao deletar canal:', err);
+    }
+  };
+
   const handleConfirmScreenShare = (config: StreamQualityConfig) => {
     startScreenShare(config);
   };
@@ -277,6 +364,23 @@ function StreamRoom({
   return (
     <div className="h-screen h-[100dvh] w-screen flex flex-col bg-[#090a0f] text-gray-100 overflow-hidden select-none">
       <div className="flex-1 flex overflow-hidden relative">
+        {/* Channel Sidebar (Discord-like) */}
+        <ChannelSidebar
+          roomName={session.roomName}
+          channels={channels}
+          activeTextChannelId={activeTextChannelId}
+          activeVoiceChannelId={activeVoiceChannelId}
+          isVoiceConnected={isVoiceConnected}
+          isOwner={isOwner}
+          participants={participants}
+          onSelectTextChannel={handleSelectTextChannel}
+          onSelectVoiceChannel={handleSelectVoiceChannel}
+          onDisconnectVoice={handleDisconnectVoice}
+          onOpenCreateChannel={() => setIsCreateChannelOpen(true)}
+          onDeleteChannel={handleDeleteChannel}
+          onLeaveRoom={handleExitRoom}
+        />
+
         <div className="flex-1 flex flex-col p-1 sm:p-3 md:p-4 min-w-0 relative">
           <StreamHUD
             stats={stats}
@@ -336,6 +440,7 @@ function StreamRoom({
             onSendReaction={sendReaction}
             userName={session.userName}
             roomName={session.roomName}
+            channelName={channels.find((c) => c.id === activeTextChannelId)?.name || 'geral'}
             onClose={() => setIsChatOpen(false)}
             userVolumes={userVolumes}
             onUserVolumeChange={setUserVolume}
@@ -366,6 +471,13 @@ function StreamRoom({
         isOpen={isScreenShareModalOpen}
         onClose={() => setIsScreenShareModalOpen(false)}
         onConfirm={handleConfirmScreenShare}
+      />
+
+      <CreateChannelModal
+        isOpen={isCreateChannelOpen}
+        roomSlug={session.roomName}
+        onClose={() => setIsCreateChannelOpen(false)}
+        onChannelCreated={handleChannelCreated}
       />
     </div>
   );

@@ -25,6 +25,7 @@ interface ChatPanelProps {
   onSendReaction: (emoji: string) => void;
   userName: string;
   roomName: string;
+  channelName?: string;
   onClose?: () => void;
   userVolumes?: Record<string, number>;
   onUserVolumeChange?: (participantIdentity: string, volume: number) => void;
@@ -44,6 +45,7 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({
   onSendReaction,
   userName,
   roomName,
+  channelName,
   onClose,
   userVolumes,
   onUserVolumeChange,
@@ -329,7 +331,7 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({
         <form onSubmit={handleSend} className="p-3 border-t border-white/10 bg-white/5 flex items-center gap-2 relative safe-area-bottom">
           <input
             type="text"
-            placeholder="Conversar com amigos..."
+            placeholder={channelName ? `Conversar em #${channelName}...` : 'Conversar com amigos...'}
             value={inputText}
             onChange={(e) => setInputText(e.target.value)}
             className="flex-1 bg-black/50 border border-white/10 rounded-xl px-3 py-2 text-sm text-white placeholder-gray-500 focus:outline-none focus:border-indigo-500 transition"

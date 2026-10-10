@@ -62,6 +62,15 @@ export interface ActiveRoomInfo {
   hasPasscode?: boolean;
 }
 
+export interface Channel {
+  id: string;
+  room_id: string;
+  name: string;
+  type: 'text' | 'voice' | 'stream';
+  position: number;
+  created_at?: string;
+}
+
 export type StreamLayoutMode = 'grid' | 'spotlight';
 
 export interface ScreenShareItem {
