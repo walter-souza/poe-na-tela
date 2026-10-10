@@ -18,13 +18,18 @@ gitGraph
    merge develop tag: "v1.1.0"
 ```
 
-1. **`main` (Produção / Vercel)**:
-   - Contém **apenas código 100% testado e funcional**.
-   - Qualquer push aqui atualiza a versão oficial na Vercel.
-2. **`develop` (Ambiente de Testes)**:
-   - Onde novas modificações e experimentos são desenvolvidos.
-3. **Tags (`v1.0.0`, `v1.1.0`, etc.)**:
-   - Pontos de restauração permanentes. A versão atual está salva na tag **`v1.0.0`**.
+1. **`main` (Produção Oficial)**:
+   - Contém **apenas código 100% testado e homologado**.
+   - **Frontend:** Produção na Vercel.
+   - **Backend:** Porta `3001` no PM2 (`backend`), acessível via `https://api.194.61.238.98.sslip.io`.
+   - Deploy automático disparado apenas por pushes na `main`.
+2. **`develop` (Ambiente de Staging & Testes Contínuos)**:
+   - Onde novas modificações e experimentos são desenvolvidos e testados.
+   - **Frontend:** Preview Deployments automáticos na Vercel.
+   - **Backend:** Porta `3002` no PM2 (`backend-dev`), acessível via `https://api-dev.194.61.238.98.sslip.io`.
+   - Deploy automático disparado apenas por pushes na `develop`.
+3. **Tags (`v1.0.0`, `v1.8.7`, etc.)**:
+   - Pontos de restauração permanentes de versões estáveis.
 
 ---
 
