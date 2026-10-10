@@ -10,6 +10,7 @@ import {
   ChevronDown,
   UserPlus,
   Check,
+  Loader2,
 } from 'lucide-react';
 import type { Channel, VoiceParticipant } from '../types';
 import { useAuth } from '../context/AuthContext';
@@ -20,6 +21,7 @@ interface ChannelSidebarProps {
   activeTextChannelId: string;
   activeVoiceChannelId: string;
   isVoiceConnected: boolean;
+  connectingVoiceChannelId?: string | null;
   isOwner: boolean;
   voiceParticipants?: VoiceParticipant[];
   onSelectTextChannel: (channel: Channel) => void;
@@ -36,6 +38,7 @@ export const ChannelSidebar: React.FC<ChannelSidebarProps> = ({
   activeTextChannelId,
   activeVoiceChannelId,
   isVoiceConnected,
+  connectingVoiceChannelId = null,
   isOwner,
   voiceParticipants = [],
   onSelectTextChannel,
@@ -173,31 +176,45 @@ export const ChannelSidebar: React.FC<ChannelSidebarProps> = ({
           <div className="space-y-1">
             {voiceChannels.map((channel) => {
               const isCurrentVoice = channel.id === activeVoiceChannelId;
+              const isConnecting = channel.id === connectingVoiceChannelId;
               return (
                 <div key={channel.id} className="space-y-1">
                   <div
                     className={`group flex items-center justify-between px-2.5 py-1.5 rounded-lg text-xs font-medium transition cursor-pointer ${
                       isCurrentVoice && isVoiceConnected
                         ? 'bg-emerald-600/15 text-emerald-300 font-semibold'
+                        : isConnecting
+                        ? 'bg-amber-500/10 text-amber-300'
                         : 'text-gray-400 hover:bg-white/5 hover:text-gray-200'
                     }`}
-                    onClick={() => onSelectVoiceChannel(channel)}
+                    onClick={() => {
+                      if (!isConnecting) {
+                        onSelectVoiceChannel(channel);
+                      }
+                    }}
                   >
                     <div className="flex items-center gap-2 truncate">
-                      <Volume2
-                        className={`w-3.5 h-3.5 shrink-0 ${
-                          isCurrentVoice && isVoiceConnected ? 'text-emerald-400' : 'text-gray-500'
-                        }`}
-                      />
+                      {isConnecting ? (
+                        <Loader2 className="w-3.5 h-3.5 shrink-0 text-amber-400 animate-spin" />
+                      ) : (
+                        <Volume2
+                          className={`w-3.5 h-3.5 shrink-0 ${
+                            isCurrentVoice && isVoiceConnected ? 'text-emerald-400' : 'text-gray-500'
+                          }`}
+                        />
+                      )}
                       <span className="truncate">{channel.name}</span>
                     </div>
 
                     <div className="flex items-center gap-1">
+                      {isConnecting && (
+                        <span className="text-[10px] text-amber-400 font-normal">Conectando...</span>
+                      )}
                       {isCurrentVoice && isVoiceConnected && (
                         <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
                       )}
 
-                      {isOwner && voiceChannels.length > 1 && (
+                      {isOwner && voiceChannels.length > 1 && !isConnecting && (
                         <button
                           onClick={(e) => {
                             e.stopPropagation();

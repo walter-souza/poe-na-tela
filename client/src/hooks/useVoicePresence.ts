@@ -123,6 +123,11 @@ export function useVoicePresence({
   useEffect(() => {
     if (!isSubscribedRef.current || !channelRef.current) return;
 
+    if (!isVoiceConnected) {
+      channelRef.current?.track(currentPresencePayload.current).catch(() => {});
+      return;
+    }
+
     const trackTimeout = setTimeout(() => {
       channelRef.current?.track(currentPresencePayload.current).catch(() => {});
     }, 50);

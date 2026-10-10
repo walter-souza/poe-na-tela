@@ -18,12 +18,15 @@ export interface UseLiveKitOptions {
   url: string;
   token: string;
   onDisconnected?: () => void;
+  onConnected?: (room: Room) => void;
 }
 
-export function useLiveKit({ url, token, onDisconnected }: UseLiveKitOptions) {
+export function useLiveKit({ url, token, onDisconnected, onConnected }: UseLiveKitOptions) {
   const roomRef = useRef<Room | null>(null);
   const onDisconnectedRef = useRef(onDisconnected);
   onDisconnectedRef.current = onDisconnected;
+  const onConnectedRef = useRef(onConnected);
+  onConnectedRef.current = onConnected;
 
   const isExplicitDisconnectRef = useRef(false);
 
@@ -672,7 +675,10 @@ export function useLiveKit({ url, token, onDisconnected }: UseLiveKitOptions) {
 
   // Connect to room
   useEffect(() => {
-    if (!url || !token) return;
+    if (!url || !token) {
+      setConnectionState(ConnectionState.Disconnected);
+      return;
+    }
 
     let isSubscribed = true;
     isExplicitDisconnectRef.current = false;
@@ -712,6 +718,7 @@ export function useLiveKit({ url, token, onDisconnected }: UseLiveKitOptions) {
       setConnectionState(ConnectionState.Connected);
       updateParticipantList(room);
       updateScreenShares(room);
+      onConnectedRef.current?.(room);
 
       setMessages((prev) => [
         ...prev,
@@ -972,6 +979,7 @@ export function useLiveKit({ url, token, onDisconnected }: UseLiveKitOptions) {
     room.on(RoomEvent.ActiveSpeakersChanged, () => updateParticipantList(room));
     room.on(RoomEvent.DataReceived, handleDataReceived);
 
+    setConnectionState(ConnectionState.Connecting);
     room.connect(url, token).catch((err: any) => {
       if (!isSubscribed) return;
       if (err?.message?.includes('Client initiated disconnect')) {
@@ -983,6 +991,7 @@ export function useLiveKit({ url, token, onDisconnected }: UseLiveKitOptions) {
 
     return () => {
       isSubscribed = false;
+      setConnectionState(ConnectionState.Disconnected);
       stopKeepAlive();
       if (statsIntervalRef.current) clearInterval(statsIntervalRef.current);
       if (vadIntervalRef.current) {

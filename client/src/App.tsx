@@ -1,4 +1,5 @@
 import { useState, useEffect, useMemo, type Dispatch, type SetStateAction } from 'react';
+import { ConnectionState } from 'livekit-client';
 import { MessageSquare, Tv } from 'lucide-react';
 import { useLiveKit } from './hooks/useLiveKit';
 import { useVoicePresence } from './hooks/useVoicePresence';
@@ -453,9 +454,12 @@ function StreamRoom({
   const { profile, session: authSession } = useAuth();
   const [channels, setChannels] = useState<Channel[]>([]);
   const [activeTextChannelId, setActiveTextChannelId] = useState<string>('');
-  const [activeVoiceChannelId, setActiveVoiceChannelId] = useState<string>(session.voiceChannelId || '');
+  const [activeVoiceChannelId, setActiveVoiceChannelId] = useState<string>(
+    session.initialVoiceConnected ? session.voiceChannelId || '' : ''
+  );
+  const [connectingVoiceChannelId, setConnectingVoiceChannelId] = useState<string | null>(null);
   const [isVoiceConnected, setIsVoiceConnected] = useState<boolean>(
-    Boolean(session.initialVoiceConnected)
+    Boolean(session.initialVoiceConnected && session.token)
   );
   const [voiceToken, setVoiceToken] = useState<string>(session.token || '');
   const [isOwner, setIsOwner] = useState<boolean>(false);
@@ -467,6 +471,7 @@ function StreamRoom({
   });
 
   const {
+    connectionState,
     isScreenSharing,
     isLocalScreenAudioMuted,
     isMicEnabled,
@@ -496,18 +501,35 @@ function StreamRoom({
   } = useLiveKit({
     url: session.livekitUrl,
     token: isVoiceConnected ? voiceToken : '',
-    onDisconnected: onLeave,
+    onDisconnected: () => {
+      setIsVoiceConnected(false);
+      setActiveVoiceChannelId('');
+      setConnectingVoiceChannelId(null);
+    },
   });
+
+  // Canal de voz 100% confirmado e ativo no LiveKit
+  const isVoiceFullyConnected =
+    isVoiceConnected &&
+    connectionState === ConnectionState.Connected &&
+    Boolean(activeVoiceChannelId);
+
+  // Limpa o indicador de conectando ao confirmar conexão no LiveKit
+  useEffect(() => {
+    if (connectionState === ConnectionState.Connected) {
+      setConnectingVoiceChannelId(null);
+    }
+  }, [connectionState]);
 
   // Status de fala do participante local
   const localParticipant = participants.find((p) => p.identity === session.userName);
 
-  // Presença em tempo real cross-channel via Supabase Realtime
+  // Presença em tempo real cross-channel via Supabase Realtime (só transmite canal quando confirmado pelo LiveKit)
   const { voiceParticipants } = useVoicePresence({
     roomSlug: session.roomName,
     userName: session.userName,
-    activeVoiceChannelId: isVoiceConnected ? activeVoiceChannelId : null,
-    isVoiceConnected,
+    activeVoiceChannelId: isVoiceFullyConnected ? activeVoiceChannelId : null,
+    isVoiceConnected: isVoiceFullyConnected,
     isSpeaking: localParticipant?.isSpeaking ?? false,
     isMuted: !isMicEnabled,
     avatarUrl: profile?.avatar_url,
@@ -516,7 +538,7 @@ function StreamRoom({
   // Mesclar VAD local de 0ms para participantes no mesmo canal de voz
   const mergedVoiceParticipants = useMemo(() => {
     return voiceParticipants.map((vp) => {
-      if (isVoiceConnected && vp.voiceChannelId === activeVoiceChannelId) {
+      if (isVoiceFullyConnected && vp.voiceChannelId === activeVoiceChannelId) {
         const lk = participants.find((p) => p.identity === vp.identity);
         if (lk) {
           return {
@@ -528,7 +550,7 @@ function StreamRoom({
       }
       return vp;
     });
-  }, [voiceParticipants, participants, isVoiceConnected, activeVoiceChannelId]);
+  }, [voiceParticipants, participants, isVoiceFullyConnected, activeVoiceChannelId]);
 
   // Chat persistente e criptografado via Supabase Realtime & KMS
   const {
@@ -575,9 +597,12 @@ function StreamRoom({
   };
 
   const handleSelectVoiceChannel = async (channel: Channel) => {
-    setActiveVoiceChannelId(channel.id);
+    if (activeVoiceChannelId === channel.id && isVoiceFullyConnected) {
+      return;
+    }
+
+    setConnectingVoiceChannelId(channel.id);
     setActiveView('stage');
-    setIsVoiceConnected(true);
 
     try {
       const res = await fetch(getTokenUrl(), {
@@ -595,18 +620,25 @@ function StreamRoom({
 
       if (res.ok) {
         const data = await res.json();
+        const confirmedChanId = data.voiceChannelId || channel.id;
+        setActiveVoiceChannelId(confirmedChanId);
         setVoiceToken(data.token);
+        setIsVoiceConnected(true);
       } else {
         const err = await res.json().catch(() => ({}));
         console.error('Falha ao obter token para canal de voz:', err);
+        setConnectingVoiceChannelId(null);
       }
     } catch (err) {
       console.error('Erro ao conectar ao canal de voz:', err);
+      setConnectingVoiceChannelId(null);
     }
   };
 
   const handleDisconnectVoice = () => {
     setIsVoiceConnected(false);
+    setActiveVoiceChannelId('');
+    setConnectingVoiceChannelId(null);
     setVoiceToken('');
     if (activeView === 'stage') {
       setActiveView('chat');
@@ -614,7 +646,7 @@ function StreamRoom({
   };
 
   const handleToggleMic = () => {
-    if (!isVoiceConnected) {
+    if (!isVoiceFullyConnected) {
       const targetChan =
         channels.find((c) => c.id === activeVoiceChannelId && c.type === 'voice') ||
         channels.find((c) => c.type === 'voice');
@@ -702,7 +734,8 @@ function StreamRoom({
           channels={channels}
           activeTextChannelId={activeTextChannelId}
           activeVoiceChannelId={activeVoiceChannelId}
-          isVoiceConnected={isVoiceConnected}
+          isVoiceConnected={isVoiceFullyConnected}
+          connectingVoiceChannelId={connectingVoiceChannelId}
           isOwner={isOwner}
           voiceParticipants={mergedVoiceParticipants}
           onSelectTextChannel={handleSelectTextChannel}
@@ -723,8 +756,12 @@ function StreamRoom({
             onSendReaction={sendReaction}
             userName={session.userName}
             isEncrypted={isEncrypted}
-            isVoiceConnected={isVoiceConnected}
-            activeVoiceChannelName={channels.find((c) => c.id === activeVoiceChannelId)?.name}
+            isVoiceConnected={isVoiceFullyConnected}
+            activeVoiceChannelName={
+              isVoiceFullyConnected
+                ? channels.find((c) => c.id === activeVoiceChannelId)?.name
+                : undefined
+            }
             onSwitchToStage={() => setActiveView('stage')}
           />
         ) : (
