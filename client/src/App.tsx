@@ -15,18 +15,26 @@ import { CreateChannelModal } from './components/CreateChannelModal';
 import { usePersistentChat } from './hooks/usePersistentChat';
 import { useAuth } from './context/AuthContext';
 import { getHealthUrl, getTokenUrl, getApiBaseUrl } from './utils/api';
-import type { StreamQualityConfig, Channel } from './types';
+import { GuildBar } from './components/GuildBar';
+import { TextChannelView } from './components/TextChannelView';
+import { CreateRoomModal } from './components/CreateRoomModal';
+import { PasswordModal } from './components/PasswordModal';
+import type { StreamQualityConfig, Channel, UserRoom } from './types';
+
+interface AppSession {
+  token: string;
+  livekitUrl: string;
+  roomName: string;
+  userName: string;
+  isPublisher: boolean;
+  passcode?: string;
+  voiceChannelId?: string;
+  initialVoiceConnected?: boolean;
+}
 
 export function App() {
-  const [session, setSession] = useState<{
-    token: string;
-    livekitUrl: string;
-    roomName: string;
-    userName: string;
-    isPublisher: boolean;
-    passcode?: string;
-    voiceChannelId?: string;
-  } | null>(null);
+  const { profile, isAuthenticated, session: authSession } = useAuth();
+  const [session, setSession] = useState<AppSession | null>(null);
 
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -46,6 +54,20 @@ export function App() {
   const [maintenanceMessage, setMaintenanceMessage] = useState<string>('');
   const [isCheckingMaintenance, setIsCheckingMaintenance] = useState(false);
 
+  // LiveKit default URL
+  const [livekitUrl, setLivekitUrl] = useState<string>('wss://livekit.194.61.238.98.sslip.io');
+
+  // Discord Guilds (Salas do Usuário Autenticado)
+  const [userRooms, setUserRooms] = useState<UserRoom[]>([]);
+  const [activeRoomSlug, setActiveRoomSlug] = useState<string | null>(() => {
+    const params = new URLSearchParams(window.location.search);
+    return params.get('room') || params.get('r') || null;
+  });
+  const [isCreateRoomOpen, setIsCreateRoomOpen] = useState(false);
+  const [passwordPromptRoom, setPasswordPromptRoom] = useState<UserRoom | null>(null);
+  const [passwordModalError, setPasswordModalError] = useState<string | null>(null);
+  const [roomPasscodes, setRoomPasscodes] = useState<Record<string, string>>({});
+
   // Admin bypass token check (URL query param ?bypass=... or ?admin=... or sessionStorage)
   const [adminBypassToken, setAdminBypassToken] = useState<string | null>(() => {
     const params = new URLSearchParams(window.location.search);
@@ -64,11 +86,11 @@ export function App() {
       const res = await fetch(getHealthUrl());
       if (res.ok) {
         const data = await res.json();
+        if (data.livekitUrl) setLivekitUrl(data.livekitUrl);
         if (data.maintenance) {
           setIsMaintenance(true);
           if (data.message) setMaintenanceMessage(data.message);
         } else {
-          // If env var is not forcefully true, set false
           if (import.meta.env.VITE_MAINTENANCE_MODE !== 'true') {
             setIsMaintenance(false);
           }
@@ -85,13 +107,39 @@ export function App() {
     checkMaintenanceStatus();
   }, []);
 
+  // Buscar salas das quais o usuário é dono ou membro
+  const fetchUserRooms = async () => {
+    if (!authSession?.access_token) return;
+    try {
+      const res = await fetch(`${getApiBaseUrl()}/api/user/rooms`, {
+        headers: {
+          Authorization: `Bearer ${authSession.access_token}`,
+        },
+      });
+      if (res.ok) {
+        const data = await res.json();
+        if (Array.isArray(data.rooms)) {
+          setUserRooms(data.rooms);
+        }
+      }
+    } catch (err) {
+      console.warn('Erro ao carregar salas do usuário:', err);
+    }
+  };
+
+  useEffect(() => {
+    if (isAuthenticated && authSession?.access_token) {
+      fetchUserRooms();
+    }
+  }, [isAuthenticated, authSession?.access_token]);
+
   // Detect room parameter in URL for invite link auto-redirection
   const [inviteRoomName, setInviteRoomName] = useState<string | null>(() => {
     const params = new URLSearchParams(window.location.search);
     return params.get('room') || params.get('r') || null;
   });
 
-  // Connect to room via token
+  // Connect to room via token (Lobby Join)
   const handleJoin = async (
     roomName: string,
     userName: string,
@@ -133,11 +181,17 @@ export function App() {
         isPublisher: data.isPublisher,
         passcode,
         voiceChannelId: data.voiceChannelId,
+        initialVoiceConnected: true,
       });
 
-      // Clean URL search params so the address bar stays clean (without ?room=...)
+      setActiveRoomSlug(data.roomName);
+      if (passcode) {
+        setRoomPasscodes((prev) => ({ ...prev, [data.roomName]: passcode }));
+      }
+
       window.history.replaceState({}, '', window.location.pathname);
       setInviteRoomName(null);
+      fetchUserRooms();
     } catch (err: any) {
       const msg = err.message || 'Erro ao conectar ao servidor de streaming';
       setError(msg);
@@ -147,8 +201,55 @@ export function App() {
     }
   };
 
+  const handleSelectRoom = (slug: string) => {
+    const room = userRooms.find((r) => r.slug === slug);
+    if (room && room.hasPasscode && !room.isOwner && !roomPasscodes[slug]) {
+      setPasswordPromptRoom(room);
+      setPasswordModalError(null);
+      return;
+    }
+    setActiveRoomSlug(slug);
+    setInviteRoomName(null);
+  };
+
+  const handleSelectHome = () => {
+    setActiveRoomSlug(null);
+    setSession(null);
+    setInviteRoomName(null);
+    window.history.replaceState({}, '', window.location.pathname);
+  };
+
+  const handleConfirmRoomPassword = async (passcode: string) => {
+    if (!passwordPromptRoom) return;
+    const slug = passwordPromptRoom.slug;
+    try {
+      const token = authSession?.access_token;
+      const res = await fetch(`${getApiBaseUrl()}/api/rooms/${slug}/join`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        body: JSON.stringify({ passcode }),
+      });
+
+      if (res.ok) {
+        setRoomPasscodes((prev) => ({ ...prev, [slug]: passcode }));
+        setPasswordPromptRoom(null);
+        setActiveRoomSlug(slug);
+        fetchUserRooms();
+      } else {
+        const data = await res.json().catch(() => ({}));
+        setPasswordModalError(data.error || 'Senha incorreta.');
+      }
+    } catch (err) {
+      setPasswordModalError('Erro ao verificar senha da sala.');
+    }
+  };
+
   const handleLeave = () => {
     window.history.replaceState({}, '', window.location.pathname);
+    setActiveRoomSlug(null);
     setSession(null);
     setInviteRoomName(null);
   };
@@ -176,47 +277,98 @@ export function App() {
     );
   }
 
-  if (!session) {
-    return (
-      <>
-        <Lobby onJoin={handleJoin} isLoading={isLoading} error={error} />
-        {inviteRoomName && (
-          <InviteModal
-            isOpen={Boolean(inviteRoomName)}
-            roomName={inviteRoomName}
-            onJoin={handleJoin}
-            onCancel={handleCancelInvite}
-          />
-        )}
-      </>
-    );
-  }
+  // Nome do usuário para a sessão ativa
+  const effectiveUserName =
+    profile?.username || localStorage.getItem('poe-na-tela-username') || 'Usuário';
+
+  // Sessão atual: se já foi gerada com token ou modo de navegação sem voz
+  const currentSession: AppSession | null = useMemo(() => {
+    if (session && session.roomName === activeRoomSlug) {
+      return session;
+    }
+    if (activeRoomSlug) {
+      return {
+        token: '',
+        livekitUrl,
+        roomName: activeRoomSlug,
+        userName: effectiveUserName,
+        isPublisher: false,
+        passcode: roomPasscodes[activeRoomSlug],
+        initialVoiceConnected: false,
+      };
+    }
+    return null;
+  }, [session, activeRoomSlug, livekitUrl, effectiveUserName, roomPasscodes]);
 
   return (
-    <StreamRoom
-      session={session}
-      onLeave={handleLeave}
-      isChatOpen={isChatOpen}
-      setIsChatOpen={setIsChatOpen}
-      isHUDOpen={isHUDOpen}
-      setIsHUDOpen={setIsHUDOpen}
-      isScreenShareModalOpen={isScreenShareModalOpen}
-      setIsScreenShareModalOpen={setIsScreenShareModalOpen}
-      adminBypassToken={adminBypassToken}
-    />
+    <div className="h-screen h-[100dvh] w-screen flex bg-[#07080d] text-gray-100 overflow-hidden select-none">
+      {/* 1. Discord Guild Bar (Servidores / Salas) */}
+      <GuildBar
+        userRooms={userRooms}
+        activeRoomSlug={activeRoomSlug}
+        onSelectRoom={handleSelectRoom}
+        onSelectHome={handleSelectHome}
+        onOpenCreateRoom={() => setIsCreateRoomOpen(true)}
+      />
+
+      {/* 2. Área Principal: Sala ou Lobby */}
+      <div className="flex-1 flex overflow-hidden min-w-0">
+        {currentSession ? (
+          <StreamRoom
+            session={currentSession}
+            onLeave={handleLeave}
+            isChatOpen={isChatOpen}
+            setIsChatOpen={setIsChatOpen}
+            isHUDOpen={isHUDOpen}
+            setIsHUDOpen={setIsHUDOpen}
+            isScreenShareModalOpen={isScreenShareModalOpen}
+            setIsScreenShareModalOpen={setIsScreenShareModalOpen}
+            adminBypassToken={adminBypassToken}
+          />
+        ) : (
+          <div className="flex-1 overflow-y-auto">
+            <Lobby onJoin={handleJoin} isLoading={isLoading} error={error} />
+            {inviteRoomName && (
+              <InviteModal
+                isOpen={Boolean(inviteRoomName)}
+                roomName={inviteRoomName}
+                onJoin={handleJoin}
+                onCancel={handleCancelInvite}
+              />
+            )}
+          </div>
+        )}
+      </div>
+
+      {/* Modais Globais */}
+      <CreateRoomModal
+        isOpen={isCreateRoomOpen}
+        onClose={() => setIsCreateRoomOpen(false)}
+        onRoomCreated={(slug, passcode) => {
+          setIsCreateRoomOpen(false);
+          fetchUserRooms();
+          if (passcode) {
+            setRoomPasscodes((prev) => ({ ...prev, [slug]: passcode }));
+          }
+          setActiveRoomSlug(slug);
+        }}
+      />
+
+      {passwordPromptRoom && (
+        <PasswordModal
+          isOpen={Boolean(passwordPromptRoom)}
+          roomName={passwordPromptRoom.name}
+          onClose={() => setPasswordPromptRoom(null)}
+          onConfirm={handleConfirmRoomPassword}
+          error={passwordModalError}
+        />
+      )}
+    </div>
   );
 }
 
 interface StreamRoomProps {
-  session: {
-    token: string;
-    livekitUrl: string;
-    roomName: string;
-    userName: string;
-    isPublisher: boolean;
-    passcode?: string;
-    voiceChannelId?: string;
-  };
+  session: AppSession;
   onLeave: () => void;
   isChatOpen: boolean;
   setIsChatOpen: Dispatch<SetStateAction<boolean>>;
@@ -242,10 +394,17 @@ function StreamRoom({
   const [channels, setChannels] = useState<Channel[]>([]);
   const [activeTextChannelId, setActiveTextChannelId] = useState<string>('');
   const [activeVoiceChannelId, setActiveVoiceChannelId] = useState<string>(session.voiceChannelId || '');
-  const [isVoiceConnected, setIsVoiceConnected] = useState<boolean>(true);
-  const [voiceToken, setVoiceToken] = useState<string>(session.token);
+  const [isVoiceConnected, setIsVoiceConnected] = useState<boolean>(
+    Boolean(session.initialVoiceConnected)
+  );
+  const [voiceToken, setVoiceToken] = useState<string>(session.token || '');
   const [isOwner, setIsOwner] = useState<boolean>(false);
   const [isCreateChannelOpen, setIsCreateChannelOpen] = useState<boolean>(false);
+
+  // Modo de visualização central: 'chat' para canais de texto, 'stage' para palco de transmissão
+  const [activeView, setActiveView] = useState<'chat' | 'stage'>(() => {
+    return session.initialVoiceConnected ? 'stage' : 'chat';
+  });
 
   const {
     isScreenSharing,
@@ -280,10 +439,10 @@ function StreamRoom({
     onDisconnected: onLeave,
   });
 
-  // Local participant speaking status for voice presence
+  // Status de fala do participante local
   const localParticipant = participants.find((p) => p.identity === session.userName);
 
-  // Cross-channel Presence using Supabase Realtime
+  // Presença em tempo real cross-channel via Supabase Realtime
   const { voiceParticipants } = useVoicePresence({
     roomSlug: session.roomName,
     userName: session.userName,
@@ -294,7 +453,7 @@ function StreamRoom({
     avatarUrl: profile?.avatar_url,
   });
 
-  // Merge real-time local VAD for participants in the same voice channel
+  // Mesclar VAD local de 0ms para participantes no mesmo canal de voz
   const mergedVoiceParticipants = useMemo(() => {
     return voiceParticipants.map((vp) => {
       if (isVoiceConnected && vp.voiceChannelId === activeVoiceChannelId) {
@@ -352,14 +511,12 @@ function StreamRoom({
 
   const handleSelectTextChannel = (channel: Channel) => {
     setActiveTextChannelId(channel.id);
+    setActiveView('chat');
   };
 
   const handleSelectVoiceChannel = async (channel: Channel) => {
-    if (isVoiceConnected && activeVoiceChannelId === channel.id) {
-      return;
-    }
-
     setActiveVoiceChannelId(channel.id);
+    setActiveView('stage');
     setIsVoiceConnected(true);
 
     try {
@@ -391,6 +548,9 @@ function StreamRoom({
   const handleDisconnectVoice = () => {
     setIsVoiceConnected(false);
     setVoiceToken('');
+    if (activeView === 'stage') {
+      setActiveView('chat');
+    }
   };
 
   const handleToggleMic = () => {
@@ -409,6 +569,7 @@ function StreamRoom({
     setChannels((prev) => [...prev, newChan]);
     if (newChan.type === 'text') {
       setActiveTextChannelId(newChan.id);
+      setActiveView('chat');
     }
   };
 
@@ -473,7 +634,7 @@ function StreamRoom({
   };
 
   return (
-    <div className="h-screen h-[100dvh] w-screen flex flex-col bg-[#090a0f] text-gray-100 overflow-hidden select-none">
+    <div className="h-screen h-[100dvh] w-full flex flex-col bg-[#090a0f] text-gray-100 overflow-hidden select-none">
       <div className="flex-1 flex overflow-hidden relative">
         {/* Channel Sidebar (Discord-like) */}
         <ChannelSidebar
@@ -492,58 +653,79 @@ function StreamRoom({
           onLeaveRoom={handleExitRoom}
         />
 
-        <div className="flex-1 flex flex-col p-1 sm:p-3 md:p-4 min-w-0 relative">
-          <StreamHUD
-            stats={stats}
-            isOpen={isHUDOpen}
-            onClose={() => setIsHUDOpen(false)}
-            playoutBufferMs={playoutBufferMs}
-          />
-
-          <VideoPlayer
-            screenShares={screenShares}
-            streamVolumes={streamVolumes}
-            onStreamVolumeChange={setStreamVolume}
-            reaction={reaction}
-            onToggleHUD={() => setIsHUDOpen(!isHUDOpen)}
-            isHUDOpen={isHUDOpen}
-            canPlaybackAudio={canPlaybackAudio}
-            onUnlockAudio={unlockAudio}
-            onOpenScreenShareConfig={() => setIsScreenShareModalOpen(true)}
-            isLocalScreenAudioMuted={isLocalScreenAudioMuted}
-            onToggleLocalScreenAudio={toggleLocalScreenAudio}
+        {/* Central View: Text Chat OU Video Stage */}
+        {activeView === 'chat' ? (
+          <TextChannelView
+            channelName={channels.find((c) => c.id === activeTextChannelId)?.name || 'geral'}
             roomName={session.roomName}
+            messages={persistentMessages}
+            onSendMessage={sendPersistentMessage}
+            onSendReaction={sendReaction}
+            userName={session.userName}
+            isEncrypted={isEncrypted}
+            isVoiceConnected={isVoiceConnected}
+            activeVoiceChannelName={channels.find((c) => c.id === activeVoiceChannelId)?.name}
+            onSwitchToStage={() => setActiveView('stage')}
           />
+        ) : (
+          <div className="flex-1 flex flex-col p-1 sm:p-3 md:p-4 min-w-0 relative">
+            <StreamHUD
+              stats={stats}
+              isOpen={isHUDOpen}
+              onClose={() => setIsHUDOpen(false)}
+              playoutBufferMs={playoutBufferMs}
+            />
 
-          {/* Centered Room Name at top */}
-          <div className="absolute top-2 sm:top-6 inset-x-0 mx-auto w-fit z-20 pointer-events-none flex items-center justify-center px-2">
-            <div className="pointer-events-auto flex items-center gap-1.5 sm:gap-2 px-2.5 sm:px-3.5 py-1.5 sm:py-2 rounded-2xl bg-[#11131c]/90 border border-white/15 text-white text-[11px] sm:text-xs font-semibold shadow-2xl backdrop-blur-md select-none">
-              <Tv className="w-3.5 h-3.5 text-indigo-400 shrink-0" />
-              <span className="text-gray-400 font-medium hidden sm:inline">Sala:</span>
-              <span className="font-bold text-white tracking-wide max-w-[100px] xs:max-w-[140px] sm:max-w-xs md:max-w-md truncate">
-                {session.roomName}
-              </span>
-            </div>
-          </div>
+            <VideoPlayer
+              screenShares={screenShares}
+              streamVolumes={streamVolumes}
+              onStreamVolumeChange={setStreamVolume}
+              reaction={reaction}
+              onToggleHUD={() => setIsHUDOpen(!isHUDOpen)}
+              isHUDOpen={isHUDOpen}
+              canPlaybackAudio={canPlaybackAudio}
+              onUnlockAudio={unlockAudio}
+              onOpenScreenShareConfig={() => setIsScreenShareModalOpen(true)}
+              isLocalScreenAudioMuted={isLocalScreenAudioMuted}
+              onToggleLocalScreenAudio={toggleLocalScreenAudio}
+              roomName={session.roomName}
+            />
 
-          {!isChatOpen && (
-            <button
-              onClick={() => setIsChatOpen(true)}
-              title="Exibir Chat e Participantes"
-              className="absolute top-2 right-2 sm:top-6 sm:right-6 z-30 flex items-center gap-1.5 sm:gap-2 px-2.5 sm:px-3.5 py-1.5 sm:py-2.5 rounded-2xl bg-[#11131c]/90 hover:bg-[#181a26] border border-white/15 text-white text-xs font-semibold shadow-2xl backdrop-blur-md transition-all hover:scale-105 active:scale-95 group cursor-pointer"
-            >
-              <MessageSquare className="w-4 h-4 text-indigo-400 group-hover:text-indigo-300 transition-colors" />
-              <span className="hidden sm:inline">Exibir Chat</span>
-              {messages.length > 0 && (
-                <span className="bg-indigo-600 text-[10px] px-1.5 py-0.2 rounded-full font-bold">
-                  {messages.length}
+            {/* Centered Room Name at top */}
+            <div className="absolute top-2 sm:top-6 inset-x-0 mx-auto w-fit z-20 pointer-events-none flex items-center justify-center px-2">
+              <div className="pointer-events-auto flex items-center gap-1.5 sm:gap-2 px-2.5 sm:px-3.5 py-1.5 sm:py-2 rounded-2xl bg-[#11131c]/90 border border-white/15 text-white text-[11px] sm:text-xs font-semibold shadow-2xl backdrop-blur-md select-none">
+                <Tv className="w-3.5 h-3.5 text-indigo-400 shrink-0" />
+                <span className="text-gray-400 font-medium hidden sm:inline">Sala:</span>
+                <span className="font-bold text-white tracking-wide max-w-[100px] xs:max-w-[140px] sm:max-w-xs md:max-w-md truncate">
+                  {session.roomName}
                 </span>
-              )}
-            </button>
-          )}
-        </div>
+                <span className="text-gray-500">|</span>
+                <span className="text-emerald-400 font-semibold truncate">
+                  {channels.find((c) => c.id === activeVoiceChannelId)?.name || 'Voz'}
+                </span>
+              </div>
+            </div>
 
-        {isChatOpen && (
+            {!isChatOpen && (
+              <button
+                onClick={() => setIsChatOpen(true)}
+                title="Exibir Chat Lateral"
+                className="absolute top-2 right-2 sm:top-6 sm:right-6 z-30 flex items-center gap-1.5 sm:gap-2 px-2.5 sm:px-3.5 py-1.5 sm:py-2.5 rounded-2xl bg-[#11131c]/90 hover:bg-[#181a26] border border-white/15 text-white text-xs font-semibold shadow-2xl backdrop-blur-md transition-all hover:scale-105 active:scale-95 group cursor-pointer"
+              >
+                <MessageSquare className="w-4 h-4 text-indigo-400 group-hover:text-indigo-300 transition-colors" />
+                <span className="hidden sm:inline">Exibir Chat</span>
+                {persistentMessages.length > 0 && (
+                  <span className="bg-indigo-600 text-[10px] px-1.5 py-0.2 rounded-full font-bold">
+                    {persistentMessages.length}
+                  </span>
+                )}
+              </button>
+            )}
+          </div>
+        )}
+
+        {/* Side Chat Drawer (only when in stage mode and user opened chat) */}
+        {activeView === 'stage' && isChatOpen && (
           <ChatPanel
             messages={persistentMessages}
             participants={participants}
@@ -560,24 +742,34 @@ function StreamRoom({
         )}
       </div>
 
-      <ControlsBar
-        isMicEnabled={isMicEnabled}
-        isDeafened={isDeafened}
-        isNoiseSuppressionEnabled={isNoiseSuppressionEnabled}
-        isScreenSharing={isScreenSharing}
-        isChatOpen={isChatOpen}
-        isHUDOpen={isHUDOpen}
-        roomName={session.roomName}
-        userName={session.userName}
-        onToggleMic={handleToggleMic}
-        onToggleDeafen={toggleDeafen}
-        onToggleNoiseSuppression={toggleNoiseSuppression}
-        onToggleScreenShare={handleToggleScreenShare}
-        onOpenScreenShareConfig={() => setIsScreenShareModalOpen(true)}
-        onToggleChat={() => setIsChatOpen(!isChatOpen)}
-        onToggleHUD={() => setIsHUDOpen(!isHUDOpen)}
-        onLeave={handleExitRoom}
-      />
+      {/* Controls Bar (visível quando em modo palco ou quando voz está conectada) */}
+      {(activeView === 'stage' || isVoiceConnected) && (
+        <ControlsBar
+          isMicEnabled={isMicEnabled}
+          isDeafened={isDeafened}
+          isNoiseSuppressionEnabled={isNoiseSuppressionEnabled}
+          isScreenSharing={isScreenSharing}
+          isChatOpen={isChatOpen}
+          isHUDOpen={isHUDOpen}
+          roomName={session.roomName}
+          userName={session.userName}
+          onToggleMic={handleToggleMic}
+          onToggleDeafen={toggleDeafen}
+          onToggleNoiseSuppression={toggleNoiseSuppression}
+          onToggleScreenShare={handleToggleScreenShare}
+          onOpenScreenShareConfig={() => setIsScreenShareModalOpen(true)}
+          onToggleChat={() => {
+            if (activeView === 'chat') {
+              setActiveView('stage');
+              setIsChatOpen(true);
+            } else {
+              setIsChatOpen(!isChatOpen);
+            }
+          }}
+          onToggleHUD={() => setIsHUDOpen(!isHUDOpen)}
+          onLeave={handleExitRoom}
+        />
+      )}
 
       <ScreenShareModal
         isOpen={isScreenShareModalOpen}

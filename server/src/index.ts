@@ -443,6 +443,124 @@ app.post(['/api/rooms', '/rooms'], async (req: Request, res: Response): Promise<
 });
 
 /**
+ * Listar todas as salas das quais o usuário autenticado faz parte (como dono ou membro)
+ */
+app.get(['/api/user/rooms', '/user/rooms'], async (req: Request, res: Response): Promise<void> => {
+  try {
+    if (!isSupabaseConfigured() || !supabase) {
+      res.json({ rooms: [] });
+      return;
+    }
+
+    const authUser = await getAuthUser(req);
+    if (!authUser) {
+      res.status(401).json({ error: 'Autenticação necessária.' });
+      return;
+    }
+
+    const { data: memberRows, error: memberError } = await supabase
+      .from('room_members')
+      .select('room_id, role, rooms(id, name, slug, passcode_hash, owner_id, created_at)')
+      .eq('user_id', authUser.id);
+
+    if (memberError) {
+      throw memberError;
+    }
+
+    const rooms = (memberRows || [])
+      .map((row: any) => {
+        const r = row.rooms;
+        if (!r) return null;
+        return {
+          id: r.id,
+          name: r.name,
+          slug: r.slug,
+          hasPasscode: Boolean(r.passcode_hash),
+          isOwner: r.owner_id === authUser.id,
+          role: row.role,
+          createdAt: r.created_at,
+        };
+      })
+      .filter(Boolean);
+
+    res.json({ rooms });
+  } catch (err: any) {
+    console.error('Erro ao listar salas do usuário:', err?.message || err);
+    res.status(500).json({ error: 'Falha ao buscar salas do usuário.', details: err?.message });
+  }
+});
+
+/**
+ * Ingressar como membro da sala (Discord-like)
+ */
+app.post(['/api/rooms/:roomName/join', '/rooms/:roomName/join'], async (req: Request, res: Response): Promise<void> => {
+  try {
+    const roomSlug = sanitizeRoomName(req.params.roomName);
+    const { passcode } = req.body;
+    const cleanPasscode = typeof passcode === 'string' && passcode.trim() ? passcode.trim() : null;
+
+    if (!isSupabaseConfigured() || !supabase) {
+      res.json({ success: true, isPersistent: false });
+      return;
+    }
+
+    const authUser = await getAuthUser(req);
+    if (!authUser) {
+      res.status(401).json({ error: 'Autenticação necessária.' });
+      return;
+    }
+
+    const { data: room, error: roomError } = await supabase
+      .from('rooms')
+      .select('id, name, slug, passcode_hash, owner_id')
+      .eq('slug', roomSlug)
+      .maybeSingle();
+
+    if (roomError || !room) {
+      res.status(404).json({ error: 'Sala não encontrada.' });
+      return;
+    }
+
+    if (room.passcode_hash && room.owner_id !== authUser.id) {
+      if (!cleanPasscode || cleanPasscode !== room.passcode_hash) {
+        res.status(403).json({ error: 'Senha incorreta para esta sala.', requiresPasscode: true });
+        return;
+      }
+    }
+
+    // Verificar se já é membro
+    const { data: existingMember } = await supabase
+      .from('room_members')
+      .select('id, role')
+      .eq('room_id', room.id)
+      .eq('user_id', authUser.id)
+      .maybeSingle();
+
+    if (!existingMember) {
+      await supabase.from('room_members').insert({
+        room_id: room.id,
+        user_id: authUser.id,
+        role: room.owner_id === authUser.id ? 'owner' : 'member',
+      });
+    }
+
+    res.json({
+      success: true,
+      room: {
+        id: room.id,
+        name: room.name,
+        slug: room.slug,
+        hasPasscode: Boolean(room.passcode_hash),
+        isOwner: room.owner_id === authUser.id,
+      },
+    });
+  } catch (err: any) {
+    console.error('Erro ao ingressar na sala:', err?.message || err);
+    res.status(500).json({ error: 'Falha ao ingressar na sala.' });
+  }
+});
+
+/**
  * Obter Chave de Criptografia da Sala (KMS)
  * Entrega a Room Key decifrada para participantes autorizados
  */

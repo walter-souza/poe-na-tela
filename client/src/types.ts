@@ -65,6 +65,16 @@ export interface FavoriteRoom {
   addedAt: number;
 }
 
+export interface UserRoom {
+  id: string;
+  name: string;
+  slug: string;
+  hasPasscode: boolean;
+  isOwner: boolean;
+  role: string;
+  createdAt?: string;
+}
+
 export interface ActiveRoomInfo {
   name: string;
   numParticipants: number;
