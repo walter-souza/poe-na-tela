@@ -9,7 +9,7 @@ import {
   ShieldCheck,
   ChevronDown,
 } from 'lucide-react';
-import type { Channel, ParticipantInfo } from '../types';
+import type { Channel, VoiceParticipant } from '../types';
 import { useAuth } from '../context/AuthContext';
 
 interface ChannelSidebarProps {
@@ -19,7 +19,7 @@ interface ChannelSidebarProps {
   activeVoiceChannelId: string;
   isVoiceConnected: boolean;
   isOwner: boolean;
-  participants: ParticipantInfo[];
+  voiceParticipants?: VoiceParticipant[];
   onSelectTextChannel: (channel: Channel) => void;
   onSelectVoiceChannel: (channel: Channel) => void;
   onDisconnectVoice: () => void;
@@ -35,7 +35,7 @@ export const ChannelSidebar: React.FC<ChannelSidebarProps> = ({
   activeVoiceChannelId,
   isVoiceConnected,
   isOwner,
-  participants,
+  voiceParticipants = [],
   onSelectTextChannel,
   onSelectVoiceChannel,
   onDisconnectVoice,
@@ -190,25 +190,32 @@ export const ChannelSidebar: React.FC<ChannelSidebarProps> = ({
                     </div>
                   </div>
 
-                  {/* Participantes conectados no canal de voz ativo */}
-                  {isCurrentVoice && isVoiceConnected && (
-                    <div className="pl-6 pr-2 space-y-1">
-                      {participants.map((p) => (
-                        <div
-                          key={p.identity}
-                          className="flex items-center gap-2 py-0.5 text-[11px] text-gray-300"
-                        >
+                  {/* Participantes conectados neste canal de voz específico */}
+                  {(() => {
+                    const channelUsers = voiceParticipants.filter(
+                      (p) => p.voiceChannelId === channel.id
+                    );
+                    if (channelUsers.length === 0) return null;
+
+                    return (
+                      <div className="pl-6 pr-2 space-y-1">
+                        {channelUsers.map((p) => (
                           <div
-                            className={`w-1.5 h-1.5 rounded-full ${
-                              p.isSpeaking ? 'bg-emerald-400 ring-2 ring-emerald-400/50' : 'bg-gray-600'
-                            }`}
-                          />
-                          <span className="truncate">{p.name || p.identity}</span>
-                          {p.isMuted && <span className="text-[10px] text-rose-400 ml-auto">(mudo)</span>}
-                        </div>
-                      ))}
-                    </div>
-                  )}
+                            key={p.identity}
+                            className="flex items-center gap-2 py-0.5 text-[11px] text-gray-300"
+                          >
+                            <div
+                              className={`w-1.5 h-1.5 rounded-full ${
+                                p.isSpeaking ? 'bg-emerald-400 ring-2 ring-emerald-400/50' : 'bg-gray-600'
+                              }`}
+                            />
+                            <span className="truncate">{p.name || p.identity}</span>
+                            {p.isMuted && <span className="text-[10px] text-rose-400 ml-auto">(mudo)</span>}
+                          </div>
+                        ))}
+                      </div>
+                    );
+                  })()}
                 </div>
               );
             })}

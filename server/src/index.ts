@@ -119,7 +119,7 @@ app.get(['/api/health', '/api/status', '/health', '/status'], (_req: Request, re
  */
 app.post(['/api/token', '/token'], async (req: Request, res: Response): Promise<void> => {
   try {
-    const { roomName, participantName, isPublisher, passcode, bypassToken } = req.body;
+    const { roomName, participantName, isPublisher, passcode, bypassToken, voiceChannelId } = req.body;
 
     // Check maintenance mode
     if (isMaintenanceMode()) {
@@ -145,9 +145,75 @@ app.post(['/api/token', '/token'], async (req: Request, res: Response): Promise<
 
     const cleanPasscode = typeof passcode === 'string' && passcode.trim() ? passcode.trim() : undefined;
 
-    // 1. Check if room is currently active in LiveKit
+    // Resolve voice channel: if not supplied, look up first voice channel in Supabase for this room
+    let resolvedVoiceChannelId = typeof voiceChannelId === 'string' && voiceChannelId.trim()
+      ? voiceChannelId.trim()
+      : '';
+
+    if (!resolvedVoiceChannelId && isSupabaseConfigured() && supabase) {
+      try {
+        const { data: dbRoom } = await supabase
+          .from('rooms')
+          .select('id')
+          .eq('slug', sanitizedRoom)
+          .maybeSingle();
+
+        if (dbRoom) {
+          const { data: dbChannels } = await supabase
+            .from('channels')
+            .select('id')
+            .eq('room_id', dbRoom.id)
+            .eq('type', 'voice')
+            .order('position', { ascending: true })
+            .order('created_at', { ascending: true })
+            .limit(1);
+
+          if (dbChannels && dbChannels.length > 0) {
+            resolvedVoiceChannelId = dbChannels[0].id;
+          }
+        }
+      } catch (err) {
+        console.warn('Could not auto-resolve default voice channel from Supabase:', err);
+      }
+    }
+
+    if (!resolvedVoiceChannelId) {
+      resolvedVoiceChannelId = 'default';
+    }
+
+    // Isolate LiveKit room per voice channel: {roomName}_v_{voiceChannelId}
+    const physicalRoomName = `${sanitizedRoom}_v_${sanitizeRoomName(resolvedVoiceChannelId)}`;
+    const lkRoomName = toLiveKitRoomName(physicalRoomName);
+
+    // Passcode validation (Supabase persistent room)
+    if (isSupabaseConfigured() && supabase) {
+      try {
+        const { data: dbRoom } = await supabase
+          .from('rooms')
+          .select('passcode_hash')
+          .eq('slug', sanitizedRoom)
+          .maybeSingle();
+
+        if (dbRoom && dbRoom.passcode_hash) {
+          if (!cleanPasscode) {
+            res.status(403).json({
+              error: 'Esta sala é protegida por senha. Por favor, insira a senha para entrar.',
+              requiresPasscode: true,
+            });
+            return;
+          }
+          if (dbRoom.passcode_hash !== cleanPasscode) {
+            res.status(403).json({ error: 'Senha incorreta para esta sala.' });
+            return;
+          }
+        }
+      } catch (err) {
+        console.warn('Could not verify Supabase room passcode:', err);
+      }
+    }
+
+    // 1. Check if this voice channel room is currently active in LiveKit
     let isActiveInLiveKit = false;
-    const lkRoomName = toLiveKitRoomName(sanitizedRoom);
     try {
       const existingLiveRooms = await roomService.listRooms([lkRoomName]);
       if (existingLiveRooms && existingLiveRooms.length > 0 && existingLiveRooms[0].numParticipants > 0) {
@@ -157,7 +223,7 @@ app.post(['/api/token', '/token'], async (req: Request, res: Response): Promise<
       // Fallback to roomStore
     }
 
-    // 2. Check if a participant with this name is already in the room
+    // 2. Check if a participant with this name is already in this voice channel room
     if (isActiveInLiveKit) {
       try {
         const participants = await listParticipantsWithTimeout(lkRoomName);
@@ -168,7 +234,7 @@ app.post(['/api/token', '/token'], async (req: Request, res: Response): Promise<
 
         if (isNameTaken) {
           res.status(409).json({
-            error: `O nome "${sanitizedParticipant}" já está em uso nesta sala. Por favor, escolha outro nome para entrar.`,
+            error: `O nome "${sanitizedParticipant}" já está em uso neste canal de voz. Por favor, escolha outro nome para entrar.`,
           });
           return;
         }
@@ -177,10 +243,9 @@ app.post(['/api/token', '/token'], async (req: Request, res: Response): Promise<
       }
     }
 
+    // Passcode validation (In-memory fallback roomStore)
     const existingConfig = roomStore.get(sanitizedRoom);
-
     if (isActiveInLiveKit && existingConfig) {
-      // Room is actively in session
       if (existingConfig.passcode) {
         if (!cleanPasscode) {
           res.status(403).json({
@@ -201,8 +266,7 @@ app.post(['/api/token', '/token'], async (req: Request, res: Response): Promise<
           return;
         }
       }
-    } else {
-      // Room is brand new
+    } else if (!existingConfig) {
       roomStore.set(sanitizedRoom, {
         name: sanitizedRoom,
         passcode: cleanPasscode,
@@ -231,6 +295,7 @@ app.post(['/api/token', '/token'], async (req: Request, res: Response): Promise<
       token,
       livekitUrl: LIVEKIT_URL,
       roomName: sanitizedRoom,
+      voiceChannelId: resolvedVoiceChannelId,
       identity: sanitizedParticipant,
       isPublisher: Boolean(isPublisher),
     });

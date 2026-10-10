@@ -1,6 +1,7 @@
-import { useState, useEffect, type Dispatch, type SetStateAction } from 'react';
+import { useState, useEffect, useMemo, type Dispatch, type SetStateAction } from 'react';
 import { MessageSquare, Tv } from 'lucide-react';
 import { useLiveKit } from './hooks/useLiveKit';
+import { useVoicePresence } from './hooks/useVoicePresence';
 import { VideoPlayer } from './components/VideoPlayer';
 import { ControlsBar } from './components/ControlsBar';
 import { ChatPanel } from './components/ChatPanel';
@@ -23,6 +24,8 @@ export function App() {
     roomName: string;
     userName: string;
     isPublisher: boolean;
+    passcode?: string;
+    voiceChannelId?: string;
   } | null>(null);
 
   const [isLoading, setIsLoading] = useState(false);
@@ -128,6 +131,8 @@ export function App() {
         roomName: data.roomName,
         userName: data.identity,
         isPublisher: data.isPublisher,
+        passcode,
+        voiceChannelId: data.voiceChannelId,
       });
 
       // Clean URL search params so the address bar stays clean (without ?room=...)
@@ -197,6 +202,7 @@ export function App() {
       setIsHUDOpen={setIsHUDOpen}
       isScreenShareModalOpen={isScreenShareModalOpen}
       setIsScreenShareModalOpen={setIsScreenShareModalOpen}
+      adminBypassToken={adminBypassToken}
     />
   );
 }
@@ -208,6 +214,8 @@ interface StreamRoomProps {
     roomName: string;
     userName: string;
     isPublisher: boolean;
+    passcode?: string;
+    voiceChannelId?: string;
   };
   onLeave: () => void;
   isChatOpen: boolean;
@@ -216,6 +224,7 @@ interface StreamRoomProps {
   setIsHUDOpen: Dispatch<SetStateAction<boolean>>;
   isScreenShareModalOpen: boolean;
   setIsScreenShareModalOpen: Dispatch<SetStateAction<boolean>>;
+  adminBypassToken?: string | null;
 }
 
 function StreamRoom({
@@ -227,12 +236,14 @@ function StreamRoom({
   setIsHUDOpen,
   isScreenShareModalOpen,
   setIsScreenShareModalOpen,
+  adminBypassToken,
 }: StreamRoomProps) {
   const { profile, session: authSession } = useAuth();
   const [channels, setChannels] = useState<Channel[]>([]);
   const [activeTextChannelId, setActiveTextChannelId] = useState<string>('');
-  const [activeVoiceChannelId, setActiveVoiceChannelId] = useState<string>('');
+  const [activeVoiceChannelId, setActiveVoiceChannelId] = useState<string>(session.voiceChannelId || '');
   const [isVoiceConnected, setIsVoiceConnected] = useState<boolean>(true);
+  const [voiceToken, setVoiceToken] = useState<string>(session.token);
   const [isOwner, setIsOwner] = useState<boolean>(false);
   const [isCreateChannelOpen, setIsCreateChannelOpen] = useState<boolean>(false);
 
@@ -265,9 +276,40 @@ function StreamRoom({
     disconnect,
   } = useLiveKit({
     url: session.livekitUrl,
-    token: session.token,
+    token: isVoiceConnected ? voiceToken : '',
     onDisconnected: onLeave,
   });
+
+  // Local participant speaking status for voice presence
+  const localParticipant = participants.find((p) => p.identity === session.userName);
+
+  // Cross-channel Presence using Supabase Realtime
+  const { voiceParticipants } = useVoicePresence({
+    roomSlug: session.roomName,
+    userName: session.userName,
+    activeVoiceChannelId: isVoiceConnected ? activeVoiceChannelId : null,
+    isVoiceConnected,
+    isSpeaking: localParticipant?.isSpeaking ?? false,
+    isMuted: !isMicEnabled,
+    avatarUrl: profile?.avatar_url,
+  });
+
+  // Merge real-time local VAD for participants in the same voice channel
+  const mergedVoiceParticipants = useMemo(() => {
+    return voiceParticipants.map((vp) => {
+      if (isVoiceConnected && vp.voiceChannelId === activeVoiceChannelId) {
+        const lk = participants.find((p) => p.identity === vp.identity);
+        if (lk) {
+          return {
+            ...vp,
+            isSpeaking: lk.isSpeaking,
+            isMuted: lk.isMuted,
+          };
+        }
+      }
+      return vp;
+    });
+  }, [voiceParticipants, participants, isVoiceConnected, activeVoiceChannelId]);
 
   // Chat persistente e criptografado via Supabase Realtime & KMS
   const {
@@ -278,6 +320,7 @@ function StreamRoom({
     roomSlug: session.roomName,
     channelId: activeTextChannelId,
     authorName: session.userName,
+    passcode: session.passcode,
     fallbackMessages: messages,
     onFallbackSend: sendMessage,
   });
@@ -294,7 +337,7 @@ function StreamRoom({
             const textChan = data.channels.find((c: Channel) => c.type === 'text');
             const voiceChan = data.channels.find((c: Channel) => c.type === 'voice');
             if (textChan) setActiveTextChannelId(textChan.id);
-            if (voiceChan) setActiveVoiceChannelId(voiceChan.id);
+            if (!activeVoiceChannelId && voiceChan) setActiveVoiceChannelId(voiceChan.id);
             if (profile?.id && data.ownerId === profile.id) {
               setIsOwner(true);
             }
@@ -305,27 +348,59 @@ function StreamRoom({
       }
     };
     fetchChannels();
-  }, [session.roomName, profile]);
+  }, [session.roomName, profile, activeVoiceChannelId]);
 
   const handleSelectTextChannel = (channel: Channel) => {
     setActiveTextChannelId(channel.id);
   };
 
-  const handleSelectVoiceChannel = (channel: Channel) => {
+  const handleSelectVoiceChannel = async (channel: Channel) => {
+    if (isVoiceConnected && activeVoiceChannelId === channel.id) {
+      return;
+    }
+
     setActiveVoiceChannelId(channel.id);
     setIsVoiceConnected(true);
+
+    try {
+      const res = await fetch(getTokenUrl(), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          roomName: session.roomName,
+          voiceChannelId: channel.id,
+          participantName: session.userName,
+          isPublisher: session.isPublisher,
+          passcode: session.passcode,
+          bypassToken: adminBypassToken,
+        }),
+      });
+
+      if (res.ok) {
+        const data = await res.json();
+        setVoiceToken(data.token);
+      } else {
+        const err = await res.json().catch(() => ({}));
+        console.error('Falha ao obter token para canal de voz:', err);
+      }
+    } catch (err) {
+      console.error('Erro ao conectar ao canal de voz:', err);
+    }
   };
 
   const handleDisconnectVoice = () => {
     setIsVoiceConnected(false);
-    if (isMicEnabled) {
-      toggleMic();
-    }
+    setVoiceToken('');
   };
 
   const handleToggleMic = () => {
     if (!isVoiceConnected) {
-      setIsVoiceConnected(true);
+      const targetChan =
+        channels.find((c) => c.id === activeVoiceChannelId && c.type === 'voice') ||
+        channels.find((c) => c.type === 'voice');
+      if (targetChan) {
+        handleSelectVoiceChannel(targetChan);
+      }
     }
     toggleMic();
   };
@@ -358,7 +433,11 @@ function StreamRoom({
           }
           if (activeVoiceChannelId === channelId) {
             const nextVoice = updated.find((c) => c.type === 'voice');
-            if (nextVoice) setActiveVoiceChannelId(nextVoice.id);
+            if (nextVoice) {
+              handleSelectVoiceChannel(nextVoice);
+            } else {
+              handleDisconnectVoice();
+            }
           }
           return updated;
         });
@@ -376,6 +455,14 @@ function StreamRoom({
     if (isScreenSharing) {
       stopScreenShare();
     } else {
+      if (!isVoiceConnected) {
+        const targetChan =
+          channels.find((c) => c.id === activeVoiceChannelId && c.type === 'voice') ||
+          channels.find((c) => c.type === 'voice');
+        if (targetChan) {
+          handleSelectVoiceChannel(targetChan);
+        }
+      }
       setIsScreenShareModalOpen(true);
     }
   };
@@ -396,7 +483,7 @@ function StreamRoom({
           activeVoiceChannelId={activeVoiceChannelId}
           isVoiceConnected={isVoiceConnected}
           isOwner={isOwner}
-          participants={participants}
+          voiceParticipants={mergedVoiceParticipants}
           onSelectTextChannel={handleSelectTextChannel}
           onSelectVoiceChannel={handleSelectVoiceChannel}
           onDisconnectVoice={handleDisconnectVoice}

@@ -51,6 +51,15 @@ export interface ParticipantInfo {
   isDeafened?: boolean;
 }
 
+export interface VoiceParticipant {
+  identity: string;
+  name: string;
+  voiceChannelId: string | null;
+  isSpeaking: boolean;
+  isMuted: boolean;
+  avatarUrl?: string | null;
+}
+
 export interface FavoriteRoom {
   name: string;
   addedAt: number;
