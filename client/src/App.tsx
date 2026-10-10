@@ -11,6 +11,7 @@ import { Lobby } from './components/Lobby';
 import { InviteModal } from './components/InviteModal';
 import { ChannelSidebar } from './components/ChannelSidebar';
 import { CreateChannelModal } from './components/CreateChannelModal';
+import { usePersistentChat } from './hooks/usePersistentChat';
 import { useAuth } from './context/AuthContext';
 import { getHealthUrl, getTokenUrl, getApiBaseUrl } from './utils/api';
 import type { StreamQualityConfig, Channel } from './types';
@@ -268,6 +269,19 @@ function StreamRoom({
     onDisconnected: onLeave,
   });
 
+  // Chat persistente e criptografado via Supabase Realtime & KMS
+  const {
+    messages: persistentMessages,
+    sendMessage: sendPersistentMessage,
+    isEncrypted,
+  } = usePersistentChat({
+    roomSlug: session.roomName,
+    channelId: activeTextChannelId,
+    authorName: session.userName,
+    fallbackMessages: messages,
+    onFallbackSend: sendMessage,
+  });
+
   // Carregar canais da sala persistente
   useEffect(() => {
     const fetchChannels = async () => {
@@ -434,13 +448,14 @@ function StreamRoom({
 
         {isChatOpen && (
           <ChatPanel
-            messages={messages}
+            messages={persistentMessages}
             participants={participants}
-            onSendMessage={sendMessage}
+            onSendMessage={sendPersistentMessage}
             onSendReaction={sendReaction}
             userName={session.userName}
             roomName={session.roomName}
             channelName={channels.find((c) => c.id === activeTextChannelId)?.name || 'geral'}
+            isEncrypted={isEncrypted}
             onClose={() => setIsChatOpen(false)}
             userVolumes={userVolumes}
             onUserVolumeChange={setUserVolume}

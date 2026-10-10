@@ -15,6 +15,7 @@ import {
   LogIn,
   LogOut,
   PanelRightClose,
+  Lock,
 } from 'lucide-react';
 import type { ChatMessage, ParticipantInfo } from '../types';
 
@@ -26,6 +27,7 @@ interface ChatPanelProps {
   userName: string;
   roomName: string;
   channelName?: string;
+  isEncrypted?: boolean;
   onClose?: () => void;
   userVolumes?: Record<string, number>;
   onUserVolumeChange?: (participantIdentity: string, volume: number) => void;
@@ -46,6 +48,7 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({
   userName,
   roomName,
   channelName,
+  isEncrypted,
   onClose,
   userVolumes,
   onUserVolumeChange,
@@ -158,6 +161,13 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({
       </div>
 
       <div className="flex-1 overflow-y-auto p-2.5 space-y-0.5">
+        {activeTab === 'chat' && isEncrypted && (
+          <div className="mx-1 mb-2 px-2.5 py-1.5 bg-emerald-500/10 border border-emerald-500/20 rounded-xl text-[10px] text-emerald-400 flex items-center justify-center gap-1.5 font-medium shadow-sm">
+            <Lock className="w-3 h-3 shrink-0" />
+            <span>Chat Criptografado de Ponta a Ponta (AES-256)</span>
+          </div>
+        )}
+
         {activeTab === 'chat' ? (
           messages.length === 0 ? (
             <div className="h-full flex flex-col items-center justify-center text-center text-gray-500 text-sm p-6">
