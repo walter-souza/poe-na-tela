@@ -25,6 +25,26 @@ const LIVEKIT_API_SECRET = process.env.LIVEKIT_API_SECRET || 'secret';
 const MEDIAMTX_API_URL = process.env.MEDIAMTX_API_URL || 'http://127.0.0.1:9997';
 const STREAM_BASE_URL = (process.env.STREAM_URL || process.env.VITE_STREAM_URL || 'https://stream.194.61.238.98.sslip.io').replace(/\/$/, '');
 
+// Environment namespace isolation for LiveKit rooms
+const ROOM_PREFIX = process.env.ROOM_PREFIX ?? (String(PORT) === '3002' ? 'dev_' : '');
+
+export function toLiveKitRoomName(slug: string): string {
+  return `${ROOM_PREFIX}${slug}`;
+}
+
+export function fromLiveKitRoomName(liveKitName: string): string | null {
+  if (ROOM_PREFIX) {
+    if (liveKitName.startsWith(ROOM_PREFIX)) {
+      return liveKitName.slice(ROOM_PREFIX.length);
+    }
+    return null;
+  }
+  if (liveKitName.startsWith('dev_')) {
+    return null;
+  }
+  return liveKitName;
+}
+
 // Maintenance Mode Helper
 const isMaintenanceMode = () =>
   process.env.MAINTENANCE_MODE === 'true' || process.env.MAINTENANCE_MODE === '1';
@@ -127,8 +147,9 @@ app.post(['/api/token', '/token'], async (req: Request, res: Response): Promise<
 
     // 1. Check if room is currently active in LiveKit
     let isActiveInLiveKit = false;
+    const lkRoomName = toLiveKitRoomName(sanitizedRoom);
     try {
-      const existingLiveRooms = await roomService.listRooms([sanitizedRoom]);
+      const existingLiveRooms = await roomService.listRooms([lkRoomName]);
       if (existingLiveRooms && existingLiveRooms.length > 0 && existingLiveRooms[0].numParticipants > 0) {
         isActiveInLiveKit = true;
       }
@@ -139,7 +160,7 @@ app.post(['/api/token', '/token'], async (req: Request, res: Response): Promise<
     // 2. Check if a participant with this name is already in the room
     if (isActiveInLiveKit) {
       try {
-        const participants = await listParticipantsWithTimeout(sanitizedRoom);
+        const participants = await listParticipantsWithTimeout(lkRoomName);
         const nameLower = sanitizedParticipant.toLowerCase();
         const isNameTaken = participants.some(
           (p) => (p.identity && p.identity.toLowerCase() === nameLower) || (p.name && p.name.toLowerCase() === nameLower)
@@ -198,7 +219,7 @@ app.post(['/api/token', '/token'], async (req: Request, res: Response): Promise<
 
     at.addGrant({
       roomJoin: true,
-      room: sanitizedRoom,
+      room: lkRoomName,
       canPublish: true,
       canPublishData: true,
       canSubscribe: true,
@@ -613,7 +634,10 @@ app.get(['/api/rooms', '/rooms'], async (_req: Request, res: Response) => {
     const activeLiveRooms = Array.isArray(liveRooms) ? liveRooms.filter(r => r.numParticipants > 0) : [];
     const liveParticipantsMap = new Map<string, number>();
     for (const r of activeLiveRooms) {
-      liveParticipantsMap.set(r.name.toLowerCase(), r.numParticipants);
+      const appSlug = fromLiveKitRoomName(r.name);
+      if (appSlug) {
+        liveParticipantsMap.set(appSlug.toLowerCase(), r.numParticipants);
+      }
     }
 
     // Clean up dead rooms from memory store
@@ -652,16 +676,19 @@ app.get(['/api/rooms', '/rooms'], async (_req: Request, res: Response) => {
       }
     }
 
-    // 2. Adicionar salas ativas em memória (ou temporárias)
+    // 2. Adicionar salas ativas em memória (ou temporárias) filtradas pelo ambiente
     for (const r of activeLiveRooms) {
-      const lower = r.name.toLowerCase();
+      const appSlug = fromLiveKitRoomName(r.name);
+      if (!appSlug) continue;
+
+      const lower = appSlug.toLowerCase();
       if (!resultMap.has(lower)) {
         resultMap.set(lower, {
-          name: r.name,
-          slug: r.name,
+          name: appSlug,
+          slug: appSlug,
           numParticipants: r.numParticipants,
           creationTime: Number(r.creationTime),
-          hasPasscode: roomStore.has(r.name) && Boolean(roomStore.get(r.name)?.passcode),
+          hasPasscode: roomStore.has(appSlug) && Boolean(roomStore.get(appSlug)?.passcode),
           isPersistent: false,
         });
       }
@@ -688,7 +715,7 @@ app.get([
   let isActive = false;
 
   try {
-    const rooms = await listRoomsWithTimeout([roomName]);
+    const rooms = await listRoomsWithTimeout([toLiveKitRoomName(roomName)]);
     if (rooms && rooms.length > 0 && rooms[0].numParticipants > 0) {
       isActive = true;
       numParticipants = rooms[0].numParticipants;
