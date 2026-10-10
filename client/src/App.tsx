@@ -318,6 +318,16 @@ function StreamRoom({
 
   const handleDisconnectVoice = () => {
     setIsVoiceConnected(false);
+    if (isMicEnabled) {
+      toggleMic();
+    }
+  };
+
+  const handleToggleMic = () => {
+    if (!isVoiceConnected) {
+      setIsVoiceConnected(true);
+    }
+    toggleMic();
   };
 
   const handleChannelCreated = (newChan: Channel) => {
@@ -472,7 +482,7 @@ function StreamRoom({
         isHUDOpen={isHUDOpen}
         roomName={session.roomName}
         userName={session.userName}
-        onToggleMic={toggleMic}
+        onToggleMic={handleToggleMic}
         onToggleDeafen={toggleDeafen}
         onToggleNoiseSuppression={toggleNoiseSuppression}
         onToggleScreenShare={handleToggleScreenShare}
