@@ -958,15 +958,14 @@ app.get([
 });
 
 /**
- * List active OBS (SRT / MediaMTX) streams for a specific room (multi-stream squad support)
+ * Helper: Obter lista de streams ativos do MediaMTX para uma sala
  */
-app.get(['/api/rooms/:roomName/streams', '/rooms/:roomName/streams', '/api/room/:roomName/streams', '/room/:roomName/streams'], async (req: Request, res: Response): Promise<void> => {
-  const roomName = sanitizeRoomName(req.params.roomName);
-  if (!roomName) {
-    res.status(400).json({ error: 'Nome de sala inválido.', streams: [] });
-    return;
-  }
-
+export async function getActiveRoomStreams(roomName: string): Promise<Array<{
+  id: string;
+  name: string;
+  path: string;
+  whepUrl: string;
+}>> {
   const streams: Array<{
     id: string;
     name: string;
@@ -1027,12 +1026,99 @@ app.get(['/api/rooms/:roomName/streams', '/rooms/:roomName/streams', '/api/room/
     // MediaMTX API offline or unreachable, return empty array gracefully
   }
 
+  return streams;
+}
+
+/**
+ * List active OBS (SRT / MediaMTX) streams for a specific room (multi-stream squad support)
+ */
+app.get(['/api/rooms/:roomName/streams', '/rooms/:roomName/streams', '/api/room/:roomName/streams', '/room/:roomName/streams'], async (req: Request, res: Response): Promise<void> => {
+  const roomName = sanitizeRoomName(req.params.roomName);
+  if (!roomName) {
+    res.status(400).json({ error: 'Nome de sala inválido.', streams: [] });
+    return;
+  }
+
+  const streams = await getActiveRoomStreams(roomName);
+
   res.json({
     roomName,
     streams,
     count: streams.length,
   });
 });
+
+/**
+ * Webhook para eventos do MediaMTX (runOnReady / runOnNotReady)
+ */
+app.post(['/api/webhooks/mediamtx', '/webhooks/mediamtx'], async (req: Request, res: Response): Promise<void> => {
+  try {
+    const { path } = req.body || {};
+    if (path && isSupabaseConfigured() && supabase) {
+      const roomSlug = sanitizeRoomName(String(path).split(/[\/-]/)[0]);
+      const streams = await getActiveRoomStreams(roomSlug);
+      const chan = supabase.channel(`room-streams:${roomSlug}`);
+      chan.send({
+        type: 'broadcast',
+        event: 'streams_updated',
+        payload: { streams },
+      }).catch(() => {});
+    }
+  } catch (err) {
+    console.warn('[MediaMTX Webhook] Erro ao processar evento:', err);
+  }
+  res.json({ ok: true });
+});
+
+// Monitor local em background para detectar início/término de streams OBS e notificar via Supabase Realtime
+let lastMtxFingerprint = '';
+setInterval(async () => {
+  if (!isSupabaseConfigured() || !supabase) return;
+
+  try {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 1500);
+    const mtxRes = await fetch(`${MEDIAMTX_API_URL}/v3/paths/list`, {
+      signal: controller.signal,
+    }).finally(() => clearTimeout(timeout));
+
+    if (!mtxRes.ok) return;
+    const data: any = await mtxRes.json();
+    const items = Array.isArray(data.items) ? data.items : [];
+    const readyItems = items.filter((i: any) => i && i.name && i.ready);
+    const fingerprint = readyItems.map((i: any) => `${i.name}:${i.ready}`).sort().join('|');
+
+    if (fingerprint !== lastMtxFingerprint) {
+      lastMtxFingerprint = fingerprint;
+
+      const affectedRooms = new Set<string>();
+      for (const item of items) {
+        if (item && item.name) {
+          const slug = sanitizeRoomName(String(item.name).split(/[\/-]/)[0]);
+          if (slug) affectedRooms.add(slug);
+        }
+      }
+
+      // Buscar salas registradas no Supabase para garantir que salas que perderam stream sejam avisadas
+      const { data: dbRooms } = await supabase.from('rooms').select('slug').limit(50);
+      if (dbRooms) {
+        for (const r of dbRooms) {
+          affectedRooms.add(r.slug);
+        }
+      }
+
+      for (const slug of affectedRooms) {
+        const streams = await getActiveRoomStreams(slug);
+        const chan = supabase.channel(`room-streams:${slug}`);
+        chan.send({
+          type: 'broadcast',
+          event: 'streams_updated',
+          payload: { streams },
+        }).catch(() => {});
+      }
+    }
+  } catch {}
+}, 2500);
 
 app.listen(PORT, () => {
   console.log(`🚀 Põe na Tela — Servidor rodando em http://localhost:${PORT}`);

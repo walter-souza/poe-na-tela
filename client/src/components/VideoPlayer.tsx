@@ -11,7 +11,8 @@ import {
 import type { ScreenShareItem, ReactionEvent, StreamLayoutMode } from '../types';
 import { StreamTile } from './StreamTile';
 import { WhepTile } from './WhepTile';
-import { getWhepUrl, fetchRoomStreams, type ObsStreamItem } from '../utils/api';
+import { fetchRoomStreams, type ObsStreamItem } from '../utils/api';
+import { supabase, isSupabaseConfigured } from '../utils/supabase';
 import confetti from 'canvas-confetti';
 
 export type UnifiedStreamItem =
@@ -72,40 +73,63 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
 
   // Multi-Stream OBS Squad State
   const [obsStreams, setObsStreams] = useState<ObsStreamItem[]>([]);
-  const [activeWhepMap, setActiveWhepMap] = useState<Record<string, boolean>>({});
 
-  // Poll for active OBS streams in the room
+  // Escuta reativa de streams via Supabase Realtime com verificação inicial única
   useEffect(() => {
     if (!roomName) return;
     let isMounted = true;
 
-    const poll = async () => {
-      const list = await fetchRoomStreams(roomName);
-      if (isMounted) {
-        setObsStreams((prev) => {
-          const prevKeys = prev.map((s) => `${s.id}:${s.path}:${s.whepUrl}`).join('|');
-          const nextKeys = list.map((s) => `${s.id}:${s.path}:${s.whepUrl}`).join('|');
-          return prevKeys === nextKeys ? prev : list;
-        });
+    // 1. Verificação inicial única ao abrir a sala
+    const checkStreams = async () => {
+      try {
+        const list = await fetchRoomStreams(roomName);
+        if (isMounted) {
+          setObsStreams((prev) => {
+            const prevKeys = prev.map((s) => `${s.id}:${s.path}:${s.whepUrl}`).join('|');
+            const nextKeys = list.map((s) => `${s.id}:${s.path}:${s.whepUrl}`).join('|');
+            return prevKeys === nextKeys ? prev : list;
+          });
+        }
+      } catch (err) {
+        console.warn('Erro ao verificar streams ativos:', err);
       }
     };
 
-    poll();
-    const interval = setInterval(poll, 2500);
+    checkStreams();
+
+    // 2. Ouvinte de tempo real via canal de Broadcast do Supabase
+    let channel: any = null;
+    if (isSupabaseConfigured && supabase) {
+      channel = supabase.channel(`room-streams:${roomName}`);
+      channel.on('broadcast', { event: 'streams_updated' }, (payload: any) => {
+        if (!isMounted) return;
+        if (Array.isArray(payload?.payload?.streams)) {
+          setObsStreams(payload.payload.streams);
+        } else {
+          checkStreams();
+        }
+      });
+      channel.subscribe();
+    }
+
+    // 3. Atualizar apenas se o usuário voltar para a aba do navegador
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible' && isMounted) {
+        checkStreams();
+      }
+    };
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+
     return () => {
       isMounted = false;
-      clearInterval(interval);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+      if (channel) {
+        supabase?.removeChannel(channel).catch(() => {});
+      }
     };
   }, [roomName]);
 
-  // Active OBS streams from MediaMTX polling or fallback
-  const effectiveObsStreams = useMemo(() => {
-    if (obsStreams.length > 0) return obsStreams;
-    if (activeWhepMap['main'] && roomName) {
-      return [{ id: 'main', name: 'Principal', path: roomName, whepUrl: getWhepUrl(roomName) }];
-    }
-    return [];
-  }, [obsStreams, activeWhepMap, roomName]);
+  const effectiveObsStreams = obsStreams;
 
   // UNIFIED HYBRID STREAM ENGINE: Combines WebRTC Screen Shares and OBS Streams
   const unifiedStreams = useMemo<UnifiedStreamItem[]>(() => {
@@ -232,11 +256,6 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
         onToggleSpotlight={options.onToggleSpotlight}
         isThumbnail={options.isThumbnail}
         onSelectThumbnail={options.onSelectThumbnail}
-        onStateChange={(active) => {
-          setActiveWhepMap((prev) =>
-            prev[item.rawId] === active ? prev : { ...prev, [item.rawId]: active }
-          );
-        }}
       />
     );
   };
@@ -245,18 +264,6 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
   if (unifiedStreams.length === 0) {
     return (
       <div className="relative flex-1 bg-black rounded-2xl overflow-hidden flex items-center justify-center border border-white/5 shadow-2xl group select-none min-h-[400px]">
-        {/* Background prober for auto-detection of default room stream */}
-        <div className="hidden">
-          <WhepTile
-            key="main"
-            whepUrl={getWhepUrl(roomName || 'Sala')}
-            roomName={roomName || 'Sala'}
-            onStateChange={(active) => {
-              setActiveWhepMap((prev) => (prev['main'] === active ? prev : { ...prev, main: active }));
-            }}
-          />
-        </div>
-
         <div className="flex flex-col items-center justify-center text-center p-8 max-w-md z-0">
           <div className="w-20 h-20 rounded-2xl bg-indigo-500/10 border border-indigo-500/20 flex items-center justify-center mb-6 text-indigo-400 glow-active">
             <Tv className="w-10 h-10 animate-pulse" />
