@@ -130,20 +130,37 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const signInWithGoogle = async () => {
     if (!isSupabaseConfigured || !supabase) {
-      return { error: 'Supabase não está configurado. Configure as variáveis de ambiente.' };
+      const msg = 'Configuração do Supabase ausente. Verifique o arquivo client/.env e recarregue a página.';
+      console.error('[Auth]', msg);
+      alert(msg);
+      return { error: msg };
     }
 
     try {
-      const { error } = await supabase.auth.signInWithOAuth({
+      console.log('[Auth] Redirecionando para login com Google...');
+      const { data, error } = await supabase.auth.signInWithOAuth({
         provider: 'google',
         options: {
           redirectTo: window.location.origin,
         },
       });
-      if (error) return { error: error.message };
+
+      if (error) {
+        console.error('[Auth] Erro retornado pelo Google OAuth:', error);
+        alert(`Erro ao iniciar autenticação: ${error.message}`);
+        return { error: error.message };
+      }
+
+      if (data?.url) {
+        window.location.href = data.url;
+      }
+
       return {};
     } catch (err: any) {
-      return { error: err?.message || 'Erro ao iniciar login com Google.' };
+      const msg = err?.message || 'Erro ao iniciar login com Google.';
+      console.error('[Auth] Exceção em signInWithGoogle:', err);
+      alert(`Falha no login com Google: ${msg}`);
+      return { error: msg };
     }
   };
 
