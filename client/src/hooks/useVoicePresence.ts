@@ -99,6 +99,8 @@ export function useVoicePresence({
     };
 
     channel.on('presence', { event: 'sync' }, handleSync);
+    channel.on('presence', { event: 'join' }, handleSync);
+    channel.on('presence', { event: 'leave' }, handleSync);
 
     channel.subscribe(async (status) => {
       if (status === 'SUBSCRIBED') {
@@ -121,6 +123,25 @@ export function useVoicePresence({
 
   // Broadcast presence updates when active channel, connection, or mute state changes
   useEffect(() => {
+    // Refletir imediatamente o estado local do próprio usuário para evitar atraso de rede
+    setVoiceParticipants((prev) => {
+      const other = prev.filter((p) => p.identity !== userName);
+      if (isVoiceConnected && activeVoiceChannelId) {
+        return [
+          ...other,
+          {
+            identity: userName,
+            name: userName,
+            voiceChannelId: activeVoiceChannelId,
+            isSpeaking,
+            isMuted,
+            avatarUrl,
+          },
+        ];
+      }
+      return other;
+    });
+
     if (!isSubscribedRef.current || !channelRef.current) return;
 
     if (!isVoiceConnected) {
@@ -133,7 +154,7 @@ export function useVoicePresence({
     }, 50);
 
     return () => clearTimeout(trackTimeout);
-  }, [activeVoiceChannelId, isVoiceConnected, isMuted, isSpeaking, avatarUrl]);
+  }, [activeVoiceChannelId, isVoiceConnected, isMuted, isSpeaking, avatarUrl, userName]);
 
   return { voiceParticipants };
 }

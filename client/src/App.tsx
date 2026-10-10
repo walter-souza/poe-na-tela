@@ -20,7 +20,7 @@ import { GuildBar } from './components/GuildBar';
 import { TextChannelView } from './components/TextChannelView';
 import { CreateRoomModal } from './components/CreateRoomModal';
 import { PasswordModal } from './components/PasswordModal';
-import type { StreamQualityConfig, Channel, UserRoom } from './types';
+import type { StreamQualityConfig, Channel, UserRoom, VoiceParticipant } from './types';
 
 interface AppSession {
   token: string;
@@ -535,22 +535,57 @@ function StreamRoom({
     avatarUrl: profile?.avatar_url,
   });
 
-  // Mesclar VAD local de 0ms para participantes no mesmo canal de voz
+  // Mesclar VAD local de 0ms para participantes no mesmo canal de voz e garantir a presença do usuário conectado
   const mergedVoiceParticipants = useMemo(() => {
-    return voiceParticipants.map((vp) => {
-      if (isVoiceFullyConnected && vp.voiceChannelId === activeVoiceChannelId) {
-        const lk = participants.find((p) => p.identity === vp.identity);
-        if (lk) {
-          return {
-            ...vp,
-            isSpeaking: lk.isSpeaking,
-            isMuted: lk.isMuted,
-          };
-        }
+    const map = new Map<string, VoiceParticipant>();
+
+    // 1. Participantes conhecidos via Supabase Realtime
+    for (const vp of voiceParticipants) {
+      if (vp.identity) {
+        map.set(vp.identity, vp);
       }
-      return vp;
-    });
-  }, [voiceParticipants, participants, isVoiceFullyConnected, activeVoiceChannelId]);
+    }
+
+    // 2. Se o usuário local estiver conectado à voz, garantir que ele esteja presente no canal ativo
+    if (isVoiceFullyConnected && activeVoiceChannelId) {
+      const existing = map.get(session.userName);
+      map.set(session.userName, {
+        identity: session.userName,
+        name: session.userName,
+        voiceChannelId: activeVoiceChannelId,
+        isSpeaking: localParticipant?.isSpeaking ?? false,
+        isMuted: !isMicEnabled,
+        avatarUrl: profile?.avatar_url || existing?.avatarUrl,
+      });
+    }
+
+    // 3. Mesclar todos os participantes do LiveKit conectados fisicamente no canal de voz
+    if (isVoiceFullyConnected && activeVoiceChannelId) {
+      for (const p of participants) {
+        if (!p.identity) continue;
+        const existing = map.get(p.identity);
+        map.set(p.identity, {
+          identity: p.identity,
+          name: p.name || p.identity,
+          voiceChannelId: activeVoiceChannelId,
+          isSpeaking: p.isSpeaking,
+          isMuted: p.isMuted,
+          avatarUrl: existing?.avatarUrl,
+        });
+      }
+    }
+
+    return Array.from(map.values());
+  }, [
+    voiceParticipants,
+    participants,
+    isVoiceFullyConnected,
+    activeVoiceChannelId,
+    session.userName,
+    localParticipant?.isSpeaking,
+    isMicEnabled,
+    profile?.avatar_url,
+  ]);
 
   // Chat persistente e criptografado via Supabase Realtime & KMS
   const {
