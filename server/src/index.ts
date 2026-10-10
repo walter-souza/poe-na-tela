@@ -911,6 +911,7 @@ app.get([
   let isPersistent = false;
   let displayName = roomName;
   let channels: any[] = [];
+  let memberCount = 1;
 
   // Checar no Supabase se configurado
   if (isSupabaseConfigured() && supabase) {
@@ -926,6 +927,15 @@ app.get([
         hasPasscode = Boolean(dbRoom.passcode_hash);
         displayName = dbRoom.name;
         channels = dbRoom.channels || [];
+
+        const { count } = await supabase
+          .from('room_members')
+          .select('id', { count: 'exact', head: true })
+          .eq('room_id', dbRoom.id);
+
+        if (typeof count === 'number') {
+          memberCount = count;
+        }
       }
     } catch {}
   }
@@ -942,6 +952,7 @@ app.get([
     isActive,
     isPersistent,
     numParticipants,
+    memberCount,
     channels,
   });
 });

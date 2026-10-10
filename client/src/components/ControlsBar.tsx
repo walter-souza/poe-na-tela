@@ -59,7 +59,7 @@ export const ControlsBar: React.FC<ControlsBarProps> = ({
   const [copiedObs, setCopiedObs] = useState(false);
 
   const handleCopyInvite = () => {
-    const inviteUrl = `${window.location.origin}${window.location.pathname}?room=${encodeURIComponent(roomName)}`;
+    const inviteUrl = `${window.location.origin}${window.location.pathname}?server=${encodeURIComponent(roomName)}`;
     navigator.clipboard.writeText(inviteUrl);
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);

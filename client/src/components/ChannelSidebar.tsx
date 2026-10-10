@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import {
   Hash,
   Volume2,
@@ -8,6 +8,8 @@ import {
   PhoneOff,
   ShieldCheck,
   ChevronDown,
+  UserPlus,
+  Check,
 } from 'lucide-react';
 import type { Channel, VoiceParticipant } from '../types';
 import { useAuth } from '../context/AuthContext';
@@ -44,6 +46,14 @@ export const ChannelSidebar: React.FC<ChannelSidebarProps> = ({
   onLeaveRoom,
 }) => {
   const { profile } = useAuth();
+  const [copiedInvite, setCopiedInvite] = useState(false);
+
+  const handleCopyInvite = () => {
+    const inviteUrl = `${window.location.origin}${window.location.pathname}?server=${encodeURIComponent(roomName)}`;
+    navigator.clipboard.writeText(inviteUrl);
+    setCopiedInvite(true);
+    setTimeout(() => setCopiedInvite(false), 2000);
+  };
 
   const textChannels = channels.filter((c) => c.type === 'text');
   const voiceChannels = channels.filter((c) => c.type === 'voice');
@@ -51,25 +61,39 @@ export const ChannelSidebar: React.FC<ChannelSidebarProps> = ({
   return (
     <aside className="w-56 sm:w-64 bg-[#0d0e15] border-r border-white/10 flex flex-col h-full select-none shrink-0 z-20">
       {/* Room Header */}
-      <div className="h-14 border-b border-white/10 px-4 flex items-center justify-between bg-[#11131c]/60 backdrop-blur-md">
+      <div className="h-14 border-b border-white/10 px-3 sm:px-4 flex items-center justify-between bg-[#11131c]/60 backdrop-blur-md">
         <div className="flex items-center gap-2 min-w-0">
           <div className="w-7 h-7 rounded-lg bg-indigo-600/20 text-indigo-400 flex items-center justify-center font-bold text-xs shrink-0">
             {roomName.charAt(0).toUpperCase()}
           </div>
-          <span className="font-bold text-sm text-white truncate max-w-[130px] sm:max-w-[150px]">
+          <span className="font-bold text-sm text-white truncate max-w-[100px] sm:max-w-[130px]">
             {roomName}
           </span>
         </div>
 
-        {isOwner && (
+        <div className="flex items-center gap-1 shrink-0">
           <button
-            onClick={onOpenCreateChannel}
-            title="Adicionar Canal"
-            className="p-1.5 rounded-lg text-gray-400 hover:text-white hover:bg-white/10 transition cursor-pointer"
+            onClick={handleCopyInvite}
+            title={copiedInvite ? 'Link do Servidor Copiado!' : 'Convidar Pessoas para o Servidor'}
+            className={`p-1.5 rounded-lg transition cursor-pointer ${
+              copiedInvite
+                ? 'bg-emerald-500/20 text-emerald-300'
+                : 'text-gray-400 hover:text-white hover:bg-white/10'
+            }`}
           >
-            <Plus className="w-4 h-4" />
+            {copiedInvite ? <Check className="w-4 h-4 text-emerald-400" /> : <UserPlus className="w-4 h-4" />}
           </button>
-        )}
+
+          {isOwner && (
+            <button
+              onClick={onOpenCreateChannel}
+              title="Adicionar Canal"
+              className="p-1.5 rounded-lg text-gray-400 hover:text-white hover:bg-white/10 transition cursor-pointer"
+            >
+              <Plus className="w-4 h-4" />
+            </button>
+          )}
+        </div>
       </div>
 
       {/* Channels List */}

@@ -9,7 +9,7 @@ import { StreamHUD } from './components/StreamHUD';
 import { ScreenShareModal } from './components/ScreenShareModal';
 import { MaintenanceScreen } from './components/MaintenanceScreen';
 import { Lobby } from './components/Lobby';
-import { InviteModal } from './components/InviteModal';
+import { ServerInviteModal } from './components/ServerInviteModal';
 import { ChannelSidebar } from './components/ChannelSidebar';
 import { CreateChannelModal } from './components/CreateChannelModal';
 import { usePersistentChat } from './hooks/usePersistentChat';
@@ -59,10 +59,7 @@ export function App() {
 
   // Discord Guilds (Salas do Usuário Autenticado)
   const [userRooms, setUserRooms] = useState<UserRoom[]>([]);
-  const [activeRoomSlug, setActiveRoomSlug] = useState<string | null>(() => {
-    const params = new URLSearchParams(window.location.search);
-    return params.get('room') || params.get('r') || null;
-  });
+  const [activeRoomSlug, setActiveRoomSlug] = useState<string | null>(null);
   const [isCreateRoomOpen, setIsCreateRoomOpen] = useState(false);
   const [passwordPromptRoom, setPasswordPromptRoom] = useState<UserRoom | null>(null);
   const [passwordModalError, setPasswordModalError] = useState<string | null>(null);
@@ -133,10 +130,17 @@ export function App() {
     }
   }, [isAuthenticated, authSession?.access_token]);
 
-  // Detect room parameter in URL for invite link auto-redirection
-  const [inviteRoomName, setInviteRoomName] = useState<string | null>(() => {
+  // Detect server parameter in URL for Discord-style invite modal
+  const [inviteServerName, setInviteServerName] = useState<string | null>(() => {
     const params = new URLSearchParams(window.location.search);
-    return params.get('room') || params.get('r') || null;
+    return (
+      params.get('server') ||
+      params.get('s') ||
+      params.get('invite') ||
+      params.get('room') ||
+      params.get('r') ||
+      null
+    );
   });
 
   // Connect to room via token (Lobby Join)
@@ -190,7 +194,7 @@ export function App() {
       }
 
       window.history.replaceState({}, '', window.location.pathname);
-      setInviteRoomName(null);
+      setInviteServerName(null);
       fetchUserRooms();
     } catch (err: any) {
       const msg = err.message || 'Erro ao conectar ao servidor de streaming';
@@ -209,13 +213,13 @@ export function App() {
       return;
     }
     setActiveRoomSlug(slug);
-    setInviteRoomName(null);
+    setInviteServerName(null);
   };
 
   const handleSelectHome = () => {
     setActiveRoomSlug(null);
     setSession(null);
-    setInviteRoomName(null);
+    setInviteServerName(null);
     window.history.replaceState({}, '', window.location.pathname);
   };
 
@@ -247,16 +251,71 @@ export function App() {
     }
   };
 
+  const handleAcceptServerInvite = async (
+    targetRoomSlug: string,
+    guestUserName: string,
+    passcode?: string
+  ) => {
+    setIsLoading(true);
+    setError(null);
+    try {
+      if (authSession?.access_token) {
+        try {
+          const joinRes = await fetch(`${getApiBaseUrl()}/api/rooms/${targetRoomSlug}/join`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              Authorization: `Bearer ${authSession.access_token}`,
+            },
+            body: JSON.stringify({ passcode }),
+          });
+          if (!joinRes.ok) {
+            const errData = await joinRes.json().catch(() => ({}));
+            if (errData.error) {
+              throw new Error(errData.error);
+            }
+          }
+        } catch (err: any) {
+          console.warn('Erro ao registrar membro na sala:', err);
+          throw err;
+        }
+      }
+
+      if (passcode) {
+        setRoomPasscodes((prev) => ({ ...prev, [targetRoomSlug]: passcode }));
+      }
+
+      if (guestUserName) {
+        localStorage.setItem('poe-na-tela-username', guestUserName);
+      }
+
+      window.history.replaceState({}, '', window.location.pathname);
+      setInviteServerName(null);
+
+      if (authSession?.access_token) {
+        await fetchUserRooms();
+      }
+
+      setActiveRoomSlug(targetRoomSlug);
+    } catch (err: any) {
+      const msg = err.message || 'Falha ao aceitar convite do servidor';
+      setError(msg);
+      throw err;
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
   const handleLeave = () => {
     window.history.replaceState({}, '', window.location.pathname);
     setActiveRoomSlug(null);
     setSession(null);
-    setInviteRoomName(null);
+    setInviteServerName(null);
   };
 
-  const handleCancelInvite = () => {
+  const handleCancelServerInvite = () => {
     window.history.replaceState({}, '', window.location.pathname);
-    setInviteRoomName(null);
+    setInviteServerName(null);
   };
 
   const handleAdminBypass = (key: string) => {
@@ -328,19 +387,20 @@ export function App() {
         ) : (
           <div className="flex-1 overflow-y-auto">
             <Lobby onJoin={handleJoin} isLoading={isLoading} error={error} />
-            {inviteRoomName && (
-              <InviteModal
-                isOpen={Boolean(inviteRoomName)}
-                roomName={inviteRoomName}
-                onJoin={handleJoin}
-                onCancel={handleCancelInvite}
-              />
-            )}
           </div>
         )}
       </div>
 
       {/* Modais Globais */}
+      {inviteServerName && (
+        <ServerInviteModal
+          isOpen={Boolean(inviteServerName)}
+          roomName={inviteServerName}
+          onAccept={handleAcceptServerInvite}
+          onCancel={handleCancelServerInvite}
+        />
+      )}
+
       <CreateRoomModal
         isOpen={isCreateRoomOpen}
         onClose={() => setIsCreateRoomOpen(false)}
