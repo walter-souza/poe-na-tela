@@ -32,5 +32,6 @@ jobs:
             export PATH="/root/.nvm/versions/node/v20.20.2/bin:$PATH"
             npm install
             npm run build
-            pm2 restart backend-dev || pm2 start dist/index.js --name "backend-dev"
+            pm2 delete backend-dev || true
+            pm2 start dist/index.js --name "backend-dev" --cwd /root/poe-na-tela-dev/server --interpreter /root/.nvm/versions/node/v20.20.2/bin/node
             echo "✅ Deploy do backend de desenvolvimento (develop) finalizado com sucesso!"

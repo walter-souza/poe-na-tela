@@ -1,3 +1,6 @@
+import dotenv from 'dotenv';
+dotenv.config();
+
 import { webcrypto } from 'node:crypto';
 if (typeof globalThis.crypto === 'undefined' || !globalThis.crypto.getRandomValues) {
   // @ts-ignore
@@ -6,12 +9,9 @@ if (typeof globalThis.crypto === 'undefined' || !globalThis.crypto.getRandomValu
 
 import express, { Request, Response } from 'express';
 import cors from 'cors';
-import dotenv from 'dotenv';
 import { AccessToken, RoomServiceClient } from 'livekit-server-sdk';
 import { supabase, isSupabaseConfigured } from './supabase';
 import { generateRoomKey, encryptRoomKey, decryptRoomKey } from './kms';
-
-dotenv.config();
 
 const app = express();
 const PORT = process.env.PORT || 3001;
