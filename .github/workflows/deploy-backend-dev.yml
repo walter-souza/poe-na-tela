@@ -1,21 +1,20 @@
-name: Deploy Backend to VPS
+name: Deploy Backend (Develop / Staging) to VPS
 
 on:
   push:
     branches:
-      - master
-      - main
+      - develop
     paths:
       - 'server/**'
-      - '.github/workflows/deploy-backend.yml'
+      - '.github/workflows/deploy-backend-dev.yml'
 
 jobs:
-  deploy:
-    name: Deploy Backend
+  deploy-dev:
+    name: Deploy Backend Develop
     runs-on: ubuntu-latest
 
     steps:
-      - name: Executar Deploy via SSH na VPS
+      - name: Executar Deploy via SSH na VPS (Develop)
         uses: appleboy/ssh-action@v1.0.3
         with:
           host: ${{ secrets.VPS_HOST }}
@@ -27,11 +26,11 @@ jobs:
             echo "🚀 Verificando serviços de infraestrutura (LiveKit + SSL)..."
             cd ~/app-stack && docker compose up -d
 
-            echo "🚀 Iniciando deploy do Backend de Produção na VPS..."
-            cd ~/poe-na-tela/server || exit 1
-            git pull origin ${{ github.ref_name }}
+            echo "🧪 Iniciando deploy do Backend DEV na VPS..."
+            cd ~/poe-na-tela-dev/server || exit 1
+            git pull origin develop
             export PATH="/root/.nvm/versions/node/v20.20.2/bin:$PATH"
             npm install
             npm run build
-            pm2 restart backend || pm2 start dist/index.js --name "backend"
-            echo "✅ Deploy do backend de produção finalizado com sucesso!"
+            pm2 restart backend-dev || pm2 start dist/index.js --name "backend-dev"
+            echo "✅ Deploy do backend de desenvolvimento (develop) finalizado com sucesso!"
