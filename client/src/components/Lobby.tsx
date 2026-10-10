@@ -12,12 +12,12 @@ import {
   Users,
   Play,
   Wand2,
-  LogIn,
   LogOut,
   ShieldCheck,
 } from 'lucide-react';
 import { PasswordModal } from './PasswordModal';
 import { CreateRoomModal } from './CreateRoomModal';
+import { GoogleLoginButton } from './GoogleLoginButton';
 import { useAuth } from '../context/AuthContext';
 import { sanitizeRoomName, sanitizeUserName } from '../utils/sanitize';
 import type { FavoriteRoom, ActiveRoomInfo } from '../types';
@@ -34,7 +34,7 @@ const USERNAME_STORAGE_KEY = 'poe-na-tela-username';
 const FAVORITES_STORAGE_KEY = 'poe-na-tela-favorites';
 
 export const Lobby: React.FC<LobbyProps> = ({ onJoin, isLoading, error }) => {
-  const { profile, isAuthenticated, signInWithGoogle, signOut } = useAuth();
+  const { profile, isAuthenticated, signOut } = useAuth();
   const [isCreateRoomOpen, setIsCreateRoomOpen] = useState(false);
   const [roomName, setRoomName] = useState('');
   const [userName, setUserName] = useState(() => {
@@ -43,15 +43,6 @@ export const Lobby: React.FC<LobbyProps> = ({ onJoin, isLoading, error }) => {
   const [passcode, setPasscode] = useState('');
   const [micLevel, setMicLevel] = useState(0);
   const [isMicTesting, setIsMicTesting] = useState(false);
-  const [isLoggingIn, setIsLoggingIn] = useState(false);
-
-  const handleGoogleLogin = async () => {
-    setIsLoggingIn(true);
-    const res = await signInWithGoogle();
-    if (res?.error) {
-      setIsLoggingIn(false);
-    }
-  };
 
   // Sincronizar nome com o perfil do Supabase (Google ou Convidado)
   useEffect(() => {
@@ -362,23 +353,7 @@ export const Lobby: React.FC<LobbyProps> = ({ onJoin, isLoading, error }) => {
           ) : (
             <div className="flex items-center gap-2 bg-white/5 border border-white/10 rounded-2xl px-3 py-1.5 backdrop-blur-md">
               <span className="text-[11px] text-gray-400">Modo Convidado</span>
-              <button
-                onClick={handleGoogleLogin}
-                disabled={isLoggingIn}
-                className="flex items-center gap-1.5 bg-white hover:bg-gray-100 disabled:opacity-75 text-gray-900 font-semibold px-2.5 py-1 rounded-xl text-xs transition-colors shadow-sm cursor-pointer"
-              >
-                {isLoggingIn ? (
-                  <>
-                    <div className="w-3 h-3 border-2 border-indigo-600 border-t-transparent rounded-full animate-spin" />
-                    <span>Conectando...</span>
-                  </>
-                ) : (
-                  <>
-                    <LogIn className="w-3 h-3 text-indigo-600" />
-                    <span>Entrar com Google</span>
-                  </>
-                )}
-              </button>
+              <GoogleLoginButton size="medium" shape="pill" theme="outline" />
             </div>
           )}
         </div>

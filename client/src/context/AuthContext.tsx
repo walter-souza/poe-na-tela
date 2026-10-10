@@ -18,6 +18,7 @@ interface AuthContextType {
   isLoading: boolean;
   isConfigured: boolean;
   signInWithGoogle: () => Promise<{ error?: string }>;
+  signInWithGoogleIdToken: (idToken: string) => Promise<{ error?: string }>;
   signInAsGuest: (nickname: string) => Promise<{ error?: string }>;
   signOut: () => Promise<void>;
   updateNickname: (newNickname: string) => void;
@@ -123,6 +124,42 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       }
     } catch (err) {
       console.warn('Erro ao buscar perfil:', err);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const signInWithGoogleIdToken = async (idToken: string) => {
+    if (!isSupabaseConfigured || !supabase) {
+      const msg = 'Configuração do Supabase ausente. Verifique o arquivo client/.env e recarregue a página.';
+      console.error('[Auth]', msg);
+      alert(msg);
+      return { error: msg };
+    }
+
+    try {
+      setIsLoading(true);
+      console.log('[Auth] Autenticando com Google ID Token nativo via Supabase...');
+      const { data, error } = await supabase.auth.signInWithIdToken({
+        provider: 'google',
+        token: idToken,
+      });
+
+      if (error) {
+        console.error('[Auth] Erro retornado pelo signInWithIdToken:', error);
+        alert(`Erro ao autenticar com Google: ${error.message}`);
+        return { error: error.message };
+      }
+
+      if (data?.user) {
+        await fetchProfile(data.user);
+      }
+      return {};
+    } catch (err: any) {
+      const msg = err?.message || 'Falha ao autenticar com ID Token do Google.';
+      console.error('[Auth] Exceção em signInWithGoogleIdToken:', err);
+      alert(`Falha no login com Google: ${msg}`);
+      return { error: msg };
     } finally {
       setIsLoading(false);
     }
@@ -250,6 +287,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         isLoading,
         isConfigured: isSupabaseConfigured,
         signInWithGoogle,
+        signInWithGoogleIdToken,
         signInAsGuest,
         signOut,
         updateNickname,
