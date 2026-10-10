@@ -199,3 +199,13 @@ create policy "Qualquer pessoa pode enviar mensagens"
 -- Ativar Supabase Realtime para a tabela de mensagens e canais
 alter publication supabase_realtime add table public.messages;
 alter publication supabase_realtime add table public.channels;
+
+-- 8. PERMISSÕES DE TABELAS (GRANTS)
+grant usage on schema public to anon, authenticated, service_role;
+grant all on all tables in schema public to anon, authenticated, service_role;
+grant all on all sequences in schema public to anon, authenticated, service_role;
+grant all on all routines in schema public to anon, authenticated, service_role;
+
+alter default privileges in schema public grant all on tables to anon, authenticated, service_role;
+alter default privileges in schema public grant all on sequences to anon, authenticated, service_role;
+alter default privileges in schema public grant all on routines to anon, authenticated, service_role;
