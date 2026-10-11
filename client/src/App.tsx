@@ -375,6 +375,7 @@ export function App() {
       <div className="flex-1 flex overflow-hidden min-w-0">
         {currentSession ? (
           <StreamRoom
+            key={currentSession.roomName}
             session={currentSession}
             onLeave={handleLeave}
             isChatOpen={isChatOpen}
@@ -618,17 +619,19 @@ function StreamRoom({
 
   // Carregar canais da sala persistente
   useEffect(() => {
+    let isCancelled = false;
     const fetchChannels = async () => {
       try {
         const res = await fetch(`${getApiBaseUrl()}/api/rooms/${session.roomName}/channels`);
         if (res.ok) {
           const data = await res.json();
+          if (isCancelled) return;
           if (Array.isArray(data.channels) && data.channels.length > 0) {
             setChannels(data.channels);
             const textChan = data.channels.find((c: Channel) => c.type === 'text');
             const voiceChan = data.channels.find((c: Channel) => c.type === 'voice');
             if (textChan) setActiveTextChannelId(textChan.id);
-            if (!activeVoiceChannelId && voiceChan) setActiveVoiceChannelId(voiceChan.id);
+            if (voiceChan) setActiveVoiceChannelId(voiceChan.id);
             if (profile?.id && data.ownerId === profile.id) {
               setIsOwner(true);
             }
@@ -639,7 +642,10 @@ function StreamRoom({
       }
     };
     fetchChannels();
-  }, [session.roomName, profile, activeVoiceChannelId]);
+    return () => {
+      isCancelled = true;
+    };
+  }, [session.roomName, profile]);
 
   const handleSelectTextChannel = (channel: Channel) => {
     setActiveTextChannelId(channel.id);

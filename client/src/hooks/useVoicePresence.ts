@@ -44,7 +44,7 @@ export function useVoicePresence({
     updatedAt: Date.now(),
   };
 
-  // Helper to track presence safely without redundant calls
+  // Helper para rastrear presenca evitando chamadas desnecessarias quando o estado nao mudou
   const sendPresenceTrack = useCallback(async (channel: any) => {
     if (!channel || !isSubscribedRef.current) return;
     const payload = currentPresencePayload.current;
@@ -126,18 +126,31 @@ export function useVoicePresence({
     channel.subscribe(async (status) => {
       if (status === 'SUBSCRIBED') {
         isSubscribedRef.current = true;
-        await sendPresenceTrack(channel);
+        // Garantir track inicial obrigatorio no canal da sala recem-inscrita
+        const payload = currentPresencePayload.current;
+        try {
+          await channel.track(payload);
+          lastTrackedPayloadRef.current = JSON.stringify({
+            voiceChannelId: payload.voiceChannelId,
+            isMuted: payload.isMuted,
+            avatarUrl: payload.avatarUrl,
+            name: payload.name,
+          });
+        } catch (err) {
+          console.warn('Falha no track inicial de presenca:', err);
+        }
       }
     });
 
     return () => {
       isSubscribedRef.current = false;
       lastTrackedPayloadRef.current = '';
+      setVoiceParticipants([]); // Limpar imediatamente participantes ao sair da sala
       channel.untrack().catch(() => {});
       supabase?.removeChannel(channel).catch(() => {});
       channelRef.current = null;
     };
-  }, [roomSlug, userName, sendPresenceTrack]);
+  }, [roomSlug, userName]);
 
   // Transmitir atualização de presença sempre que o canal de voz ativo, estado de conexão ou mute mudarem
   useEffect(() => {
