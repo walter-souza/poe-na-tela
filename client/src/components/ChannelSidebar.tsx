@@ -240,20 +240,36 @@ export const ChannelSidebar: React.FC<ChannelSidebarProps> = ({
 
                     return (
                       <div className="pl-6 pr-2 space-y-1">
-                        {channelUsers.map((p) => (
-                          <div
-                            key={p.identity}
-                            className="flex items-center gap-2 py-0.5 text-[11px] text-gray-300"
-                          >
+                        {channelUsers.map((p) => {
+                          const isConnecting = Boolean(p.isConnecting);
+                          return (
                             <div
-                              className={`w-1.5 h-1.5 rounded-full ${
-                                p.isSpeaking ? 'bg-emerald-400 ring-2 ring-emerald-400/50' : 'bg-gray-600'
+                              key={p.identity}
+                              className={`flex items-center gap-2 py-0.5 text-[11px] transition-all duration-300 ${
+                                isConnecting ? 'opacity-60 text-gray-400' : 'opacity-100 text-gray-300'
                               }`}
-                            />
-                            <span className="truncate">{p.name || p.identity}</span>
-                            {p.isMuted && <span className="text-[10px] text-rose-400 ml-auto">(mudo)</span>}
-                          </div>
-                        ))}
+                            >
+                              <div
+                                className={`w-1.5 h-1.5 rounded-full transition-colors ${
+                                  isConnecting
+                                    ? 'bg-amber-400 animate-pulse'
+                                    : p.isSpeaking
+                                    ? 'bg-emerald-400 ring-2 ring-emerald-400/50'
+                                    : 'bg-gray-600'
+                                }`}
+                              />
+                              <span className="truncate">{p.name || p.identity}</span>
+                              {isConnecting && (
+                                <span className="text-[10px] text-amber-400/80 ml-auto italic">
+                                  (conectando...)
+                                </span>
+                              )}
+                              {!isConnecting && p.isMuted && (
+                                <span className="text-[10px] text-rose-400 ml-auto">(mudo)</span>
+                              )}
+                            </div>
+                          );
+                        })}
                       </div>
                     );
                   })()}

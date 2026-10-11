@@ -927,7 +927,7 @@ export function useLiveKit({ url, token, onDisconnected, onConnected }: UseLiveK
 
       // Play join notification sound if not self and not deafened
       if (participant.identity !== room.localParticipant?.identity && !isDeafenedRef.current) {
-        playJoinSound();
+        playJoinSound(participant.identity);
       }
     };
 
@@ -950,7 +950,7 @@ export function useLiveKit({ url, token, onDisconnected, onConnected }: UseLiveK
 
       // Play leave notification sound if not self and not deafened
       if (participant.identity !== room.localParticipant?.identity && !isDeafenedRef.current) {
-        playLeaveSound();
+        playLeaveSound(participant.identity);
       }
     };
 

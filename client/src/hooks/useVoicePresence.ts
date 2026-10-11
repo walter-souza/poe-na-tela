@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import type { VoiceParticipant } from '../types';
 import { supabase, isSupabaseConfigured } from '../utils/supabase';
+import { playJoinSound, playLeaveSound } from '../utils/soundEffects';
 
 interface UseVoicePresenceOptions {
   roomSlug: string;
@@ -9,6 +10,8 @@ interface UseVoicePresenceOptions {
   isVoiceConnected: boolean;
   isMuted: boolean;
   avatarUrl?: string | null;
+  isConnecting?: boolean;
+  isDeafened?: boolean;
 }
 
 export function useVoicePresence({
@@ -18,6 +21,8 @@ export function useVoicePresence({
   isVoiceConnected,
   isMuted,
   avatarUrl,
+  isConnecting = false,
+  isDeafened = false,
 }: UseVoicePresenceOptions) {
   const [voiceParticipants, setVoiceParticipants] = useState<VoiceParticipant[]>([]);
   const channelRef = useRef<any>(null);
@@ -28,6 +33,11 @@ export function useVoicePresence({
   const participantsMapRef = useRef<Map<string, VoiceParticipant>>(new Map());
 
   const targetVoiceChannelId = isVoiceConnected && activeVoiceChannelId ? activeVoiceChannelId : null;
+  const targetVoiceChannelIdRef = useRef<string | null>(targetVoiceChannelId);
+  targetVoiceChannelIdRef.current = targetVoiceChannelId;
+
+  const isDeafenedRef = useRef<boolean>(isDeafened);
+  isDeafenedRef.current = isDeafened;
 
   const currentPresencePayload = useRef({
     identity: userName,
@@ -35,6 +45,7 @@ export function useVoicePresence({
     voiceChannelId: targetVoiceChannelId,
     isMuted,
     avatarUrl,
+    isConnecting,
     updatedAt: Date.now(),
   });
 
@@ -44,6 +55,7 @@ export function useVoicePresence({
     voiceChannelId: targetVoiceChannelId,
     isMuted,
     avatarUrl,
+    isConnecting,
     updatedAt: Date.now(),
   };
 
@@ -86,6 +98,7 @@ export function useVoicePresence({
           isSpeaking: false,
           isMuted,
           avatarUrl,
+          isConnecting,
           updatedAt: Date.now(),
         },
       ]);
@@ -116,6 +129,18 @@ export function useVoicePresence({
         return; // Pacote desatualizado que chegou fora de ordem
       }
 
+      // Notificação sonora instantânea se outro usuário entra ou sai do nosso canal ativo
+      const myChannel = targetVoiceChannelIdRef.current;
+      if (myChannel && !isDeafenedRef.current) {
+        const wasInMyChannel = current && current.voiceChannelId === myChannel;
+        const isInMyChannel = payload.voiceChannelId === myChannel;
+        if (!wasInMyChannel && isInMyChannel) {
+          playJoinSound(payload.identity);
+        } else if (wasInMyChannel && !isInMyChannel) {
+          playLeaveSound(payload.identity);
+        }
+      }
+
       if (payload.voiceChannelId) {
         participantsMapRef.current.set(payload.identity, {
           identity: payload.identity,
@@ -124,6 +149,7 @@ export function useVoicePresence({
           isSpeaking: false,
           isMuted: Boolean(payload.isMuted),
           avatarUrl: payload.avatarUrl,
+          isConnecting: Boolean(payload.isConnecting),
           updatedAt: payload.updatedAt || Date.now(),
         });
       } else {
@@ -136,6 +162,11 @@ export function useVoicePresence({
     const handleBroadcastLeave = ({ payload }: { payload: any }) => {
       if (!payload || !payload.identity) return;
       if (payload.identity === userName) return;
+      const current = participantsMapRef.current.get(payload.identity);
+      const myChannel = targetVoiceChannelIdRef.current;
+      if (myChannel && !isDeafenedRef.current && current && current.voiceChannelId === myChannel) {
+        playLeaveSound(payload.identity);
+      }
       participantsMapRef.current.delete(payload.identity);
       setVoiceParticipants(Array.from(participantsMapRef.current.values()));
     };
@@ -163,6 +194,7 @@ export function useVoicePresence({
                   isSpeaking: false,
                   isMuted: Boolean(latest.isMuted),
                   avatarUrl: latest.avatarUrl,
+                  isConnecting: Boolean(latest.isConnecting),
                   updatedAt: latest.updatedAt || Date.now(),
                 });
               } else {
@@ -232,6 +264,7 @@ export function useVoicePresence({
       voiceChannelId: targetVoiceChannelId,
       isMuted,
       avatarUrl,
+      isConnecting,
       updatedAt: now,
     };
     currentPresencePayload.current = payload;
@@ -245,6 +278,7 @@ export function useVoicePresence({
         isSpeaking: false,
         isMuted,
         avatarUrl,
+        isConnecting,
         updatedAt: now,
       });
     } else {
@@ -277,7 +311,7 @@ export function useVoicePresence({
         clearTimeout(debounceTrackTimeoutRef.current);
       }
     };
-  }, [targetVoiceChannelId, isMuted, avatarUrl, userName, queuePresenceTrack]);
+  }, [targetVoiceChannelId, isMuted, avatarUrl, userName, isConnecting, queuePresenceTrack]);
 
   return { voiceParticipants };
 }

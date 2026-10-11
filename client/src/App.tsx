@@ -20,6 +20,7 @@ import { GuildBar } from './components/GuildBar';
 import { TextChannelView } from './components/TextChannelView';
 import { CreateRoomModal } from './components/CreateRoomModal';
 import { PasswordModal } from './components/PasswordModal';
+import { playJoinSound, playLeaveSound } from './utils/soundEffects';
 import type { StreamQualityConfig, Channel, UserRoom, VoiceParticipant } from './types';
 
 interface AppSession {
@@ -515,6 +516,8 @@ function StreamRoom({
     connectionState === ConnectionState.Connected &&
     Boolean(activeVoiceChannelId);
 
+  const isLocalConnecting = Boolean(isVoiceConnected && !isVoiceFullyConnected);
+
   // Limpa o indicador de conectando ao confirmar conexão no LiveKit
   useEffect(() => {
     if (connectionState === ConnectionState.Connected) {
@@ -533,6 +536,8 @@ function StreamRoom({
     isVoiceConnected,
     isMuted: !isMicEnabled,
     avatarUrl: profile?.avatar_url,
+    isConnecting: isLocalConnecting,
+    isDeafened,
   });
 
   // Mesclar VAD local de 0ms para participantes no mesmo canal de voz e garantir a presença do usuário conectado
@@ -556,6 +561,7 @@ function StreamRoom({
         isSpeaking: localParticipant?.isSpeaking ?? false,
         isMuted: !isMicEnabled,
         avatarUrl: profile?.avatar_url || existing?.avatarUrl,
+        isConnecting: isLocalConnecting,
       });
     }
 
@@ -596,6 +602,7 @@ function StreamRoom({
     participants,
     isVoiceFullyConnected,
     isVoiceConnected,
+    isLocalConnecting,
     activeVoiceChannelId,
     session.userName,
     localParticipant?.isSpeaking,
@@ -659,6 +666,9 @@ function StreamRoom({
       return;
     }
 
+    // Feedback sonoro instantâneo de entrada / troca de sala (0ms)
+    playJoinSound(session.userName);
+
     // Cancelar requisição anterior de troca de canal ainda em voo
     if (selectVoiceAbortRef.current) {
       selectVoiceAbortRef.current.abort();
@@ -708,6 +718,9 @@ function StreamRoom({
   };
 
   const handleDisconnectVoice = () => {
+    // Feedback sonoro instantâneo de saída de sala (0ms)
+    playLeaveSound(session.userName);
+
     if (selectVoiceAbortRef.current) {
       selectVoiceAbortRef.current.abort();
       selectVoiceAbortRef.current = null;
