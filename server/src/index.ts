@@ -873,7 +873,6 @@ app.get([
               isSpeaking: false,
               isMuted: p.tracks?.some((t: any) => t.type === 0 && t.muted) ?? false,
               avatarUrl,
-              joinedAt: p.joinedAt,
             });
           }
         } catch (err) {
