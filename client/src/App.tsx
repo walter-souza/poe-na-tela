@@ -644,8 +644,8 @@ function StreamRoom({
             setChannels(data.channels);
             const textChan = data.channels.find((c: Channel) => c.type === 'text');
             const voiceChan = data.channels.find((c: Channel) => c.type === 'voice');
-            if (textChan) setActiveTextChannelId(textChan.id);
-            if (voiceChan) setActiveVoiceChannelId(voiceChan.id);
+            if (textChan) setActiveTextChannelId((prev) => prev || textChan.id);
+            if (voiceChan) setActiveVoiceChannelId((prev) => prev || voiceChan.id);
             if (profile?.id && data.ownerId === profile.id) {
               setIsOwner(true);
             }

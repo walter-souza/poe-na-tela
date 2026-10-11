@@ -15,6 +15,10 @@ interface UseVoicePresenceOptions {
   onParticipantLeave?: (identity: string) => void;
 }
 
+interface InternalParticipant extends VoiceParticipant {
+  localReceivedAt: number;
+}
+
 export function useVoicePresence({
   roomSlug,
   userName,
@@ -32,7 +36,7 @@ export function useVoicePresence({
   const isTrackingRef = useRef<boolean>(false);
   const pendingPayloadRef = useRef<any>(null);
   const debounceTrackTimeoutRef = useRef<any>(null);
-  const participantsMapRef = useRef<Map<string, VoiceParticipant>>(new Map());
+  const participantsMapRef = useRef<Map<string, InternalParticipant>>(new Map());
 
   const onParticipantLeaveRef = useRef(onParticipantLeave);
   onParticipantLeaveRef.current = onParticipantLeave;
@@ -79,12 +83,15 @@ export function useVoicePresence({
       pendingPayloadRef.current = null;
       try {
         if (toTrack.voiceChannelId) {
-          await channel.track(toTrack);
+          const res = await channel.track(toTrack);
+          if (res !== 'ok') {
+            console.warn('[VoicePresence] track status:', res);
+          }
         } else {
           await channel.untrack();
         }
       } catch (err) {
-        console.warn('Falha ao sincronizar presença de voz no Supabase:', err);
+        console.warn('[VoicePresence] Falha ao sincronizar presença no Supabase:', err);
       }
     }
     isTrackingRef.current = false;
@@ -110,7 +117,8 @@ export function useVoicePresence({
       return;
     }
 
-    const channelName = `room-voice-presence:${roomSlug}`;
+    const cleanSlug = roomSlug.toLowerCase().trim();
+    const channelName = `room-voice-presence:${cleanSlug}`;
     const channel = supabase.channel(channelName, {
       config: {
         presence: {
@@ -129,6 +137,7 @@ export function useVoicePresence({
       if (!payload || !payload.identity) return;
       if (payload.identity === userName) return; // O próprio usuário já é gerenciado localmente
 
+      const now = Date.now();
       const current = participantsMapRef.current.get(payload.identity);
 
       // Notificação sonora instantânea se outro usuário entra ou sai do nosso canal ativo
@@ -148,11 +157,12 @@ export function useVoicePresence({
           identity: payload.identity,
           name: payload.name || payload.identity,
           voiceChannelId: payload.voiceChannelId,
-          isSpeaking: false,
+          isSpeaking: Boolean(payload.isSpeaking),
           isMuted: Boolean(payload.isMuted),
-          avatarUrl: payload.avatarUrl,
+          avatarUrl: payload.avatarUrl || current?.avatarUrl,
           isConnecting: Boolean(payload.isConnecting),
-          updatedAt: payload.updatedAt || Date.now(),
+          updatedAt: payload.updatedAt || now,
+          localReceivedAt: now,
         });
       } else {
         onParticipantLeaveRef.current?.(payload.identity);
@@ -175,10 +185,23 @@ export function useVoicePresence({
       setVoiceParticipants(Array.from(participantsMapRef.current.values()));
     };
 
+    // Resposta imediata quando um novo par solicita a presença dos membros da sala
+    const handlePresenceRequest = ({ payload }: { payload: any }) => {
+      if (!payload || payload.from === userName) return;
+      if (currentPresencePayload.current.voiceChannelId && channelRef.current && isSubscribedRef.current) {
+        channelRef.current.send({
+          type: 'broadcast',
+          event: 'voice_presence_update',
+          payload: currentPresencePayload.current,
+        }).catch(() => {});
+      }
+    };
+
     // 2. Manipulador de CRDT Presence (Sincronização autoritativa global entre navegadores)
     const handleSync = () => {
       const state = channel.presenceState();
       const activePresences = new Map<string, VoiceParticipant>();
+      const now = Date.now();
 
       for (const [key, presences] of Object.entries(state)) {
         if (!Array.isArray(presences) || presences.length === 0) continue;
@@ -197,21 +220,28 @@ export function useVoicePresence({
             isMuted: Boolean(latest.isMuted),
             avatarUrl: latest.avatarUrl,
             isConnecting: Boolean(latest.isConnecting),
-            updatedAt: latest.updatedAt || Date.now(),
+            updatedAt: latest.updatedAt || now,
           });
         }
       }
 
       // Atualizar participantes a partir do CRDT autoritativo
       for (const [id, participant] of activePresences.entries()) {
-        participantsMapRef.current.set(id, participant);
+        const existing = participantsMapRef.current.get(id);
+        participantsMapRef.current.set(id, {
+          ...participant,
+          localReceivedAt: now,
+          avatarUrl: participant.avatarUrl || existing?.avatarUrl,
+        });
       }
 
-      // Remover participantes que não estão mais no CRDT E não tiveram broadcast recente (< 10s)
+      // Remover participantes que não estão mais no CRDT E não foram vistos localmente recentemente
+      // Utiliza localReceivedAt para imunidade total contra clock skew entre navegadores
       for (const [id, participant] of participantsMapRef.current.entries()) {
         if (id !== userName && !activePresences.has(id)) {
-          const isRecent = participant.updatedAt && Date.now() - participant.updatedAt < 10000;
+          const isRecent = participant.localReceivedAt && (now - participant.localReceivedAt < 25000);
           if (!isRecent) {
+            onParticipantLeaveRef.current?.(id);
             participantsMapRef.current.delete(id);
           }
         }
@@ -220,14 +250,74 @@ export function useVoicePresence({
       setVoiceParticipants(Array.from(participantsMapRef.current.values()));
     };
 
+    const handlePresenceJoin = ({ key, newPresences }: { key: string; newPresences: any[] }) => {
+      if (!Array.isArray(newPresences) || newPresences.length === 0) return;
+      const latest = newPresences[newPresences.length - 1];
+      if (!latest) return;
+      const id = latest.identity || key;
+      if (id === userName) return;
+
+      if (latest.voiceChannelId) {
+        const now = Date.now();
+        const current = participantsMapRef.current.get(id);
+        const myChannel = targetVoiceChannelIdRef.current;
+        if (myChannel && !isDeafenedRef.current) {
+          const wasInMyChannel = current && current.voiceChannelId === myChannel;
+          const isInMyChannel = latest.voiceChannelId === myChannel;
+          if (!wasInMyChannel && isInMyChannel) {
+            playJoinSound();
+          }
+        }
+        participantsMapRef.current.set(id, {
+          identity: id,
+          name: latest.name || id,
+          voiceChannelId: latest.voiceChannelId,
+          isSpeaking: false,
+          isMuted: Boolean(latest.isMuted),
+          avatarUrl: latest.avatarUrl || current?.avatarUrl,
+          isConnecting: Boolean(latest.isConnecting),
+          updatedAt: latest.updatedAt || now,
+          localReceivedAt: now,
+        });
+        setVoiceParticipants(Array.from(participantsMapRef.current.values()));
+      }
+    };
+
+    const handlePresenceLeave = ({ key, leftPresences }: { key: string; leftPresences: any[] }) => {
+      if (!Array.isArray(leftPresences) || leftPresences.length === 0) return;
+      const latest = leftPresences[leftPresences.length - 1];
+      const id = (latest && latest.identity) || key;
+      if (id === userName) return;
+
+      const current = participantsMapRef.current.get(id);
+      const myChannel = targetVoiceChannelIdRef.current;
+      if (myChannel && !isDeafenedRef.current && current && current.voiceChannelId === myChannel) {
+        playLeaveSound();
+      }
+      onParticipantLeaveRef.current?.(id);
+      participantsMapRef.current.delete(id);
+      setVoiceParticipants(Array.from(participantsMapRef.current.values()));
+    };
+
     channel.on('presence', { event: 'sync' }, handleSync);
+    channel.on('presence', { event: 'join' }, handlePresenceJoin);
+    channel.on('presence', { event: 'leave' }, handlePresenceLeave);
     channel.on('broadcast', { event: 'voice_presence_update' }, handleBroadcastUpdate);
+    channel.on('broadcast', { event: 'voice_presence_heartbeat' }, handleBroadcastUpdate);
     channel.on('broadcast', { event: 'voice_presence_leave' }, handleBroadcastLeave);
+    channel.on('broadcast', { event: 'voice_presence_request' }, handlePresenceRequest);
 
     channel.subscribe(async (status: string) => {
       if (status === 'SUBSCRIBED') {
         isSubscribedRef.current = true;
-        // Disparar track inicial e broadcast de boas-vindas
+        // 1. Solicitar presença dos membros já ativos para descoberta instantânea bilateral
+        channel.send({
+          type: 'broadcast',
+          event: 'voice_presence_request',
+          payload: { from: userName },
+        }).catch(() => {});
+
+        // 2. Disparar track inicial e broadcast se já conectado a um canal de voz
         if (currentPresencePayload.current.voiceChannelId) {
           channel.send({
             type: 'broadcast',
@@ -239,10 +329,24 @@ export function useVoicePresence({
       }
     });
 
+    // 3. Heartbeat periódico a cada 10 segundos para manter presença e recuperar eventuais pacotes perdidos
+    const heartbeatInterval = setInterval(() => {
+      if (!isSubscribedRef.current || !channelRef.current) return;
+      if (currentPresencePayload.current.voiceChannelId) {
+        channelRef.current.send({
+          type: 'broadcast',
+          event: 'voice_presence_heartbeat',
+          payload: currentPresencePayload.current,
+        }).catch(() => {});
+        queuePresenceTrack(channelRef.current);
+      }
+    }, 10000);
+
     return () => {
       isSubscribedRef.current = false;
       isTrackingRef.current = false;
       pendingPayloadRef.current = null;
+      clearInterval(heartbeatInterval);
       if (debounceTrackTimeoutRef.current) {
         clearTimeout(debounceTrackTimeoutRef.current);
       }
@@ -268,7 +372,7 @@ export function useVoicePresence({
     };
     currentPresencePayload.current = payload;
 
-    // 1. Refletir imediatamente o estado local do próprio usuário para feedback instantâneo na UI
+    // 1. Refletir imediatamente o estado local do próprio usuário para feedback instantâneo na UI (0ms)
     if (targetVoiceChannelId) {
       participantsMapRef.current.set(userName, {
         identity: userName,
@@ -279,6 +383,7 @@ export function useVoicePresence({
         avatarUrl,
         isConnecting,
         updatedAt: now,
+        localReceivedAt: now,
       });
     } else {
       participantsMapRef.current.delete(userName);
@@ -293,9 +398,18 @@ export function useVoicePresence({
         event: eventName,
         payload,
       }).catch(() => {});
+
+      // Ao entrar ou mudar de canal de voz, também solicitar atualização dos pares para sincronização bilateral imediata
+      if (targetVoiceChannelId) {
+        channelRef.current.send({
+          type: 'broadcast',
+          event: 'voice_presence_request',
+          payload: { from: userName },
+        }).catch(() => {});
+      }
     }
 
-    // 3. Debounce (150ms) no channel.track() para consolidar o estado no Phoenix CRDT sem sobrecarga
+    // 3. Debounce (100ms) no channel.track() para consolidar o estado no Phoenix CRDT sem sobrecarga
     if (debounceTrackTimeoutRef.current) {
       clearTimeout(debounceTrackTimeoutRef.current);
     }
@@ -303,7 +417,7 @@ export function useVoicePresence({
       if (isSubscribedRef.current && channelRef.current) {
         queuePresenceTrack(channelRef.current);
       }
-    }, 150);
+    }, 100);
 
     return () => {
       if (debounceTrackTimeoutRef.current) {
