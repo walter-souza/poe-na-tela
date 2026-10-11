@@ -19,19 +19,6 @@ interface InternalParticipant extends VoiceParticipant {
   localReceivedAt: number;
 }
 
-/**
- * Verifica se o canal WebSocket está plenamente estabelecido para envio.
- * Evita que o SDK do Supabase ative o fallback de HTTP POST REST (/broadcast),
- * eliminando requisições HTTP desnecessárias na aba Network.
- */
-function canPushToChannel(channel: any): boolean {
-  if (!channel) return false;
-  if (channel.channelAdapter && typeof channel.channelAdapter.canPush === 'function') {
-    return channel.channelAdapter.canPush();
-  }
-  return channel.state === 'joined';
-}
-
 export function useVoicePresence({
   roomSlug,
   userName,
@@ -84,18 +71,9 @@ export function useVoicePresence({
     updatedAt: Date.now(),
   };
 
-  const safeBroadcast = useCallback((channel: any, event: string, payload: any) => {
-    if (!channel || !isSubscribedRef.current || !canPushToChannel(channel)) return;
-    channel.send({
-      type: 'broadcast',
-      event,
-      payload,
-    }).catch(() => {});
-  }, []);
-
   // Fila sequencial (FIFO com coalescência) para garantir que NUNCA haja múltiplos channel.track() concorrentes no WebSocket do Supabase
   const queuePresenceTrack = useCallback(async (channel: any) => {
-    if (!channel || !isSubscribedRef.current || !canPushToChannel(channel)) return;
+    if (!channel || !isSubscribedRef.current) return;
     pendingPayloadRef.current = currentPresencePayload.current;
 
     if (isTrackingRef.current) {
@@ -157,7 +135,7 @@ export function useVoicePresence({
 
     channelRef.current = channel;
 
-    // 1. Manipulador de Broadcast Instantâneo (0ms de latência direta entre navegadores via WebSocket)
+    // 1. Manipulador de Broadcast Instantâneo (0ms de latência direta entre navegadores)
     const handleBroadcastUpdate = ({ payload }: { payload: any }) => {
       if (!payload || !payload.identity) return;
       if (payload.identity === userName) return; // O próprio usuário já é gerenciado localmente
@@ -214,7 +192,11 @@ export function useVoicePresence({
     const handlePresenceRequest = ({ payload }: { payload: any }) => {
       if (!payload || payload.from === userName) return;
       if (currentPresencePayload.current.voiceChannelId && channelRef.current && isSubscribedRef.current) {
-        safeBroadcast(channelRef.current, 'voice_presence_update', currentPresencePayload.current);
+        channelRef.current.send({
+          type: 'broadcast',
+          event: 'voice_presence_update',
+          payload: currentPresencePayload.current,
+        }).catch(() => {});
       }
     };
 
@@ -260,7 +242,7 @@ export function useVoicePresence({
       // Utiliza localReceivedAt para imunidade total contra clock skew entre navegadores
       for (const [id, participant] of participantsMapRef.current.entries()) {
         if (id !== userName && !activePresences.has(id)) {
-          const isRecent = participant.localReceivedAt && (now - participant.localReceivedAt < 25000);
+          const isRecent = participant.localReceivedAt && (now - participant.localReceivedAt < 20000);
           if (!isRecent) {
             onParticipantLeaveRef.current?.(id);
             participantsMapRef.current.delete(id);
@@ -271,58 +253,7 @@ export function useVoicePresence({
       setVoiceParticipants(Array.from(participantsMapRef.current.values()));
     };
 
-    const handlePresenceJoin = ({ key, newPresences }: { key: string; newPresences: any[] }) => {
-      if (!Array.isArray(newPresences) || newPresences.length === 0) return;
-      const latest = newPresences[newPresences.length - 1];
-      if (!latest) return;
-      const id = latest.identity || key;
-      if (id === userName) return;
-
-      if (latest.voiceChannelId) {
-        const now = Date.now();
-        const current = participantsMapRef.current.get(id);
-        const myChannel = targetVoiceChannelIdRef.current;
-        if (myChannel && !isDeafenedRef.current) {
-          const wasInMyChannel = current && current.voiceChannelId === myChannel;
-          const isInMyChannel = latest.voiceChannelId === myChannel;
-          if (!wasInMyChannel && isInMyChannel) {
-            playJoinSound();
-          }
-        }
-        participantsMapRef.current.set(id, {
-          identity: id,
-          name: latest.name || id,
-          voiceChannelId: latest.voiceChannelId,
-          isSpeaking: false,
-          isMuted: Boolean(latest.isMuted),
-          avatarUrl: latest.avatarUrl || current?.avatarUrl,
-          isConnecting: Boolean(latest.isConnecting),
-          updatedAt: latest.updatedAt || now,
-          localReceivedAt: now,
-        });
-        setVoiceParticipants(Array.from(participantsMapRef.current.values()));
-      }
-    };
-
-    const handlePresenceLeave = ({ key, leftPresences }: { key: string; leftPresences: any[] }) => {
-      if (!Array.isArray(leftPresences) || leftPresences.length === 0) return;
-      const latest = leftPresences[leftPresences.length - 1];
-      const id = (latest && latest.identity) || key;
-      if (id === userName) return;
-
-      const current = participantsMapRef.current.get(id);
-      const myChannel = targetVoiceChannelIdRef.current;
-      if (myChannel && !isDeafenedRef.current && current && current.voiceChannelId === myChannel) {
-        playLeaveSound();
-      }
-      onParticipantLeaveRef.current?.(id);
-      participantsMapRef.current.delete(id);
-      setVoiceParticipants(Array.from(participantsMapRef.current.values()));
-    };
-
     channel.on('presence', { event: 'sync' }, handleSync);
-    channel.on('presence', { event: 'join' }, handlePresenceJoin);
-    channel.on('presence', { event: 'leave' }, handlePresenceLeave);
     channel.on('broadcast', { event: 'voice_presence_update' }, handleBroadcastUpdate);
     channel.on('broadcast', { event: 'voice_presence_heartbeat' }, handleBroadcastUpdate);
     channel.on('broadcast', { event: 'voice_presence_leave' }, handleBroadcastLeave);
@@ -331,25 +262,37 @@ export function useVoicePresence({
     channel.subscribe(async (status: string) => {
       if (status === 'SUBSCRIBED') {
         isSubscribedRef.current = true;
-        // 1. Solicitar presença dos membros já ativos para descoberta instantânea bilateral (apenas 1 vez na subscrição)
-        safeBroadcast(channel, 'voice_presence_request', { from: userName });
+        // 1. Solicitar presença dos membros já ativos para descoberta instantânea bilateral (1 disparo)
+        channel.send({
+          type: 'broadcast',
+          event: 'voice_presence_request',
+          payload: { from: userName },
+        }).catch(() => {});
 
         // 2. Disparar track inicial e broadcast se já conectado a um canal de voz
         if (currentPresencePayload.current.voiceChannelId) {
-          safeBroadcast(channel, 'voice_presence_update', currentPresencePayload.current);
+          channel.send({
+            type: 'broadcast',
+            event: 'voice_presence_update',
+            payload: currentPresencePayload.current,
+          }).catch(() => {});
           queuePresenceTrack(channel);
         }
       }
     });
 
-    // 3. Heartbeat periódico a cada 12 segundos para manter presença e recuperar eventuais pacotes perdidos
+    // 3. Heartbeat periódico a cada 10 segundos para manter presença e recuperar eventuais pacotes perdidos
     const heartbeatInterval = setInterval(() => {
       if (!isSubscribedRef.current || !channelRef.current) return;
-      if (currentPresencePayload.current.voiceChannelId && canPushToChannel(channelRef.current)) {
-        safeBroadcast(channelRef.current, 'voice_presence_heartbeat', currentPresencePayload.current);
+      if (currentPresencePayload.current.voiceChannelId) {
+        channelRef.current.send({
+          type: 'broadcast',
+          event: 'voice_presence_heartbeat',
+          payload: currentPresencePayload.current,
+        }).catch(() => {});
         queuePresenceTrack(channelRef.current);
       }
-    }, 12000);
+    }, 10000);
 
     return () => {
       isSubscribedRef.current = false;
@@ -365,9 +308,9 @@ export function useVoicePresence({
       supabase?.removeChannel(channel).catch(() => {});
       channelRef.current = null;
     };
-  }, [roomSlug, userName, safeBroadcast, queuePresenceTrack]);
+  }, [roomSlug, userName, queuePresenceTrack]);
 
-  // Transmitir atualização de presença apenas quando o canal de voz ativo ou mute realmente mudarem
+  // Transmitir atualização de presença sempre que o canal de voz ativo ou status de mute realmente mudarem
   useEffect(() => {
     const now = Date.now();
     const payload = {
@@ -399,7 +342,7 @@ export function useVoicePresence({
     }
     setVoiceParticipants(Array.from(participantsMapRef.current.values()));
 
-    // Verificar se houve mudança real de canal de voz ou status de microfone antes de transmitir
+    // Verificar se houve mudança real de canal de voz ou mute para evitar broadcasts duplicados nas transições de render
     const channelChanged = targetVoiceChannelId !== lastBroadcastVoiceChannelIdRef.current;
     const muteChanged = isMuted !== lastBroadcastMutedRef.current;
 
@@ -407,10 +350,14 @@ export function useVoicePresence({
       lastBroadcastVoiceChannelIdRef.current = targetVoiceChannelId;
       lastBroadcastMutedRef.current = isMuted;
 
-      // 2. Disparar BROADCAST via WebSocket (apenas 1 disparo direto, sem fallback REST)
+      // 2. Disparar BROADCAST direto (1 disparo confiável garantido)
       if (isSubscribedRef.current && channelRef.current) {
         const eventName = targetVoiceChannelId ? 'voice_presence_update' : 'voice_presence_leave';
-        safeBroadcast(channelRef.current, eventName, payload);
+        channelRef.current.send({
+          type: 'broadcast',
+          event: eventName,
+          payload,
+        }).catch(() => {});
       }
 
       // 3. Debounce (100ms) no channel.track() para consolidar o estado no Phoenix CRDT
@@ -429,7 +376,7 @@ export function useVoicePresence({
         clearTimeout(debounceTrackTimeoutRef.current);
       }
     };
-  }, [targetVoiceChannelId, isMuted, avatarUrl, userName, isConnecting, safeBroadcast, queuePresenceTrack]);
+  }, [targetVoiceChannelId, isMuted, avatarUrl, userName, isConnecting, queuePresenceTrack]);
 
   return { voiceParticipants };
 }
