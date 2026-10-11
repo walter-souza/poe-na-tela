@@ -21,7 +21,6 @@ import { TextChannelView } from './components/TextChannelView';
 import { CreateRoomModal } from './components/CreateRoomModal';
 import { PasswordModal } from './components/PasswordModal';
 import { playJoinSound, playLeaveSound } from './utils/soundEffects';
-import { isSupabaseConfigured } from './utils/supabase';
 import type { StreamQualityConfig, Channel, UserRoom, VoiceParticipant } from './types';
 
 interface AppSession {
@@ -528,6 +527,7 @@ function StreamRoom({
 
   // Status de fala do participante local
   const localParticipant = participants.find((p) => p.identity === session.userName);
+  const recentlyLeftMapRef = useRef<Map<string, number>>(new Map());
 
   // Presença em tempo real cross-channel via Supabase Realtime
   const { voiceParticipants } = useVoicePresence({
@@ -539,6 +539,9 @@ function StreamRoom({
     avatarUrl: profile?.avatar_url,
     isConnecting: isLocalConnecting,
     isDeafened,
+    onParticipantLeave: (identity) => {
+      recentlyLeftMapRef.current.set(identity, Date.now());
+    },
   });
 
   // Mesclar VAD local de 0ms para participantes no mesmo canal de voz e garantir a presença do usuário conectado
@@ -571,6 +574,12 @@ function StreamRoom({
       for (const p of participants) {
         if (!p.identity || p.identity === session.userName) continue;
 
+        // Se o participante acabou de desconectar explicitamente, ignorar por 3.5s para evitar fantasma durante teardown do LiveKit
+        const leftAt = recentlyLeftMapRef.current.get(p.identity);
+        if (leftAt && Date.now() - leftAt < 3500) {
+          continue;
+        }
+
         const existing = map.get(p.identity);
         if (existing) {
           // Se o participante já é conhecido e está no mesmo canal de voz que nós: atualizar áudio 0ms do LiveKit
@@ -581,8 +590,8 @@ function StreamRoom({
               isMuted: p.isMuted,
             });
           }
-        } else if (!isSupabaseConfigured) {
-          // Fallback apenas para modo offline / sem Supabase configurado
+        } else {
+          // Se ainda não sincronizou no Supabase, adicioná-lo no canal local ativo
           map.set(p.identity, {
             identity: p.identity,
             name: p.name || p.identity,
@@ -718,6 +727,7 @@ function StreamRoom({
   const handleDisconnectVoice = () => {
     // Feedback sonoro instantâneo de saída de sala (0ms)
     playLeaveSound();
+    recentlyLeftMapRef.current.set(session.userName, Date.now());
 
     if (selectVoiceAbortRef.current) {
       selectVoiceAbortRef.current.abort();
