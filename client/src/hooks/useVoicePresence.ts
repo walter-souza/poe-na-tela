@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import type { VoiceParticipant } from '../types';
 import { supabase, isSupabaseConfigured } from '../utils/supabase';
-import { fetchVoicePresence } from '../utils/api';
+import { fetchVoicePresence, postVoiceDisconnect } from '../utils/api';
 import { playJoinSound, playLeaveSound } from '../utils/soundEffects';
 
 interface UseVoicePresenceOptions {
@@ -61,10 +61,19 @@ export function useVoicePresence({
   const isInitialLoadForChannelRef = useRef<boolean>(true);
   const prevMyChannelParticipantsRef = useRef<Set<string>>(new Set());
 
+  // Debounce e fila de consultas para evitar rajadas de requisições HTTP
+  const debounceTimerRef = useRef<any>(null);
+  const hasPendingRefreshRef = useRef<boolean>(false);
+
   // Consulta autoritativa no LiveKit via Backend (estável para não recriar subscriptions)
   const refreshPresence = useCallback(async () => {
-    if (!roomSlug || isPollingRef.current) return;
+    if (!roomSlug) return;
+    if (isPollingRef.current) {
+      hasPendingRefreshRef.current = true;
+      return;
+    }
     isPollingRef.current = true;
+    hasPendingRefreshRef.current = false;
     try {
       const serverParticipants = await fetchVoicePresence(roomSlug);
       const myChannel = targetVoiceChannelIdRef.current;
@@ -144,8 +153,28 @@ export function useVoicePresence({
       console.warn('[VoicePresence] Erro ao consultar presença no LiveKit:', err);
     } finally {
       isPollingRef.current = false;
+      if (hasPendingRefreshRef.current) {
+        hasPendingRefreshRef.current = false;
+        if (debounceTimerRef.current) clearTimeout(debounceTimerRef.current);
+        debounceTimerRef.current = setTimeout(() => {
+          refreshPresence();
+        }, 150);
+      }
     }
   }, [roomSlug, userName]);
+
+  // Agendador com debounce para agrupar múltiplos eventos em uma única chamada HTTP
+  const scheduleRefresh = useCallback(
+    (delayMs = 250) => {
+      if (debounceTimerRef.current) {
+        clearTimeout(debounceTimerRef.current);
+      }
+      debounceTimerRef.current = setTimeout(() => {
+        refreshPresence();
+      }, delayMs);
+    },
+    [refreshPresence]
+  );
 
   // 1. Inscrição leve no Supabase Broadcast para push instantâneo entre navegadores
   useEffect(() => {
@@ -167,9 +196,9 @@ export function useVoicePresence({
 
       channelRef.current = channel;
 
-      // Quando qualquer par muda de canal ou desconecta, dispara recarga imediata do LiveKit
+      // Quando qualquer par muda de canal ou desconecta, reagendar recarga com debounce
       channel.on('broadcast', { event: 'voice_presence_changed' }, () => {
-        refreshPresence();
+        scheduleRefresh(200);
       });
 
       channel.subscribe((status: string) => {
@@ -179,20 +208,45 @@ export function useVoicePresence({
       });
     }
 
-    // 2. Polling de segurança (2.5 segundos) para garantia contra qualquer oscilação de rede
+    // 2. Polling espaçado de segurança (a cada 20s) apenas se a aba estiver visível
     const pollInterval = setInterval(() => {
-      refreshPresence();
-    }, 2500);
+      if (document.visibilityState === 'visible') {
+        refreshPresence();
+      }
+    }, 20000);
+
+    // Reconciliar ao voltar para a aba do navegador
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        scheduleRefresh(0);
+      }
+    };
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+
+    // Notificar desconexão rápida ao fechar aba
+    const handleUnload = () => {
+      if (targetVoiceChannelIdRef.current) {
+        postVoiceDisconnect(roomSlug, userName);
+      }
+    };
+    window.addEventListener('beforeunload', handleUnload);
+    window.addEventListener('pagehide', handleUnload);
 
     return () => {
       clearInterval(pollInterval);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+      window.removeEventListener('beforeunload', handleUnload);
+      window.removeEventListener('pagehide', handleUnload);
+      if (debounceTimerRef.current) {
+        clearTimeout(debounceTimerRef.current);
+      }
       isSubscribedRef.current = false;
       if (channelRef.current && supabase) {
         supabase.removeChannel(channelRef.current).catch(() => {});
         channelRef.current = null;
       }
     };
-  }, [roomSlug, userName, refreshPresence]);
+  }, [roomSlug, userName, refreshPresence, scheduleRefresh]);
 
   // 3. Atualização e notificação aos pares quando o canal local mudar
   useEffect(() => {
@@ -210,13 +264,9 @@ export function useVoicePresence({
         }).catch(() => {});
       }
 
-      const t = setTimeout(() => {
-        refreshPresence();
-      }, 300);
-
-      return () => clearTimeout(t);
+      scheduleRefresh(250);
     }
-  }, [targetVoiceChannelId, roomSlug, userName, refreshPresence]);
+  }, [targetVoiceChannelId, roomSlug, userName, scheduleRefresh]);
 
   return { voiceParticipants, refreshPresence };
 }

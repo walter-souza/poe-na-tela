@@ -111,6 +111,7 @@ export async function postVoiceDisconnect(roomName: string, identity: string): P
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ identity }),
+      keepalive: true,
     });
   } catch {}
 }
