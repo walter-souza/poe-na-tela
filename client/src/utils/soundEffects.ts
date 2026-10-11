@@ -27,25 +27,18 @@ function getAudioContext(): AudioContext | null {
 
 let lastJoinSoundTime = 0;
 let lastLeaveSoundTime = 0;
-const recentJoinUsers = new Map<string, number>();
-const recentLeaveUsers = new Map<string, number>();
 
 /**
  * Play sound when a user joins the room:
  * Entrada Médio-Grave: Sol4 (392Hz) -> Dó5 (523.25Hz)
  */
 export function playJoinSound(identifierOrVolume?: string | number, explicitVolume?: number): void {
-  const userId = typeof identifierOrVolume === 'string' ? identifierOrVolume : undefined;
-  const volume = typeof identifierOrVolume === 'number' ? identifierOrVolume : (explicitVolume ?? 0.35);
+  const volume = typeof identifierOrVolume === 'number'
+    ? identifierOrVolume
+    : (explicitVolume !== undefined ? explicitVolume : 0.35);
 
   const nowMs = Date.now();
-  if (userId) {
-    const lastUserTime = recentJoinUsers.get(userId) || 0;
-    if (nowMs - lastUserTime < 6000) return;
-    recentJoinUsers.set(userId, nowMs);
-  }
-
-  if (nowMs - lastJoinSoundTime < 250) return;
+  if (nowMs - lastJoinSoundTime < 150) return;
   lastJoinSoundTime = nowMs;
 
   const ctx = getAudioContext();
@@ -90,17 +83,12 @@ export function playJoinSound(identifierOrVolume?: string | number, explicitVolu
  * Saída Grave (3 notas descendentes): Sol4 (392Hz) -> Mi4 (329.63Hz) -> Dó4 (261.63Hz)
  */
 export function playLeaveSound(identifierOrVolume?: string | number, explicitVolume?: number): void {
-  const userId = typeof identifierOrVolume === 'string' ? identifierOrVolume : undefined;
-  const volume = typeof identifierOrVolume === 'number' ? identifierOrVolume : (explicitVolume ?? 0.35);
+  const volume = typeof identifierOrVolume === 'number'
+    ? identifierOrVolume
+    : (explicitVolume !== undefined ? explicitVolume : 0.35);
 
   const nowMs = Date.now();
-  if (userId) {
-    const lastUserTime = recentLeaveUsers.get(userId) || 0;
-    if (nowMs - lastUserTime < 6000) return;
-    recentLeaveUsers.set(userId, nowMs);
-  }
-
-  if (nowMs - lastLeaveSoundTime < 250) return;
+  if (nowMs - lastLeaveSoundTime < 150) return;
   lastLeaveSoundTime = nowMs;
 
   const ctx = getAudioContext();

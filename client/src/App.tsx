@@ -21,6 +21,7 @@ import { TextChannelView } from './components/TextChannelView';
 import { CreateRoomModal } from './components/CreateRoomModal';
 import { PasswordModal } from './components/PasswordModal';
 import { playJoinSound, playLeaveSound } from './utils/soundEffects';
+import { isSupabaseConfigured } from './utils/supabase';
 import type { StreamQualityConfig, Channel, UserRoom, VoiceParticipant } from './types';
 
 interface AppSession {
@@ -572,19 +573,16 @@ function StreamRoom({
 
         const existing = map.get(p.identity);
         if (existing) {
-          // Se o participante já é conhecido e o Supabase indica que ele está em outro canal,
-          // NÃO sobrescrever o canal dele com o nosso canal local!
-          if (existing.voiceChannelId && existing.voiceChannelId !== activeVoiceChannelId) {
-            continue;
+          // Se o participante já é conhecido e está no mesmo canal de voz que nós: atualizar áudio 0ms do LiveKit
+          if (existing.voiceChannelId === activeVoiceChannelId) {
+            map.set(p.identity, {
+              ...existing,
+              isSpeaking: p.isSpeaking,
+              isMuted: p.isMuted,
+            });
           }
-          // Participante está no mesmo canal de voz que nós: atualizar áudio 0ms do LiveKit
-          map.set(p.identity, {
-            ...existing,
-            isSpeaking: p.isSpeaking,
-            isMuted: p.isMuted,
-          });
-        } else {
-          // Se ainda não sincronizou no Supabase, adicioná-lo no canal local ativo
+        } else if (!isSupabaseConfigured) {
+          // Fallback apenas para modo offline / sem Supabase configurado
           map.set(p.identity, {
             identity: p.identity,
             name: p.name || p.identity,
@@ -662,12 +660,12 @@ function StreamRoom({
   const selectVoiceAbortRef = useRef<AbortController | null>(null);
 
   const handleSelectVoiceChannel = async (channel: Channel) => {
-    if (activeVoiceChannelId === channel.id && isVoiceFullyConnected) {
+    if (activeVoiceChannelId === channel.id && (isVoiceFullyConnected || connectingVoiceChannelId === channel.id)) {
       return;
     }
 
     // Feedback sonoro instantâneo de entrada / troca de sala (0ms)
-    playJoinSound(session.userName);
+    playJoinSound();
 
     // Cancelar requisição anterior de troca de canal ainda em voo
     if (selectVoiceAbortRef.current) {
@@ -719,12 +717,13 @@ function StreamRoom({
 
   const handleDisconnectVoice = () => {
     // Feedback sonoro instantâneo de saída de sala (0ms)
-    playLeaveSound(session.userName);
+    playLeaveSound();
 
     if (selectVoiceAbortRef.current) {
       selectVoiceAbortRef.current.abort();
       selectVoiceAbortRef.current = null;
     }
+    disconnect();
     setIsVoiceConnected(false);
     setActiveVoiceChannelId('');
     setConnectingVoiceChannelId(null);

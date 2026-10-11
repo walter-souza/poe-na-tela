@@ -11,6 +11,7 @@ import {
 } from 'livekit-client';
 import type { StreamQualityConfig, StreamStats, ChatMessage, ReactionEvent, ParticipantInfo, ScreenShareItem } from '../types';
 import { playJoinSound, playLeaveSound } from '../utils/soundEffects';
+import { isSupabaseConfigured } from '../utils/supabase';
 import { startKeepAlive, stopKeepAlive } from '../utils/keepAlive';
 import { isNoiseSuppressionSupported, NoiseSuppressionProcessor } from '../utils/noiseSuppression';
 
@@ -925,9 +926,9 @@ export function useLiveKit({ url, token, onDisconnected, onConnected }: UseLiveK
         },
       ]);
 
-      // Play join notification sound if not self and not deafened
-      if (participant.identity !== room.localParticipant?.identity && !isDeafenedRef.current) {
-        playJoinSound(participant.identity);
+      // Play join notification sound if not self and not deafened (apenas fallback se Supabase desativado)
+      if (!isSupabaseConfigured && participant.identity !== room.localParticipant?.identity && !isDeafenedRef.current) {
+        playJoinSound();
       }
     };
 
@@ -948,9 +949,9 @@ export function useLiveKit({ url, token, onDisconnected, onConnected }: UseLiveK
         },
       ]);
 
-      // Play leave notification sound if not self and not deafened
-      if (participant.identity !== room.localParticipant?.identity && !isDeafenedRef.current) {
-        playLeaveSound(participant.identity);
+      // Play leave notification sound if not self and not deafened (apenas fallback se Supabase desativado)
+      if (!isSupabaseConfigured && participant.identity !== room.localParticipant?.identity && !isDeafenedRef.current) {
+        playLeaveSound();
       }
     };
 

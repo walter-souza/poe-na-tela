@@ -135,9 +135,9 @@ export function useVoicePresence({
         const wasInMyChannel = current && current.voiceChannelId === myChannel;
         const isInMyChannel = payload.voiceChannelId === myChannel;
         if (!wasInMyChannel && isInMyChannel) {
-          playJoinSound(payload.identity);
+          playJoinSound();
         } else if (wasInMyChannel && !isInMyChannel) {
-          playLeaveSound(payload.identity);
+          playLeaveSound();
         }
       }
 
@@ -165,7 +165,7 @@ export function useVoicePresence({
       const current = participantsMapRef.current.get(payload.identity);
       const myChannel = targetVoiceChannelIdRef.current;
       if (myChannel && !isDeafenedRef.current && current && current.voiceChannelId === myChannel) {
-        playLeaveSound(payload.identity);
+        playLeaveSound();
       }
       participantsMapRef.current.delete(payload.identity);
       setVoiceParticipants(Array.from(participantsMapRef.current.values()));
@@ -208,8 +208,8 @@ export function useVoicePresence({
       // Limpeza de participantes que saíram totalmente da sala segundo o CRDT (com grace period)
       for (const [id, participant] of participantsMapRef.current.entries()) {
         if (id !== userName && !remotePresenceIdentities.has(id)) {
-          // Se o participante não teve atualização via broadcast recente (< 5s), remover
-          const isRecent = participant.updatedAt && Date.now() - participant.updatedAt < 5000;
+          // Se o participante não teve atualização via broadcast recente (< 1.5s), remover
+          const isRecent = participant.updatedAt && Date.now() - participant.updatedAt < 1500;
           if (!isRecent) {
             participantsMapRef.current.delete(id);
           }
