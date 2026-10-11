@@ -38,7 +38,7 @@ export function playJoinSound(identifierOrVolume?: string | number, explicitVolu
     : (explicitVolume !== undefined ? explicitVolume : 0.35);
 
   const nowMs = Date.now();
-  if (nowMs - lastJoinSoundTime < 150) return;
+  if (nowMs - lastJoinSoundTime < 800) return;
   lastJoinSoundTime = nowMs;
 
   const ctx = getAudioContext();
@@ -88,7 +88,7 @@ export function playLeaveSound(identifierOrVolume?: string | number, explicitVol
     : (explicitVolume !== undefined ? explicitVolume : 0.35);
 
   const nowMs = Date.now();
-  if (nowMs - lastLeaveSoundTime < 150) return;
+  if (nowMs - lastLeaveSoundTime < 800) return;
   lastLeaveSoundTime = nowMs;
 
   const ctx = getAudioContext();

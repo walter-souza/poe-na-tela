@@ -47,10 +47,21 @@ export function useVoicePresence({
   const isDeafenedRef = useRef<boolean>(isDeafened);
   isDeafenedRef.current = isDeafened;
 
-  // Rastreamento dos participantes no nosso canal para emitir sons de entrada/saída com precisão
+  const isMutedRef = useRef<boolean>(isMuted);
+  isMutedRef.current = isMuted;
+
+  const avatarUrlRef = useRef<string | null | undefined>(avatarUrl);
+  avatarUrlRef.current = avatarUrl;
+
+  const isConnectingRef = useRef<boolean>(isConnecting);
+  isConnectingRef.current = isConnecting;
+
+  // Rastreamento de canal e participantes para evitar falsos positivos de áudio
+  const currentChannelRef = useRef<string | null>(targetVoiceChannelId);
+  const isInitialLoadForChannelRef = useRef<boolean>(true);
   const prevMyChannelParticipantsRef = useRef<Set<string>>(new Set());
 
-  // Consulta autoritativa no LiveKit via Backend
+  // Consulta autoritativa no LiveKit via Backend (estável para não recriar subscriptions)
   const refreshPresence = useCallback(async () => {
     if (!roomSlug || isPollingRef.current) return;
     isPollingRef.current = true;
@@ -86,28 +97,45 @@ export function useVoicePresence({
             name: userName,
             voiceChannelId: myChannel,
             isSpeaking: false,
-            isMuted,
-            avatarUrl,
-            isConnecting,
+            isMuted: isMutedRef.current,
+            avatarUrl: avatarUrlRef.current,
+            isConnecting: isConnectingRef.current,
           });
         }
       }
 
       // Notificação sonora quando alguém entra ou sai do canal ativo do usuário local
       if (myChannel && !isDeaf) {
-        // Alguém entrou no nosso canal
-        for (const id of currentInMyChannel) {
-          if (!prevMyChannelParticipantsRef.current.has(id)) {
+        if (!isInitialLoadForChannelRef.current) {
+          // Alguém entrou no nosso canal enquanto já estávamos nele
+          let someoneJoined = false;
+          for (const id of currentInMyChannel) {
+            if (!prevMyChannelParticipantsRef.current.has(id)) {
+              someoneJoined = true;
+              break;
+            }
+          }
+          if (someoneJoined) {
             playJoinSound();
           }
-        }
-        // Alguém saiu do nosso canal
-        for (const id of prevMyChannelParticipantsRef.current) {
-          if (!currentInMyChannel.has(id)) {
-            playLeaveSound();
-            onParticipantLeaveRef.current?.(id);
+
+          // Alguém saiu do nosso canal enquanto já estávamos nele
+          let someoneLeft = false;
+          for (const id of prevMyChannelParticipantsRef.current) {
+            if (!currentInMyChannel.has(id)) {
+              someoneLeft = true;
+              onParticipantLeaveRef.current?.(id);
+            }
           }
+          if (someoneLeft) {
+            playLeaveSound();
+          }
+        } else {
+          // Primeira consulta após entrar ou mudar de canal: memoriza baseline sem disparar sons
+          isInitialLoadForChannelRef.current = false;
         }
+      } else {
+        isInitialLoadForChannelRef.current = true;
       }
       prevMyChannelParticipantsRef.current = currentInMyChannel;
 
@@ -117,7 +145,7 @@ export function useVoicePresence({
     } finally {
       isPollingRef.current = false;
     }
-  }, [roomSlug, userName, isMuted, avatarUrl, isConnecting]);
+  }, [roomSlug, userName]);
 
   // 1. Inscrição leve no Supabase Broadcast para push instantâneo entre navegadores
   useEffect(() => {
@@ -151,7 +179,7 @@ export function useVoicePresence({
       });
     }
 
-    // 2. Polling de segurança (2.5 segundos) para garantia contra qualquer queda ou oscilação de rede
+    // 2. Polling de segurança (2.5 segundos) para garantia contra qualquer oscilação de rede
     const pollInterval = setInterval(() => {
       refreshPresence();
     }, 2500);
@@ -166,13 +194,13 @@ export function useVoicePresence({
     };
   }, [roomSlug, userName, refreshPresence]);
 
-  // 3. Atualização otimista e notificação aos pares quando o canal local mudar
-  const lastTargetChannelRef = useRef<string | null>(targetVoiceChannelId);
+  // 3. Atualização e notificação aos pares quando o canal local mudar
   useEffect(() => {
-    const channelChanged = targetVoiceChannelId !== lastTargetChannelRef.current;
-    lastTargetChannelRef.current = targetVoiceChannelId;
+    if (targetVoiceChannelId !== currentChannelRef.current) {
+      currentChannelRef.current = targetVoiceChannelId;
+      isInitialLoadForChannelRef.current = true;
+      prevMyChannelParticipantsRef.current.clear();
 
-    if (channelChanged) {
       // Notificar pares via broadcast leve para que eles atualizem o LiveKit imediatamente (~50ms)
       if (channelRef.current && isSubscribedRef.current) {
         channelRef.current.send({
@@ -182,13 +210,11 @@ export function useVoicePresence({
         }).catch(() => {});
       }
 
-      // Reconsultar LiveKit logo após conectar
-      const t1 = setTimeout(() => refreshPresence(), 200);
-      const t2 = setTimeout(() => refreshPresence(), 1000);
-      return () => {
-        clearTimeout(t1);
-        clearTimeout(t2);
-      };
+      const t = setTimeout(() => {
+        refreshPresence();
+      }, 300);
+
+      return () => clearTimeout(t);
     }
   }, [targetVoiceChannelId, roomSlug, userName, refreshPresence]);
 
