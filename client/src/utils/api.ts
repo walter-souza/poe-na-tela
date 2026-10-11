@@ -80,3 +80,38 @@ export async function fetchRoomStreams(roomName: string): Promise<ObsStreamItem[
   return [];
 }
 
+export function getVoicePresenceUrl(roomName: string): string {
+  const base = getApiBaseUrl();
+  const endpoint = base.endsWith('/api') ? `${base}/rooms` : `${base}/api/rooms`;
+  return `${endpoint}/${encodeURIComponent(roomName)}/voice-presence`;
+}
+
+export function getVoiceDisconnectUrl(roomName: string): string {
+  const base = getApiBaseUrl();
+  const endpoint = base.endsWith('/api') ? `${base}/rooms` : `${base}/api/rooms`;
+  return `${endpoint}/${encodeURIComponent(roomName)}/voice-disconnect`;
+}
+
+export async function fetchVoicePresence(roomName: string): Promise<any[]> {
+  try {
+    const res = await fetch(getVoicePresenceUrl(roomName));
+    if (res.ok) {
+      const data = await res.json();
+      if (Array.isArray(data.participants)) {
+        return data.participants;
+      }
+    }
+  } catch {}
+  return [];
+}
+
+export async function postVoiceDisconnect(roomName: string, identity: string): Promise<void> {
+  try {
+    await fetch(getVoiceDisconnectUrl(roomName), {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ identity }),
+    });
+  } catch {}
+}
+

@@ -119,7 +119,7 @@ app.get(['/api/health', '/api/status', '/health', '/status'], (_req: Request, re
  */
 app.post(['/api/token', '/token'], async (req: Request, res: Response): Promise<void> => {
   try {
-    const { roomName, participantName, isPublisher, passcode, bypassToken, voiceChannelId } = req.body;
+    const { roomName, participantName, isPublisher, passcode, bypassToken, voiceChannelId, avatarUrl } = req.body;
 
     // Check maintenance mode
     if (isMaintenanceMode()) {
@@ -278,6 +278,7 @@ app.post(['/api/token', '/token'], async (req: Request, res: Response): Promise<
     const at = new AccessToken(LIVEKIT_API_KEY, LIVEKIT_API_SECRET, {
       identity: sanitizedParticipant,
       name: sanitizedParticipant,
+      metadata: typeof avatarUrl === 'string' && avatarUrl ? JSON.stringify({ avatarUrl }) : undefined,
       ttl: '6h',
     });
 
@@ -290,6 +291,26 @@ app.post(['/api/token', '/token'], async (req: Request, res: Response): Promise<
     });
 
     const token = await at.toJwt();
+
+    // Remover participante de outros canais de voz desta sala para evitar sobreposição
+    try {
+      const roomPrefix = toLiveKitRoomName(`${sanitizedRoom}_v_`);
+      const allActiveRooms = await roomService.listRooms();
+      for (const r of allActiveRooms) {
+        if (r.name.startsWith(roomPrefix) && r.name !== lkRoomName && r.numParticipants > 0) {
+          roomService.removeParticipant(r.name, sanitizedParticipant).catch(() => {});
+        }
+      }
+    } catch {}
+
+    // Notificar clientes da sala que houve alteração de presença
+    if (supabase) {
+      supabase.channel(`room-voice-presence:${sanitizedRoom}`).send({
+        type: 'broadcast',
+        event: 'voice_presence_changed',
+        payload: { roomName: sanitizedRoom, identity: sanitizedParticipant, voiceChannelId: resolvedVoiceChannelId },
+      }).catch(() => {});
+    }
 
     res.json({
       token,
@@ -800,6 +821,116 @@ app.delete([
   } catch (err: any) {
     console.error('Erro ao excluir canal:', err?.message || err);
     res.status(500).json({ error: 'Falha ao excluir canal.' });
+  }
+});
+
+/**
+ * Consulta autoritativa de membros conectados aos canais de voz da sala via LiveKit
+ */
+app.get([
+  '/api/rooms/:roomName/voice-presence',
+  '/rooms/:roomName/voice-presence',
+], async (req: Request, res: Response): Promise<void> => {
+  try {
+    const rawRoom = req.params.roomName;
+    const sanitizedRoom = sanitizeRoomName(rawRoom);
+    if (!sanitizedRoom) {
+      res.status(400).json({ error: 'Nome da sala inválido.' });
+      return;
+    }
+
+    const prefix = toLiveKitRoomName(`${sanitizedRoom}_v_`);
+    let allRooms: any[] = [];
+    try {
+      allRooms = await roomService.listRooms();
+    } catch (err) {
+      console.warn('Erro ao listar salas do LiveKit:', err);
+    }
+
+    const matchingRooms = allRooms.filter(
+      (r) => r.name.startsWith(prefix) && r.numParticipants > 0
+    );
+
+    const voiceParticipants: any[] = [];
+
+    await Promise.all(
+      matchingRooms.map(async (r) => {
+        const rawChanId = r.name.slice(prefix.length);
+        try {
+          const participants = await listParticipantsWithTimeout(r.name);
+          for (const p of participants) {
+            let avatarUrl: string | undefined;
+            if (p.metadata) {
+              try {
+                const meta = JSON.parse(p.metadata);
+                avatarUrl = meta.avatarUrl;
+              } catch {}
+            }
+            voiceParticipants.push({
+              identity: p.identity,
+              name: p.name || p.identity,
+              voiceChannelId: rawChanId,
+              isSpeaking: false,
+              isMuted: p.tracks?.some((t: any) => t.type === 0 && t.muted) ?? false,
+              avatarUrl,
+              joinedAt: p.joinedAt,
+            });
+          }
+        } catch (err) {
+          console.warn(`Erro ao listar participantes para sala ${r.name}:`, err);
+        }
+      })
+    );
+
+    res.json({
+      roomName: sanitizedRoom,
+      participants: voiceParticipants,
+    });
+  } catch (err: any) {
+    console.error('Erro ao consultar presença no LiveKit:', err);
+    res.status(500).json({ error: 'Erro ao consultar presença de voz no LiveKit' });
+  }
+});
+
+/**
+ * Desconectar explicitamente participante de qualquer canal de voz da sala no LiveKit
+ */
+app.post([
+  '/api/rooms/:roomName/voice-disconnect',
+  '/rooms/:roomName/voice-disconnect',
+], async (req: Request, res: Response): Promise<void> => {
+  try {
+    const rawRoom = req.params.roomName;
+    const sanitizedRoom = sanitizeRoomName(rawRoom);
+    const { identity } = req.body;
+    if (!sanitizedRoom || !identity) {
+      res.status(400).json({ error: 'Dados inválidos' });
+      return;
+    }
+
+    const prefix = toLiveKitRoomName(`${sanitizedRoom}_v_`);
+    const allRooms = await roomService.listRooms().catch(() => []);
+    const matchingRooms = allRooms.filter((r) => r.name.startsWith(prefix));
+
+    await Promise.all(
+      matchingRooms.map(async (r) => {
+        try {
+          await roomService.removeParticipant(r.name, identity);
+        } catch {}
+      })
+    );
+
+    if (supabase) {
+      supabase.channel(`room-voice-presence:${sanitizedRoom}`).send({
+        type: 'broadcast',
+        event: 'voice_presence_changed',
+        payload: { roomName: sanitizedRoom, identity, action: 'disconnect' },
+      }).catch(() => {});
+    }
+
+    res.json({ ok: true });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message || 'Erro ao desconectar' });
   }
 });
 

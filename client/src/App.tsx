@@ -15,7 +15,7 @@ import { ChannelSidebar } from './components/ChannelSidebar';
 import { CreateChannelModal } from './components/CreateChannelModal';
 import { usePersistentChat } from './hooks/usePersistentChat';
 import { useAuth } from './context/AuthContext';
-import { getHealthUrl, getTokenUrl, getApiBaseUrl } from './utils/api';
+import { getHealthUrl, getTokenUrl, getApiBaseUrl, postVoiceDisconnect } from './utils/api';
 import { GuildBar } from './components/GuildBar';
 import { TextChannelView } from './components/TextChannelView';
 import { CreateRoomModal } from './components/CreateRoomModal';
@@ -700,6 +700,7 @@ function StreamRoom({
           isPublisher: session.isPublisher,
           passcode: session.passcode,
           bypassToken: adminBypassToken,
+          avatarUrl: profile?.avatar_url,
         }),
       });
 
@@ -728,6 +729,9 @@ function StreamRoom({
     // Feedback sonoro instantâneo de saída de sala (0ms)
     playLeaveSound();
     recentlyLeftMapRef.current.set(session.userName, Date.now());
+
+    // Notificar imediatamente o backend LiveKit para remover o participante da sala física
+    postVoiceDisconnect(session.roomName, session.userName);
 
     if (selectVoiceAbortRef.current) {
       selectVoiceAbortRef.current.abort();
