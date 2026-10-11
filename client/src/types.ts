@@ -58,6 +58,7 @@ export interface VoiceParticipant {
   isSpeaking: boolean;
   isMuted: boolean;
   avatarUrl?: string | null;
+  updatedAt?: number;
 }
 
 export interface FavoriteRoom {

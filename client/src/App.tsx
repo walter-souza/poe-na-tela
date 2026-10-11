@@ -546,8 +546,8 @@ function StreamRoom({
       }
     }
 
-    // 2. Se o usuário local estiver conectado à voz, garantir que ele esteja presente no canal ativo
-    if (isVoiceFullyConnected && activeVoiceChannelId) {
+    // 2. Se o usuário local estiver com canal ativo selecionado, garantir presença no canal
+    if (isVoiceConnected && activeVoiceChannelId) {
       const existing = map.get(session.userName);
       map.set(session.userName, {
         identity: session.userName,
@@ -667,6 +667,8 @@ function StreamRoom({
     selectVoiceAbortRef.current = abortCtrl;
 
     setConnectingVoiceChannelId(channel.id);
+    setActiveVoiceChannelId(channel.id);
+    setIsVoiceConnected(true);
     setActiveView('stage');
 
     try {
