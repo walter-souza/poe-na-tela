@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, type Dispatch, type SetStateAction } from 'react';
+import { useState, useEffect, useMemo, useRef, type Dispatch, type SetStateAction } from 'react';
 import { ConnectionState } from 'livekit-client';
 import { MessageSquare, Tv } from 'lucide-react';
 import { useLiveKit } from './hooks/useLiveKit';
@@ -652,10 +652,19 @@ function StreamRoom({
     setActiveView('chat');
   };
 
+  const selectVoiceAbortRef = useRef<AbortController | null>(null);
+
   const handleSelectVoiceChannel = async (channel: Channel) => {
     if (activeVoiceChannelId === channel.id && isVoiceFullyConnected) {
       return;
     }
+
+    // Cancelar requisição anterior de troca de canal ainda em voo
+    if (selectVoiceAbortRef.current) {
+      selectVoiceAbortRef.current.abort();
+    }
+    const abortCtrl = new AbortController();
+    selectVoiceAbortRef.current = abortCtrl;
 
     setConnectingVoiceChannelId(channel.id);
     setActiveView('stage');
@@ -664,6 +673,7 @@ function StreamRoom({
       const res = await fetch(getTokenUrl(), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
+        signal: abortCtrl.signal,
         body: JSON.stringify({
           roomName: session.roomName,
           voiceChannelId: channel.id,
@@ -674,8 +684,11 @@ function StreamRoom({
         }),
       });
 
+      if (abortCtrl.signal.aborted) return;
+
       if (res.ok) {
         const data = await res.json();
+        if (abortCtrl.signal.aborted) return;
         const confirmedChanId = data.voiceChannelId || channel.id;
         setActiveVoiceChannelId(confirmedChanId);
         setVoiceToken(data.token);
@@ -685,13 +698,18 @@ function StreamRoom({
         console.error('Falha ao obter token para canal de voz:', err);
         setConnectingVoiceChannelId(null);
       }
-    } catch (err) {
+    } catch (err: any) {
+      if (err.name === 'AbortError') return;
       console.error('Erro ao conectar ao canal de voz:', err);
       setConnectingVoiceChannelId(null);
     }
   };
 
   const handleDisconnectVoice = () => {
+    if (selectVoiceAbortRef.current) {
+      selectVoiceAbortRef.current.abort();
+      selectVoiceAbortRef.current = null;
+    }
     setIsVoiceConnected(false);
     setActiveVoiceChannelId('');
     setConnectingVoiceChannelId(null);

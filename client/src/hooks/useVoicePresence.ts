@@ -22,7 +22,8 @@ export function useVoicePresence({
   const [voiceParticipants, setVoiceParticipants] = useState<VoiceParticipant[]>([]);
   const channelRef = useRef<any>(null);
   const isSubscribedRef = useRef<boolean>(false);
-  const lastTrackedPayloadRef = useRef<string>('');
+  const isTrackingRef = useRef<boolean>(false);
+  const pendingPayloadRef = useRef<any>(null);
 
   const targetVoiceChannelId = isVoiceConnected && activeVoiceChannelId ? activeVoiceChannelId : null;
 
@@ -44,27 +45,26 @@ export function useVoicePresence({
     updatedAt: Date.now(),
   };
 
-  // Helper para rastrear presenca evitando chamadas desnecessarias quando o estado nao mudou
-  const sendPresenceTrack = useCallback(async (channel: any) => {
+  // Fila sequencial (FIFO com coalescência) para garantir que NUNCA haja múltiplos channel.track() concorrentes no WebSocket do Supabase
+  const queuePresenceTrack = useCallback(async (channel: any) => {
     if (!channel || !isSubscribedRef.current) return;
-    const payload = currentPresencePayload.current;
-    const serialized = JSON.stringify({
-      voiceChannelId: payload.voiceChannelId,
-      isMuted: payload.isMuted,
-      avatarUrl: payload.avatarUrl,
-      name: payload.name,
-    });
+    pendingPayloadRef.current = currentPresencePayload.current;
 
-    if (serialized === lastTrackedPayloadRef.current) {
-      return; // Sem alteração de estado
+    if (isTrackingRef.current) {
+      return; // Já há um track em andamento; o loop processará o pendingPayload assim que concluir
     }
 
-    try {
-      await channel.track(payload);
-      lastTrackedPayloadRef.current = serialized;
-    } catch (err) {
-      console.warn('Falha ao sincronizar presença de voz:', err);
+    isTrackingRef.current = true;
+    while (pendingPayloadRef.current && isSubscribedRef.current) {
+      const toTrack = pendingPayloadRef.current;
+      pendingPayloadRef.current = null;
+      try {
+        await channel.track(toTrack);
+      } catch (err) {
+        console.warn('Falha ao sincronizar presença de voz no Supabase:', err);
+      }
     }
+    isTrackingRef.current = false;
   }, []);
 
   useEffect(() => {
@@ -126,31 +126,21 @@ export function useVoicePresence({
     channel.subscribe(async (status) => {
       if (status === 'SUBSCRIBED') {
         isSubscribedRef.current = true;
-        // Garantir track inicial obrigatorio no canal da sala recem-inscrita
-        const payload = currentPresencePayload.current;
-        try {
-          await channel.track(payload);
-          lastTrackedPayloadRef.current = JSON.stringify({
-            voiceChannelId: payload.voiceChannelId,
-            isMuted: payload.isMuted,
-            avatarUrl: payload.avatarUrl,
-            name: payload.name,
-          });
-        } catch (err) {
-          console.warn('Falha no track inicial de presenca:', err);
-        }
+        // Disparar track inicial seguro no canal da sala recém-inscrita
+        queuePresenceTrack(channel);
       }
     });
 
     return () => {
       isSubscribedRef.current = false;
-      lastTrackedPayloadRef.current = '';
+      isTrackingRef.current = false;
+      pendingPayloadRef.current = null;
       setVoiceParticipants([]); // Limpar imediatamente participantes ao sair da sala
       channel.untrack().catch(() => {});
       supabase?.removeChannel(channel).catch(() => {});
       channelRef.current = null;
     };
-  }, [roomSlug, userName]);
+  }, [roomSlug, userName, queuePresenceTrack]);
 
   // Transmitir atualização de presença sempre que o canal de voz ativo, estado de conexão ou mute mudarem
   useEffect(() => {
@@ -173,11 +163,11 @@ export function useVoicePresence({
       return other;
     });
 
-    // 2. Transmitir imediatamente para toda a guilda via Supabase Presence (sem timeouts que podem ser cancelados)
+    // 2. Transmitir com segurança sequencial para toda a guilda via Supabase Presence
     if (isSubscribedRef.current && channelRef.current) {
-      sendPresenceTrack(channelRef.current);
+      queuePresenceTrack(channelRef.current);
     }
-  }, [targetVoiceChannelId, isMuted, avatarUrl, userName, sendPresenceTrack]);
+  }, [targetVoiceChannelId, isMuted, avatarUrl, userName, queuePresenceTrack]);
 
   return { voiceParticipants };
 }
