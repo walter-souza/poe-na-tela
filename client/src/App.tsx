@@ -524,13 +524,12 @@ function StreamRoom({
   // Status de fala do participante local
   const localParticipant = participants.find((p) => p.identity === session.userName);
 
-  // Presença em tempo real cross-channel via Supabase Realtime (só transmite canal quando confirmado pelo LiveKit)
+  // Presença em tempo real cross-channel via Supabase Realtime
   const { voiceParticipants } = useVoicePresence({
     roomSlug: session.roomName,
     userName: session.userName,
-    activeVoiceChannelId: isVoiceFullyConnected ? activeVoiceChannelId : null,
-    isVoiceConnected: isVoiceFullyConnected,
-    isSpeaking: localParticipant?.isSpeaking ?? false,
+    activeVoiceChannelId: isVoiceConnected ? activeVoiceChannelId : null,
+    isVoiceConnected,
     isMuted: !isMicEnabled,
     avatarUrl: profile?.avatar_url,
   });
@@ -539,7 +538,7 @@ function StreamRoom({
   const mergedVoiceParticipants = useMemo(() => {
     const map = new Map<string, VoiceParticipant>();
 
-    // 1. Participantes conhecidos via Supabase Realtime
+    // 1. Participantes conhecidos via Supabase Realtime em qualquer canal da sala/servidor
     for (const vp of voiceParticipants) {
       if (vp.identity) {
         map.set(vp.identity, vp);
@@ -559,19 +558,34 @@ function StreamRoom({
       });
     }
 
-    // 3. Mesclar todos os participantes do LiveKit conectados fisicamente no canal de voz
+    // 3. Mesclar dados de áudio em tempo real (0ms) do LiveKit apenas para quem está no mesmo canal físico
     if (isVoiceFullyConnected && activeVoiceChannelId) {
       for (const p of participants) {
-        if (!p.identity) continue;
+        if (!p.identity || p.identity === session.userName) continue;
+
         const existing = map.get(p.identity);
-        map.set(p.identity, {
-          identity: p.identity,
-          name: p.name || p.identity,
-          voiceChannelId: activeVoiceChannelId,
-          isSpeaking: p.isSpeaking,
-          isMuted: p.isMuted,
-          avatarUrl: existing?.avatarUrl,
-        });
+        if (existing) {
+          // Se o participante já é conhecido e o Supabase indica que ele está em outro canal,
+          // NÃO sobrescrever o canal dele com o nosso canal local!
+          if (existing.voiceChannelId && existing.voiceChannelId !== activeVoiceChannelId) {
+            continue;
+          }
+          // Participante está no mesmo canal de voz que nós: atualizar áudio 0ms do LiveKit
+          map.set(p.identity, {
+            ...existing,
+            isSpeaking: p.isSpeaking,
+            isMuted: p.isMuted,
+          });
+        } else {
+          // Se ainda não sincronizou no Supabase, adicioná-lo no canal local ativo
+          map.set(p.identity, {
+            identity: p.identity,
+            name: p.name || p.identity,
+            voiceChannelId: activeVoiceChannelId,
+            isSpeaking: p.isSpeaking,
+            isMuted: p.isMuted,
+          });
+        }
       }
     }
 
@@ -580,6 +594,7 @@ function StreamRoom({
     voiceParticipants,
     participants,
     isVoiceFullyConnected,
+    isVoiceConnected,
     activeVoiceChannelId,
     session.userName,
     localParticipant?.isSpeaking,

@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import type { VoiceParticipant } from '../types';
 import { supabase, isSupabaseConfigured } from '../utils/supabase';
 
@@ -7,7 +7,6 @@ interface UseVoicePresenceOptions {
   userName: string;
   activeVoiceChannelId: string | null;
   isVoiceConnected: boolean;
-  isSpeaking: boolean;
   isMuted: boolean;
   avatarUrl?: string | null;
 }
@@ -17,20 +16,20 @@ export function useVoicePresence({
   userName,
   activeVoiceChannelId,
   isVoiceConnected,
-  isSpeaking,
   isMuted,
   avatarUrl,
 }: UseVoicePresenceOptions) {
   const [voiceParticipants, setVoiceParticipants] = useState<VoiceParticipant[]>([]);
   const channelRef = useRef<any>(null);
   const isSubscribedRef = useRef<boolean>(false);
+  const lastTrackedPayloadRef = useRef<string>('');
 
-  // Keep latest presence state in ref so callbacks and subscriptions have fresh data
+  const targetVoiceChannelId = isVoiceConnected && activeVoiceChannelId ? activeVoiceChannelId : null;
+
   const currentPresencePayload = useRef({
     identity: userName,
     name: userName,
-    voiceChannelId: isVoiceConnected ? activeVoiceChannelId : null,
-    isSpeaking,
+    voiceChannelId: targetVoiceChannelId,
     isMuted,
     avatarUrl,
     updatedAt: Date.now(),
@@ -39,24 +38,46 @@ export function useVoicePresence({
   currentPresencePayload.current = {
     identity: userName,
     name: userName,
-    voiceChannelId: isVoiceConnected ? activeVoiceChannelId : null,
-    isSpeaking,
+    voiceChannelId: targetVoiceChannelId,
     isMuted,
     avatarUrl,
     updatedAt: Date.now(),
   };
 
+  // Helper to track presence safely without redundant calls
+  const sendPresenceTrack = useCallback(async (channel: any) => {
+    if (!channel || !isSubscribedRef.current) return;
+    const payload = currentPresencePayload.current;
+    const serialized = JSON.stringify({
+      voiceChannelId: payload.voiceChannelId,
+      isMuted: payload.isMuted,
+      avatarUrl: payload.avatarUrl,
+      name: payload.name,
+    });
+
+    if (serialized === lastTrackedPayloadRef.current) {
+      return; // Sem alteração de estado
+    }
+
+    try {
+      await channel.track(payload);
+      lastTrackedPayloadRef.current = serialized;
+    } catch (err) {
+      console.warn('Falha ao sincronizar presença de voz:', err);
+    }
+  }, []);
+
   useEffect(() => {
     if (!roomSlug || !userName) return;
 
     if (!isSupabaseConfigured || !supabase) {
-      // Graceful fallback for offline / mock mode
+      // Fallback gracioso para modo offline / sem Supabase
       setVoiceParticipants([
         {
           identity: userName,
           name: userName,
-          voiceChannelId: isVoiceConnected ? activeVoiceChannelId : null,
-          isSpeaking,
+          voiceChannelId: targetVoiceChannelId,
+          isSpeaking: false,
           isMuted,
           avatarUrl,
         },
@@ -87,7 +108,7 @@ export function useVoicePresence({
               identity: latest.identity,
               name: latest.name || latest.identity,
               voiceChannelId: latest.voiceChannelId || null,
-              isSpeaking: Boolean(latest.isSpeaking),
+              isSpeaking: false,
               isMuted: Boolean(latest.isMuted),
               avatarUrl: latest.avatarUrl,
             });
@@ -105,35 +126,32 @@ export function useVoicePresence({
     channel.subscribe(async (status) => {
       if (status === 'SUBSCRIBED') {
         isSubscribedRef.current = true;
-        try {
-          await channel.track(currentPresencePayload.current);
-        } catch (err) {
-          console.warn('Failed to track initial voice presence:', err);
-        }
+        await sendPresenceTrack(channel);
       }
     });
 
     return () => {
       isSubscribedRef.current = false;
+      lastTrackedPayloadRef.current = '';
       channel.untrack().catch(() => {});
       supabase?.removeChannel(channel).catch(() => {});
       channelRef.current = null;
     };
-  }, [roomSlug, userName]);
+  }, [roomSlug, userName, sendPresenceTrack]);
 
-  // Broadcast presence updates when active channel, connection, or mute state changes
+  // Transmitir atualização de presença sempre que o canal de voz ativo, estado de conexão ou mute mudarem
   useEffect(() => {
-    // Refletir imediatamente o estado local do próprio usuário para evitar atraso de rede
+    // 1. Refletir imediatamente o estado local do próprio usuário para feedback instantâneo na UI
     setVoiceParticipants((prev) => {
       const other = prev.filter((p) => p.identity !== userName);
-      if (isVoiceConnected && activeVoiceChannelId) {
+      if (targetVoiceChannelId) {
         return [
           ...other,
           {
             identity: userName,
             name: userName,
-            voiceChannelId: activeVoiceChannelId,
-            isSpeaking,
+            voiceChannelId: targetVoiceChannelId,
+            isSpeaking: false,
             isMuted,
             avatarUrl,
           },
@@ -142,19 +160,11 @@ export function useVoicePresence({
       return other;
     });
 
-    if (!isSubscribedRef.current || !channelRef.current) return;
-
-    if (!isVoiceConnected) {
-      channelRef.current?.track(currentPresencePayload.current).catch(() => {});
-      return;
+    // 2. Transmitir imediatamente para toda a guilda via Supabase Presence (sem timeouts que podem ser cancelados)
+    if (isSubscribedRef.current && channelRef.current) {
+      sendPresenceTrack(channelRef.current);
     }
-
-    const trackTimeout = setTimeout(() => {
-      channelRef.current?.track(currentPresencePayload.current).catch(() => {});
-    }, 50);
-
-    return () => clearTimeout(trackTimeout);
-  }, [activeVoiceChannelId, isVoiceConnected, isMuted, isSpeaking, avatarUrl, userName]);
+  }, [targetVoiceChannelId, isMuted, avatarUrl, userName, sendPresenceTrack]);
 
   return { voiceParticipants };
 }

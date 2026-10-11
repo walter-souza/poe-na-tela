@@ -765,6 +765,7 @@ export function useLiveKit({ url, token, onDisconnected, onConnected }: UseLiveK
       setRemoteScreenTrack(null);
       setLocalScreenTrack(null);
       setScreenShares([]);
+      setParticipants([]);
       if (statsIntervalRef.current) clearInterval(statsIntervalRef.current);
 
       if (vadIntervalRef.current) {
@@ -992,6 +993,7 @@ export function useLiveKit({ url, token, onDisconnected, onConnected }: UseLiveK
     return () => {
       isSubscribed = false;
       setConnectionState(ConnectionState.Disconnected);
+      setParticipants([]);
       stopKeepAlive();
       if (statsIntervalRef.current) clearInterval(statsIntervalRef.current);
       if (vadIntervalRef.current) {
