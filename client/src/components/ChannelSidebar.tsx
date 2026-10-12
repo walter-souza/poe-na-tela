@@ -283,7 +283,9 @@ export const ChannelSidebar: React.FC<ChannelSidebarProps> = ({
                                 </span>
                               )}
                               {!isConnecting && p.isMuted && (
-                                <span className="text-[10px] text-rose-400 ml-auto">(mudo)</span>
+                                <span title="Microfone mudo" className="ml-auto flex items-center">
+                                  <MicOff className="w-3.5 h-3.5 text-rose-400 shrink-0" />
+                                </span>
                               )}
                             </div>
                           );
