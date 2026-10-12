@@ -61,8 +61,14 @@ export function useVoicePresence({
   const isInitialLoadForChannelRef = useRef<boolean>(true);
   const prevMyChannelParticipantsRef = useRef<Set<string>>(new Set());
 
+  // Rastreamento de transições recentes para não regredir estado durante o handshake do LiveKit
+  const recentTransitionsRef = useRef<
+    Map<string, { voiceChannelId: string | null; timestamp: number; avatarUrl?: string }>
+  >(new Map());
+
   // Debounce e fila de consultas para evitar rajadas de requisições HTTP
   const debounceTimerRef = useRef<any>(null);
+  const secondaryTimerRef = useRef<any>(null);
   const hasPendingRefreshRef = useRef<boolean>(false);
 
   // Consulta autoritativa no LiveKit via Backend (estável para não recriar subscriptions)
@@ -96,6 +102,39 @@ export function useVoicePresence({
           isConnecting: false,
         };
       });
+
+      // Se alguém trocou de sala nos últimos 4s, preservar a sala nova mesmo se o LiveKit ainda estiver em handshake
+      const now = Date.now();
+      for (const [id, trans] of recentTransitionsRef.current.entries()) {
+        if (now - trans.timestamp > 4000) {
+          recentTransitionsRef.current.delete(id);
+          continue;
+        }
+        const inServer = mapped.find((p) => p.identity === id);
+        if (inServer) {
+          if (inServer.voiceChannelId === trans.voiceChannelId) {
+            recentTransitionsRef.current.delete(id);
+          } else if (trans.voiceChannelId) {
+            inServer.voiceChannelId = trans.voiceChannelId;
+            if (myChannel && trans.voiceChannelId === myChannel && id !== userName) {
+              currentInMyChannel.add(id);
+            }
+          }
+        } else if (trans.voiceChannelId) {
+          mapped.push({
+            identity: id,
+            name: id,
+            voiceChannelId: trans.voiceChannelId,
+            isSpeaking: false,
+            isMuted: false,
+            avatarUrl: trans.avatarUrl,
+            isConnecting: false,
+          });
+          if (myChannel && trans.voiceChannelId === myChannel && id !== userName) {
+            currentInMyChannel.add(id);
+          }
+        }
+      }
 
       // Se o usuário local estiver conectado, garantir sua presença otimista
       if (myChannel) {
@@ -163,15 +202,22 @@ export function useVoicePresence({
     }
   }, [roomSlug, userName]);
 
-  // Agendador com debounce para agrupar múltiplos eventos em uma única chamada HTTP
+  // Agendador com debounce para agrupar múltiplos eventos em chamadas consolidadas
   const scheduleRefresh = useCallback(
-    (delayMs = 250) => {
+    (delayMs = 800, alsoSecondary = false) => {
       if (debounceTimerRef.current) {
         clearTimeout(debounceTimerRef.current);
       }
       debounceTimerRef.current = setTimeout(() => {
         refreshPresence();
       }, delayMs);
+
+      if (alsoSecondary) {
+        if (secondaryTimerRef.current) clearTimeout(secondaryTimerRef.current);
+        secondaryTimerRef.current = setTimeout(() => {
+          refreshPresence();
+        }, delayMs + 1000);
+      }
     },
     [refreshPresence]
   );
@@ -196,9 +242,75 @@ export function useVoicePresence({
 
       channelRef.current = channel;
 
-      // Quando qualquer par muda de canal ou desconecta, reagendar recarga com debounce
-      channel.on('broadcast', { event: 'voice_presence_changed' }, () => {
-        scheduleRefresh(200);
+      // Atualização visual instantânea (0ms) a partir do broadcast de qualquer par
+      channel.on('broadcast', { event: 'voice_presence_changed' }, ({ payload }: any) => {
+        if (payload) {
+          const ident = payload.identity || payload.userName;
+          const vChan = payload.voiceChannelId || null;
+          const isDisconnect = payload.action === 'disconnect' || !vChan;
+          const myChannel = targetVoiceChannelIdRef.current;
+          const isDeaf = isDeafenedRef.current;
+
+          if (ident && ident !== userName) {
+            if (isDisconnect) {
+              recentTransitionsRef.current.delete(ident);
+            } else {
+              recentTransitionsRef.current.set(ident, {
+                voiceChannelId: vChan,
+                timestamp: Date.now(),
+                avatarUrl: payload.avatarUrl,
+              });
+            }
+
+            setVoiceParticipants((prev) => {
+              const existing = prev.find((p) => p.identity === ident);
+              const prevChan = existing?.voiceChannelId;
+
+              // Disparar efeitos sonoros imediatamente se o usuário local estiver no canal envolvido
+              if (myChannel && !isDeaf) {
+                // Entrou no nosso canal
+                if (vChan === myChannel && prevChan !== myChannel) {
+                  playJoinSound();
+                  prevMyChannelParticipantsRef.current.add(ident);
+                }
+                // Saiu do nosso canal
+                else if (prevChan === myChannel && vChan !== myChannel) {
+                  playLeaveSound();
+                  onParticipantLeaveRef.current?.(ident);
+                  prevMyChannelParticipantsRef.current.delete(ident);
+                }
+              }
+
+              if (isDisconnect) {
+                return prev.filter((p) => p.identity !== ident);
+              }
+
+              if (existing) {
+                return prev.map((p) =>
+                  p.identity === ident
+                    ? { ...p, voiceChannelId: vChan, avatarUrl: payload.avatarUrl || p.avatarUrl }
+                    : p
+                );
+              } else {
+                return [
+                  ...prev,
+                  {
+                    identity: ident,
+                    name: payload.name || ident,
+                    voiceChannelId: vChan,
+                    isSpeaking: false,
+                    isMuted: false,
+                    avatarUrl: payload.avatarUrl,
+                    isConnecting: false,
+                  },
+                ];
+              }
+            });
+          }
+        }
+
+        // Reconciliação autoritativa única no LiveKit após o par concluir o handshake
+        scheduleRefresh(800, true);
       });
 
       channel.subscribe((status: string) => {
@@ -240,6 +352,9 @@ export function useVoicePresence({
       if (debounceTimerRef.current) {
         clearTimeout(debounceTimerRef.current);
       }
+      if (secondaryTimerRef.current) {
+        clearTimeout(secondaryTimerRef.current);
+      }
       isSubscribedRef.current = false;
       if (channelRef.current && supabase) {
         supabase.removeChannel(channelRef.current).catch(() => {});
@@ -255,16 +370,16 @@ export function useVoicePresence({
       isInitialLoadForChannelRef.current = true;
       prevMyChannelParticipantsRef.current.clear();
 
-      // Notificar pares via broadcast leve para que eles atualizem o LiveKit imediatamente (~50ms)
+      // Notificar pares via broadcast leve para que eles atualizem imediatamente (~30ms)
       if (channelRef.current && isSubscribedRef.current) {
         channelRef.current.send({
           type: 'broadcast',
           event: 'voice_presence_changed',
-          payload: { roomSlug, userName, voiceChannelId: targetVoiceChannelId },
+          payload: { roomSlug, userName, voiceChannelId: targetVoiceChannelId, avatarUrl: avatarUrlRef.current },
         }).catch(() => {});
       }
 
-      scheduleRefresh(250);
+      scheduleRefresh(800, true);
     }
   }, [targetVoiceChannelId, roomSlug, userName, scheduleRefresh]);
 
