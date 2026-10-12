@@ -21,6 +21,7 @@ import { TextChannelView } from './components/TextChannelView';
 import { CreateRoomModal } from './components/CreateRoomModal';
 import { PasswordModal } from './components/PasswordModal';
 import { playJoinSound, playLeaveSound } from './utils/soundEffects';
+import { getGuestRooms, saveGuestRoom, removeGuestRoom } from './utils/guestStorage';
 import type { StreamQualityConfig, Channel, UserRoom, VoiceParticipant } from './types';
 
 interface AppSession {
@@ -59,13 +60,29 @@ export function App() {
   // LiveKit default URL
   const [livekitUrl, setLivekitUrl] = useState<string>('wss://livekit.194.61.238.98.sslip.io');
 
-  // Discord Guilds (Salas do Usuário Autenticado)
+  // Discord Guilds (Salas do Usuário Autenticado e Convidados)
   const [userRooms, setUserRooms] = useState<UserRoom[]>([]);
+  const [guestRooms, setGuestRooms] = useState<UserRoom[]>(() => getGuestRooms());
   const [activeRoomSlug, setActiveRoomSlug] = useState<string | null>(null);
   const [isCreateRoomOpen, setIsCreateRoomOpen] = useState(false);
   const [passwordPromptRoom, setPasswordPromptRoom] = useState<UserRoom | null>(null);
   const [passwordModalError, setPasswordModalError] = useState<string | null>(null);
   const [roomPasscodes, setRoomPasscodes] = useState<Record<string, string>>({});
+
+  // Lista unificada de salas (Guilds) exibidas na barra lateral
+  const displayedRooms = useMemo(() => {
+    if (isAuthenticated) {
+      const map = new Map<string, UserRoom>();
+      for (const r of guestRooms) {
+        map.set(r.slug.toLowerCase(), r);
+      }
+      for (const r of userRooms) {
+        map.set(r.slug.toLowerCase(), r);
+      }
+      return Array.from(map.values());
+    }
+    return guestRooms;
+  }, [isAuthenticated, userRooms, guestRooms]);
 
   // Admin bypass token check (URL query param ?bypass=... or ?admin=... or sessionStorage)
   const [adminBypassToken, setAdminBypassToken] = useState<string | null>(() => {
@@ -195,6 +212,14 @@ export function App() {
         setRoomPasscodes((prev) => ({ ...prev, [data.roomName]: passcode }));
       }
 
+      // Persistir sala no histórico de convidados
+      saveGuestRoom({
+        name: data.roomName,
+        slug: data.roomName,
+        hasPasscode: Boolean(passcode),
+      });
+      setGuestRooms(getGuestRooms());
+
       window.history.replaceState({}, '', window.location.pathname);
       setInviteServerName(null);
       fetchUserRooms();
@@ -208,7 +233,7 @@ export function App() {
   };
 
   const handleSelectRoom = (slug: string) => {
-    const room = userRooms.find((r) => r.slug === slug);
+    const room = displayedRooms.find((r) => r.slug === slug);
     if (room && room.hasPasscode && !room.isOwner && !roomPasscodes[slug]) {
       setPasswordPromptRoom(room);
       setPasswordModalError(null);
@@ -223,6 +248,14 @@ export function App() {
     setSession(null);
     setInviteServerName(null);
     window.history.replaceState({}, '', window.location.pathname);
+  };
+
+  const handleRemoveRoom = (slug: string) => {
+    const next = removeGuestRoom(slug);
+    setGuestRooms(next);
+    if (activeRoomSlug === slug) {
+      handleSelectHome();
+    }
   };
 
   const handleConfirmRoomPassword = async (passcode: string) => {
@@ -243,6 +276,14 @@ export function App() {
         setRoomPasscodes((prev) => ({ ...prev, [slug]: passcode }));
         setPasswordPromptRoom(null);
         setActiveRoomSlug(slug);
+
+        saveGuestRoom({
+          name: slug,
+          slug,
+          hasPasscode: true,
+        });
+        setGuestRooms(getGuestRooms());
+
         fetchUserRooms();
       } else {
         const data = await res.json().catch(() => ({}));
@@ -290,6 +331,14 @@ export function App() {
       if (guestUserName) {
         localStorage.setItem('poe-na-tela-username', guestUserName);
       }
+
+      // Persistir sala no histórico de convidados
+      saveGuestRoom({
+        name: targetRoomSlug,
+        slug: targetRoomSlug,
+        hasPasscode: Boolean(passcode),
+      });
+      setGuestRooms(getGuestRooms());
 
       window.history.replaceState({}, '', window.location.pathname);
       setInviteServerName(null);
@@ -365,11 +414,12 @@ export function App() {
     <div className="h-screen h-[100dvh] w-screen flex bg-[#07080d] text-gray-100 overflow-hidden select-none">
       {/* 1. Discord Guild Bar (Servidores / Salas) */}
       <GuildBar
-        userRooms={userRooms}
+        userRooms={displayedRooms}
         activeRoomSlug={activeRoomSlug}
         onSelectRoom={handleSelectRoom}
         onSelectHome={handleSelectHome}
         onOpenCreateRoom={() => setIsCreateRoomOpen(true)}
+        onRemoveRoom={handleRemoveRoom}
       />
 
       {/* 2. Área Principal: Sala ou Lobby */}
@@ -409,6 +459,12 @@ export function App() {
         onClose={() => setIsCreateRoomOpen(false)}
         onRoomCreated={(slug, passcode) => {
           setIsCreateRoomOpen(false);
+          saveGuestRoom({
+            name: slug,
+            slug,
+            hasPasscode: Boolean(passcode),
+          });
+          setGuestRooms(getGuestRooms());
           fetchUserRooms();
           if (passcode) {
             setRoomPasscodes((prev) => ({ ...prev, [slug]: passcode }));

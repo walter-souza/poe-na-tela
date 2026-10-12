@@ -1,5 +1,5 @@
-import React from 'react';
-import { Sparkles, Plus } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { Sparkles, Plus, Share2, LogOut, Check } from 'lucide-react';
 import type { UserRoom } from '../types';
 
 interface GuildBarProps {
@@ -8,6 +8,7 @@ interface GuildBarProps {
   onSelectRoom: (slug: string) => void;
   onSelectHome: () => void;
   onOpenCreateRoom: () => void;
+  onRemoveRoom?: (slug: string) => void;
 }
 
 export const GuildBar: React.FC<GuildBarProps> = ({
@@ -16,11 +17,63 @@ export const GuildBar: React.FC<GuildBarProps> = ({
   onSelectRoom,
   onSelectHome,
   onOpenCreateRoom,
+  onRemoveRoom,
 }) => {
+  const [contextMenu, setContextMenu] = useState<{
+    x: number;
+    y: number;
+    room: UserRoom;
+  } | null>(null);
+  const [copiedSlug, setCopiedSlug] = useState<string | null>(null);
+
+  // Fechar menu de contexto ao clicar fora ou rolar
+  useEffect(() => {
+    const handleClose = () => setContextMenu(null);
+    if (contextMenu) {
+      window.addEventListener('click', handleClose);
+      window.addEventListener('contextmenu', handleClose);
+      window.addEventListener('scroll', handleClose, true);
+    }
+    return () => {
+      window.removeEventListener('click', handleClose);
+      window.removeEventListener('contextmenu', handleClose);
+      window.removeEventListener('scroll', handleClose, true);
+    };
+  }, [contextMenu]);
+
+  const handleContextMenu = (e: React.MouseEvent, room: UserRoom) => {
+    e.preventDefault();
+    e.stopPropagation();
+
+    // Ajustar para não vazar das bordas da tela
+    const x = Math.min(e.clientX, window.innerWidth - 200);
+    const y = Math.min(e.clientY, window.innerHeight - 150);
+
+    setContextMenu({ x, y, room });
+  };
+
+  const handleCopyInvite = (e: React.MouseEvent, slug: string) => {
+    e.stopPropagation();
+    const inviteUrl = `${window.location.origin}?server=${encodeURIComponent(slug)}`;
+    navigator.clipboard.writeText(inviteUrl).then(() => {
+      setCopiedSlug(slug);
+      setTimeout(() => {
+        setCopiedSlug(null);
+        setContextMenu(null);
+      }, 1000);
+    });
+  };
+
+  const handleRemove = (e: React.MouseEvent, slug: string) => {
+    e.stopPropagation();
+    setContextMenu(null);
+    onRemoveRoom?.(slug);
+  };
+
   return (
     <nav
       aria-label="Servidores"
-      className="w-16 sm:w-[72px] bg-[#07080d] border-r border-white/10 flex flex-col items-center py-3 space-y-2 select-none shrink-0 z-30"
+      className="w-16 sm:w-[72px] bg-[#07080d] border-r border-white/10 flex flex-col items-center py-3 space-y-2 select-none shrink-0 z-30 relative"
     >
       {/* Home / Lobby Icon */}
       <div className="relative group flex items-center justify-center w-full">
@@ -77,6 +130,7 @@ export const GuildBar: React.FC<GuildBarProps> = ({
 
               <button
                 onClick={() => onSelectRoom(room.slug)}
+                onContextMenu={(e) => handleContextMenu(e, room)}
                 title={room.name}
                 className={`w-12 h-12 flex items-center justify-center font-bold text-sm transition-all duration-200 cursor-pointer ${
                   isActive
@@ -88,9 +142,12 @@ export const GuildBar: React.FC<GuildBarProps> = ({
               </button>
 
               {/* Discord Tooltip */}
-              <div className="absolute left-[80px] z-50 hidden group-hover:flex items-center px-3 py-1.5 rounded-md bg-[#11131c] text-white text-xs font-semibold shadow-xl border border-white/10 whitespace-nowrap pointer-events-none">
-                {room.name}
-                {room.hasPasscode && <span className="ml-1.5 text-amber-400 text-[10px]">🔒</span>}
+              <div className="absolute left-[80px] z-50 hidden group-hover:flex flex-col items-start px-3 py-1.5 rounded-md bg-[#11131c] text-white text-xs font-semibold shadow-xl border border-white/10 whitespace-nowrap pointer-events-none">
+                <div className="flex items-center gap-1.5">
+                  <span>{room.name}</span>
+                  {room.hasPasscode && <span className="text-amber-400 text-[10px]">🔒</span>}
+                </div>
+                <span className="text-[10px] text-gray-400 font-normal">Botão direito para opções</span>
               </div>
             </div>
           );
@@ -112,6 +169,48 @@ export const GuildBar: React.FC<GuildBarProps> = ({
           </div>
         </div>
       </div>
+
+      {/* Menu de Contexto Flutuante (Botão Direito no Servidor) */}
+      {contextMenu && (
+        <div
+          style={{ top: `${contextMenu.y}px`, left: `${contextMenu.x}px` }}
+          className="fixed z-50 bg-[#12141f] border border-white/10 rounded-xl p-1.5 shadow-2xl backdrop-blur-md min-w-[190px] animate-in fade-in zoom-in-95 duration-100"
+          onClick={(e) => e.stopPropagation()}
+        >
+          <div className="px-3 py-1.5 font-bold text-xs text-gray-200 border-b border-white/10 truncate max-w-[220px]">
+            {contextMenu.room.name}
+          </div>
+
+          <div className="py-1 space-y-0.5">
+            <button
+              onClick={(e) => handleCopyInvite(e, contextMenu.room.slug)}
+              className="w-full flex items-center gap-2 px-2.5 py-1.5 text-xs text-gray-300 hover:text-white hover:bg-indigo-600/30 rounded-lg transition text-left cursor-pointer"
+            >
+              {copiedSlug === contextMenu.room.slug ? (
+                <>
+                  <Check className="w-3.5 h-3.5 text-emerald-400" />
+                  <span className="text-emerald-400 font-medium">Link Copiado!</span>
+                </>
+              ) : (
+                <>
+                  <Share2 className="w-3.5 h-3.5 text-indigo-400" />
+                  <span>Copiar Link de Convite</span>
+                </>
+              )}
+            </button>
+
+            {onRemoveRoom && (
+              <button
+                onClick={(e) => handleRemove(e, contextMenu.room.slug)}
+                className="w-full flex items-center gap-2 px-2.5 py-1.5 text-xs text-rose-400 hover:text-rose-300 hover:bg-rose-500/15 rounded-lg transition text-left cursor-pointer"
+              >
+                <LogOut className="w-3.5 h-3.5" />
+                <span>Remover da Barra</span>
+              </button>
+            )}
+          </div>
+        </div>
+      )}
     </nav>
   );
 };
