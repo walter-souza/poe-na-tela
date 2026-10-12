@@ -1,0 +1,15 @@
+# As chaves da API não ficam aqui: vêm da variável LIVEKIT_KEYS (veja docker-compose.yml).
+port: 7880
+bind_addresses:
+  - "0.0.0.0"
+
+rtc:
+  tcp_port: 7881
+  # Porta UDP única (multiplexada) no lugar da faixa 50000-50100: um buraco só no firewall e sem
+  # limite de ~100 conexões simultâneas.
+  udp_port: 7882
+  use_external_ip: true
+
+logging:
+  json: false
+  level: info

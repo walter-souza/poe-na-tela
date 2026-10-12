@@ -1,0 +1,2 @@
+# Scripts e configs da VPS sempre com LF (rodam em Linux)
+infra/** text eol=lf

@@ -49,6 +49,10 @@ Dev local precisa de um LiveKit rodando em `ws://127.0.0.1:7880` (chaves `devkey
 - `context/AuthContext.tsx` + `utils/supabase.ts`: login Google (Supabase Auth / Google Identity Services); `utils/guestStorage.ts` guarda a identidade guest.
 - Ruído: RNNoise WASM em `client/public/rnnoise/` + `utils/noiseSuppression.ts`.
 
+## Infra da VPS
+
+`infra/vps/` versiona a stack de mídia (LiveKit com versão fixa e UDP em porta única 7882; MediaMTX para OBS: SRT :8890 → WHEP via Caddy em `stream.<IP>.sslip.io`, API :9997 só local) e o `apply.sh` idempotente que a aplica (firewall, Caddy, PM2 logrotate). Segredos ficam em `~/app-stack/.env` na VPS, nunca no Git. O deploy dos backends não aplica a infra: rode `apply.sh` à mão (detalhes em `infra/vps/README.md`).
+
 ## Deploy e branches
 
 - `main` = produção; `develop` = staging. Push em `main`/`develop` dispara GitHub Actions (`.github/workflows/deploy-backend*.yml`) que faz SSH na VPS, `git pull`, `npm run build` e reinicia o PM2 (`backend` na :3001, `backend-dev` na :3002). Só muda se houver alteração em `server/**`.
