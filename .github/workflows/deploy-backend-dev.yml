@@ -31,22 +31,28 @@ jobs:
           [ "$last" = "-----END OPENSSH PRIVATE KEY-----" ] || { echo "::error::Ultima linha da chave inesperada"; exit 1; }
 
       - name: Executar Deploy via SSH na VPS (Develop)
-        uses: appleboy/ssh-action@v1.0.3
-        with:
-          host: ${{ secrets.VPS_HOST }}
-          username: ${{ secrets.VPS_USERNAME }}
-          key: ${{ secrets.VPS_SSH_KEY }}
-          port: 22
-          script: |
-            echo "🚀 Verificando serviços de infraestrutura (LiveKit + SSL)..."
-            cd ~/app-stack && docker compose up -d
+        env:
+          VPS_SSH_KEY: ${{ secrets.VPS_SSH_KEY }}
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+          VPS_USERNAME: ${{ secrets.VPS_USERNAME }}
+          REF_NAME: ${{ github.ref_name }}
+        run: |
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "$VPS_SSH_KEY" | tr -d '\r' > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          ssh-keygen -y -f ~/.ssh/deploy_key > /dev/null || { echo "::error::Chave privada ilegivel pelo ssh-keygen"; exit 1; }
+          ssh -i ~/.ssh/deploy_key -o IdentitiesOnly=yes -o BatchMode=yes -o StrictHostKeyChecking=accept-new -o ServerAliveInterval=30 "$VPS_USERNAME@$VPS_HOST" 'bash -s' -- "$REF_NAME" <<'REMOTE'
+          set -e
+          echo "🚀 Verificando serviços de infraestrutura (LiveKit + SSL)..."
+          cd ~/app-stack && docker compose up -d
 
-            echo "🧪 Iniciando deploy do Backend DEV na VPS..."
-            cd ~/poe-na-tela-dev/server || exit 1
-            git pull origin develop
-            export PATH="/root/.nvm/versions/node/v20.20.2/bin:$PATH"
-            npm install
-            npm run build
-            pm2 delete backend-dev || true
-            pm2 start dist/index.js --name "backend-dev" --cwd /root/poe-na-tela-dev/server --interpreter /root/.nvm/versions/node/v20.20.2/bin/node
-            echo "✅ Deploy do backend de desenvolvimento (develop) finalizado com sucesso!"
+          echo "🧪 Iniciando deploy do Backend DEV na VPS..."
+          cd ~/poe-na-tela-dev/server
+          git pull origin develop
+          export PATH="/root/.nvm/versions/node/v20.20.2/bin:$PATH"
+          npm install
+          npm run build
+          pm2 delete backend-dev || true
+          pm2 start dist/index.js --name "backend-dev" --cwd /root/poe-na-tela-dev/server --interpreter /root/.nvm/versions/node/v20.20.2/bin/node
+          echo "✅ Deploy do backend de desenvolvimento (develop) finalizado com sucesso!"
+          REMOTE
