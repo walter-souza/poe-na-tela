@@ -503,6 +503,31 @@ async function getAuthUser(req: Request) {
  * Criar sala persistente (Discord-like)
  * Apenas usuários autenticados (não convidados)
  */
+/**
+ * Cache em memória de respostas JSON públicas (iguais para todos os usuários) por `ttlMs`.
+ * Evita refazer listRooms no LiveKit e a consulta de salas no Supabase a cada polling do Lobby.
+ */
+function cacheJson(ttlMs: number) {
+  const cache = new Map<string, { expires: number; status: number; body: unknown }>();
+  return (req: Request, res: Response, next: express.NextFunction): void => {
+    const key = req.path;
+    const hit = cache.get(key);
+    if (hit && hit.expires > Date.now()) {
+      res.setHeader('X-Cache', 'HIT');
+      res.status(hit.status).json(hit.body);
+      return;
+    }
+    const originalJson = res.json.bind(res);
+    res.json = (body: unknown) => {
+      if (res.statusCode === 200) {
+        cache.set(key, { expires: Date.now() + ttlMs, status: 200, body });
+      }
+      return originalJson(body);
+    };
+    next();
+  };
+}
+
 const writeLimiter = rateLimit({
   windowMs: 60_000,
   limit: 20,
@@ -1533,7 +1558,7 @@ app.post([
 /**
  * List active rooms with live participant counts and passcode flags
  */
-app.get(['/api/rooms', '/rooms'], async (_req: Request, res: Response) => {
+app.get(['/api/rooms', '/rooms'], cacheJson(4000), async (_req: Request, res: Response) => {
   if (isMaintenanceMode()) {
     res.json({ rooms: [], maintenance: true });
     return;
@@ -1869,29 +1894,56 @@ app.get(['/api/rooms/:roomName/streams', '/rooms/:roomName/streams', '/api/room/
 });
 
 /**
- * Webhook para eventos do MediaMTX (runOnReady / runOnNotReady)
+ * Notifica os clientes da sala sobre a lista atual de streams OBS via Supabase Realtime.
+ * Usa envio REST (httpSend) e remove o canal depois, para não acumular canais no cliente Realtime.
+ */
+async function broadcastRoomStreams(roomSlug: string): Promise<void> {
+  if (!isSupabaseConfigured() || !supabase) return;
+  const streams = await getActiveRoomStreams(roomSlug);
+  const chan = supabase.channel(`room-streams:${roomSlug}`);
+  try {
+    await chan.httpSend('streams_updated', { streams });
+  } catch {
+    // Realtime indisponível: o cliente reconcilia no próximo refresh.
+  } finally {
+    supabase.removeChannel(chan).catch(() => {});
+  }
+}
+
+function roomSlugFromStreamPath(path: unknown): string {
+  return sanitizeRoomName(String(path ?? '').split(/[\/-]/)[0]);
+}
+
+/**
+ * Webhook do MediaMTX (runOnReady / runOnNotReady) — caminho principal de atualização.
+ * Se MEDIAMTX_WEBHOOK_SECRET estiver definido, exige o header x-webhook-secret ou ?secret=.
  */
 app.post(['/api/webhooks/mediamtx', '/webhooks/mediamtx'], async (req: Request, res: Response): Promise<void> => {
+  const expectedSecret = process.env.MEDIAMTX_WEBHOOK_SECRET;
+  if (expectedSecret) {
+    const given = req.headers['x-webhook-secret'] ?? req.query.secret;
+    const a = crypto.createHash('sha256').update(typeof given === 'string' ? given : '').digest();
+    const b = crypto.createHash('sha256').update(expectedSecret).digest();
+    if (!crypto.timingSafeEqual(a, b)) {
+      res.status(401).json({ error: 'Não autorizado.' });
+      return;
+    }
+  }
+
   try {
     const { path } = req.body || {};
-    if (path && isSupabaseConfigured() && supabase) {
-      const roomSlug = sanitizeRoomName(String(path).split(/[\/-]/)[0]);
-      const streams = await getActiveRoomStreams(roomSlug);
-      const chan = supabase.channel(`room-streams:${roomSlug}`);
-      chan.send({
-        type: 'broadcast',
-        event: 'streams_updated',
-        payload: { streams },
-      }).catch(() => {});
-    }
+    const roomSlug = roomSlugFromStreamPath(path);
+    if (roomSlug) await broadcastRoomStreams(roomSlug);
   } catch (err) {
     console.warn('[MediaMTX Webhook] Erro ao processar evento:', err);
   }
   res.json({ ok: true });
 });
 
-// Monitor local em background para detectar início/término de streams OBS e notificar via Supabase Realtime
-let lastMtxFingerprint = '';
+// Reconciliação de segurança: o webhook é o caminho principal; este monitor só cobre eventos perdidos.
+// Notifica apenas as salas cujos streams mudaram desde a última verificação (sem consultar o banco).
+const MTX_RECONCILE_INTERVAL_MS = Number(process.env.MEDIAMTX_RECONCILE_MS) || 15_000;
+let lastReadyPaths: Set<string> | null = null;
 setInterval(async () => {
   if (!isSupabaseConfigured() || !supabase) return;
 
@@ -1905,40 +1957,23 @@ setInterval(async () => {
     if (!mtxRes.ok) return;
     const data: any = await mtxRes.json();
     const items = Array.isArray(data.items) ? data.items : [];
-    const readyItems = items.filter((i: any) => i && i.name && i.ready);
-    const fingerprint = readyItems.map((i: any) => `${i.name}:${i.ready}`).sort().join('|');
+    const current = new Set<string>(
+      items.filter((i: any) => i && i.name && i.ready).map((i: any) => String(i.name))
+    );
 
-    if (fingerprint !== lastMtxFingerprint) {
-      lastMtxFingerprint = fingerprint;
-
+    // Primeira leitura só registra o estado inicial.
+    if (lastReadyPaths) {
       const affectedRooms = new Set<string>();
-      for (const item of items) {
-        if (item && item.name) {
-          const slug = sanitizeRoomName(String(item.name).split(/[\/-]/)[0]);
-          if (slug) affectedRooms.add(slug);
-        }
-      }
-
-      // Buscar salas registradas no Supabase para garantir que salas que perderam stream sejam avisadas
-      const { data: dbRooms } = await supabase.from('rooms').select('slug').limit(50);
-      if (dbRooms) {
-        for (const r of dbRooms) {
-          affectedRooms.add(r.slug);
-        }
-      }
-
-      for (const slug of affectedRooms) {
-        const streams = await getActiveRoomStreams(slug);
-        const chan = supabase.channel(`room-streams:${slug}`);
-        chan.send({
-          type: 'broadcast',
-          event: 'streams_updated',
-          payload: { streams },
-        }).catch(() => {});
-      }
+      for (const name of current) if (!lastReadyPaths.has(name)) affectedRooms.add(roomSlugFromStreamPath(name));
+      for (const name of lastReadyPaths) if (!current.has(name)) affectedRooms.add(roomSlugFromStreamPath(name));
+      affectedRooms.delete('');
+      for (const slug of affectedRooms) await broadcastRoomStreams(slug);
     }
-  } catch {}
-}, 2500);
+    lastReadyPaths = current;
+  } catch (err) {
+    if (process.env.DEBUG_MEDIAMTX) console.warn('[MediaMTX] Monitor falhou:', err);
+  }
+}, MTX_RECONCILE_INTERVAL_MS);
 
 app.listen(PORT, () => {
   console.log(`🚀 Põe na Tela — Servidor rodando em http://localhost:${PORT}`);

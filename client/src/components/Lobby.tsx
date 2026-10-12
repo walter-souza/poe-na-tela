@@ -125,8 +125,18 @@ export const Lobby: React.FC<LobbyProps> = ({ onJoin, isLoading, error, onGuestR
     }
 
     fetchActiveRooms();
-    const interval = setInterval(fetchActiveRooms, 8000);
-    return () => clearInterval(interval);
+    // Polling leve (o servidor cacheia por ~4s) e só com a aba visível.
+    const interval = setInterval(() => {
+      if (document.visibilityState === 'visible') fetchActiveRooms();
+    }, 15000);
+    const handleVisibility = () => {
+      if (document.visibilityState === 'visible') fetchActiveRooms();
+    };
+    document.addEventListener('visibilitychange', handleVisibility);
+    return () => {
+      clearInterval(interval);
+      document.removeEventListener('visibilitychange', handleVisibility);
+    };
   }, []);
 
   const saveFavorites = (updated: FavoriteRoom[]) => {
