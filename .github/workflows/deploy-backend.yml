@@ -49,9 +49,10 @@ jobs:
 
           echo "🚀 Iniciando deploy do Backend de Produção na VPS..."
           cd ~/poe-na-tela/server
-          git pull origin "$1"
+          git fetch origin "$1"
+          git reset --hard FETCH_HEAD
           export PATH="/root/.nvm/versions/node/v20.20.2/bin:$PATH"
-          npm install
+          npm ci
           npm run build
           pm2 restart backend || pm2 start dist/index.js --name "backend"
           echo "✅ Deploy do backend de produção finalizado com sucesso!"

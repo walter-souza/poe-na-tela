@@ -48,9 +48,10 @@ jobs:
 
           echo "🧪 Iniciando deploy do Backend DEV na VPS..."
           cd ~/poe-na-tela-dev/server
-          git pull origin develop
+          git fetch origin develop
+          git reset --hard FETCH_HEAD
           export PATH="/root/.nvm/versions/node/v20.20.2/bin:$PATH"
-          npm install
+          npm ci
           npm run build
           pm2 delete backend-dev || true
           pm2 start dist/index.js --name "backend-dev" --cwd /root/poe-na-tela-dev/server --interpreter /root/.nvm/versions/node/v20.20.2/bin/node
