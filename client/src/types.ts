@@ -1,5 +1,7 @@
 export type VideoResolution = '720p' | '1080p';
 export type VideoFrameRate = 30 | 60;
+/** 'stable': bitrates menores, para internet instável; 'high': máxima qualidade */
+export type QualityMode = 'stable' | 'high';
 export type VideoCodecPreference = 'vp9' | 'vp8' | 'h264' | 'av1';
 
 export interface StreamQualityConfig {
@@ -11,6 +13,9 @@ export interface StreamQualityConfig {
   contentHint?: 'motion' | 'detail';
   isolateRoomAudio?: boolean; // WebRTC restrictOwnAudio to prevent voice chat loopback
   sourceId?: string; // Specific window or screen ID in Desktop App
+  qualityMode?: QualityMode;
+  /** Publica também uma camada leve (720p30) para espectadores com banda fraca. Usa mais CPU no emissor. */
+  simulcast?: boolean;
 }
 
 export interface StreamStats {
@@ -33,6 +38,8 @@ export interface StreamStats {
   targetBitrateKbps?: number;
   /** Quadros por segundo capturados da tela (antes de codificar), só no emissor */
   captureFps?: number;
+  /** Banda de upload estimada pelo WebRTC (kbps), só no emissor */
+  availableOutgoingKbps?: number;
   /** Resolução entregue pela captura (antes de codificar), só no emissor */
   captureWidth?: number;
   captureHeight?: number;

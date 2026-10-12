@@ -1,13 +1,26 @@
-import type { VideoFrameRate, VideoResolution } from '../types';
+import type { QualityMode, VideoFrameRate, VideoResolution } from '../types';
 
 /**
- * Bitrate de vídeo (kbps) por resolução e taxa de quadros para compartilhamento de tela/jogos em H.264.
+ * Bitrate de vídeo (kbps) por modo, resolução e taxa de quadros para compartilhamento de tela/jogos em H.264.
  * Fonte única usada pelo modal e pelo hook de publicação: o LiveKit só respeita este valor
  * quando passado em `screenShareEncoding` (a opção `videoEncoding` é ignorada para tela).
+ * São tetos: o WebRTC reduz sozinho quando a rede não comporta.
  */
-const BITRATE_KBPS: Record<VideoResolution, Record<VideoFrameRate, number>> = {
-  '720p': { 30: 2500, 60: 4500 },
-  '1080p': { 30: 4500, 60: 8000 },
+const BITRATE_KBPS: Record<QualityMode, Record<VideoResolution, Record<VideoFrameRate, number>>> = {
+  stable: {
+    '720p': { 30: 2000, 60: 3500 },
+    '1080p': { 30: 3500, 60: 6000 },
+  },
+  high: {
+    '720p': { 30: 2500, 60: 4500 },
+    '1080p': { 30: 4500, 60: 8000 },
+  },
+};
+
+/** Piso do bitrate durante a adaptação automática: abaixo disso, reduz resolução/FPS em vez do bitrate. */
+export const MIN_BITRATE_KBPS: Record<VideoResolution, number> = {
+  '720p': 1500,
+  '1080p': 2500,
 };
 
 export const RESOLUTION_SIZE: Record<VideoResolution, { width: number; height: number }> = {
@@ -15,10 +28,17 @@ export const RESOLUTION_SIZE: Record<VideoResolution, { width: number; height: n
   '1080p': { width: 1920, height: 1080 },
 };
 
-export function getTargetBitrateKbps(resolution: VideoResolution | undefined, frameRate: VideoFrameRate | undefined): number {
+/** Camada leve do simulcast, para quem assiste com banda fraca. */
+export const SIMULCAST_LOW_LAYER = { width: 1280, height: 720, bitrateKbps: 1800, frameRate: 30 };
+
+export function getTargetBitrateKbps(
+  resolution: VideoResolution | undefined,
+  frameRate: VideoFrameRate | undefined,
+  mode: QualityMode = 'stable'
+): number {
   const res: VideoResolution = resolution === '720p' ? '720p' : '1080p';
   const fps: VideoFrameRate = frameRate === 30 ? 30 : 60;
-  return BITRATE_KBPS[res][fps];
+  return BITRATE_KBPS[mode === 'high' ? 'high' : 'stable'][res][fps];
 }
 
 export interface RecommendedQuality {

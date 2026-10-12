@@ -160,6 +160,12 @@ export const StreamHUD: React.FC<StreamHUDProps> = ({
               <span className="font-bold text-white">{stats.captureWidth}x{stats.captureHeight}</span>
             </div>
           )}
+          {stats.availableOutgoingKbps !== undefined && (
+            <div className="flex items-center justify-between">
+              <span className="text-gray-400">Upload disponível</span>
+              <span className="font-bold text-white">{(stats.availableOutgoingKbps / 1000).toFixed(1)} Mbps</span>
+            </div>
+          )}
           {stats.targetBitrateKbps !== undefined && (
             <div className="flex items-center justify-between">
               <span className="text-gray-400">Bitrate-alvo</span>

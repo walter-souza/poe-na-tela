@@ -6,14 +6,15 @@ import {
   LocalVideoTrack,
   LocalAudioTrack,
   VideoPresets,
+  VideoPreset,
   ConnectionState,
   type RemoteParticipant,
 } from 'livekit-client';
-import type { StreamQualityConfig, StreamStats, ChatMessage, ReactionEvent, ParticipantInfo, ScreenShareItem } from '../types';
+import type { StreamQualityConfig, StreamStats, ChatMessage, ReactionEvent, ParticipantInfo, ScreenShareItem, QualityMode } from '../types';
 import { playJoinSound, playLeaveSound } from '../utils/soundEffects';
 import { isSupabaseConfigured } from '../utils/supabase';
 import { startKeepAlive, stopKeepAlive } from '../utils/keepAlive';
-import { RESOLUTION_SIZE, getTargetBitrateKbps } from '../utils/streamPresets';
+import { MIN_BITRATE_KBPS, RESOLUTION_SIZE, SIMULCAST_LOW_LAYER, getTargetBitrateKbps } from '../utils/streamPresets';
 import { isNoiseSuppressionSupported, NoiseSuppressionProcessor } from '../utils/noiseSuppression';
 
 export interface UseLiveKitOptions {
@@ -21,6 +22,22 @@ export interface UseLiveKitOptions {
   token: string;
   onDisconnected?: () => void;
   onConnected?: (room: Room) => void;
+}
+
+type ShareTarget = {
+  resolution: '720p' | '1080p';
+  fps: 30 | 60;
+  bitrateKbps: number;
+  mode: QualityMode;
+  simulcast: boolean;
+};
+
+/** Em simulcast há várias codificações; a de maior resolução é a que tem menor scaleResolutionDownBy. */
+function highestEncoding(params: RTCRtpSendParameters): RTCRtpEncodingParameters | undefined {
+  if (!params.encodings?.length) return undefined;
+  return params.encodings.reduce((best, e) =>
+    (e.scaleResolutionDownBy ?? 1) < (best.scaleResolutionDownBy ?? 1) ? e : best
+  );
 }
 
 export function useLiveKit({ url, token, onDisconnected, onConnected }: UseLiveKitOptions) {
@@ -201,8 +218,15 @@ export function useLiveKit({ url, token, onDisconnected, onConnected }: UseLiveK
   const statsIntervalRef = useRef<number | null>(null);
   const prevStatsRef = useRef<{ bytes: number; frames: number; timestamp: number } | null>(null);
   // Alvo da transmissão em andamento e contagem de segundos sob pressão de CPU (redutor automático)
-  const shareTargetRef = useRef<{ resolution: '720p' | '1080p'; fps: 30 | 60 } | null>(null);
+  const shareTargetRef = useRef<ShareTarget | null>(null);
   const cpuPressureTicksRef = useRef<number>(0);
+  const bandwidthPressureTicksRef = useRef<number>(0);
+  const pushSystemMessage = useCallback((text: string) => {
+    setMessages((prev) => [
+      ...prev,
+      { id: `system-quality-${Date.now()}`, sender: 'Sistema', text, timestamp: Date.now(), isSystem: true },
+    ]);
+  }, []);
   const currentVolumeRef = useRef<number>(1);
   const desktopTracksRef = useRef<{ videoTrack?: LocalVideoTrack; audioTrack?: LocalAudioTrack }>({});
 
@@ -593,6 +617,7 @@ export function useLiveKit({ url, token, onDisconnected, onConnected }: UseLiveK
       let jitter = 0;
       let measuredBufferDelay: number | undefined;
       let captureFps = 0;
+      let availableOutKbps = 0;
       let captureWidth = 0;
       let captureHeight = 0;
       let framesDropped = 0;
@@ -605,6 +630,9 @@ export function useLiveKit({ url, token, onDisconnected, onConnected }: UseLiveK
           if (report.type === 'candidate-pair' && (report.state === 'succeeded' || report.nominated)) {
             if (report.currentRoundTripTime !== undefined) {
               rtt = Math.round(report.currentRoundTripTime * 1000);
+            }
+            if (report.availableOutgoingBitrate) {
+              availableOutKbps = Math.round(report.availableOutgoingBitrate / 1000);
             }
           }
 
@@ -725,6 +753,7 @@ export function useLiveKit({ url, token, onDisconnected, onConnected }: UseLiveK
         encoderImplementation: bestOutbound?.encoderImplementation,
         targetBitrateKbps: bestOutbound?.targetBitrate ? Math.round(bestOutbound.targetBitrate / 1000) : undefined,
         captureFps: captureFps || undefined,
+        availableOutgoingKbps: availableOutKbps || undefined,
         captureWidth: captureWidth || undefined,
         captureHeight: captureHeight || undefined,
         displaySurface: (room.localParticipant
@@ -733,17 +762,26 @@ export function useLiveKit({ url, token, onDisconnected, onConnected }: UseLiveK
         framesDropped: framesDropped || undefined,
       });
 
-      // Redutor automático: se o codificador está limitado por CPU e entregando bem menos que o alvo
-      // por ~8s seguidos, reduz um degrau (1080p -> 720p, depois 60 -> 30 FPS) para manter a fluidez.
+      // Adaptação automática (só quem transmite): CPU limitada -> reduz resolução/FPS; banda de upload
+      // limitada ou perda alta -> reduz o bitrate e, no piso, a resolução/FPS. ~8s seguidos para evitar oscilação.
       const target = shareTargetRef.current;
-      if (target && bestOutbound?.qualityLimitationReason === 'cpu' && fps > 0 && fps < target.fps * 0.8) {
-        cpuPressureTicksRef.current += 1;
-      } else {
-        cpuPressureTicksRef.current = Math.max(0, cpuPressureTicksRef.current - 1);
-      }
+      const cpuLimited =
+        !!target && bestOutbound?.qualityLimitationReason === 'cpu' && fps > 0 && fps < target.fps * 0.8;
+      const bandwidthLimited =
+        !!target && (bestOutbound?.qualityLimitationReason === 'bandwidth' || packetLoss >= 5);
+
+      cpuPressureTicksRef.current = cpuLimited ? cpuPressureTicksRef.current + 1 : Math.max(0, cpuPressureTicksRef.current - 1);
+      bandwidthPressureTicksRef.current = bandwidthLimited
+        ? bandwidthPressureTicksRef.current + 1
+        : Math.max(0, bandwidthPressureTicksRef.current - 1);
+
       if (target && cpuPressureTicksRef.current >= 8) {
         cpuPressureTicksRef.current = 0;
-        void downgradeScreenShareForCpu();
+        bandwidthPressureTicksRef.current = 0;
+        void downgradeScreenShare('cpu');
+      } else if (target && bandwidthPressureTicksRef.current >= 8) {
+        bandwidthPressureTicksRef.current = 0;
+        void adaptScreenShareForBandwidth(availableOutKbps || undefined);
       }
     } catch {
       // Ignore stats collection error during renegotiations
@@ -1224,16 +1262,19 @@ export function useLiveKit({ url, token, onDisconnected, onConnected }: UseLiveK
     });
   };
 
-  // Reduz um degrau de qualidade da transmissão de tela quando a CPU de quem transmite não acompanha
-  const downgradeScreenShareForCpu = useCallback(async () => {
+  // Reduz um degrau de qualidade da transmissão de tela (resolução primeiro, depois FPS) quando o
+  // computador ou a rede de quem transmite não acompanha
+  const downgradeScreenShare = useCallback(async (reason: 'cpu' | 'bandwidth') => {
     const room = roomRef.current;
     const target = shareTargetRef.current;
     if (!room || !target) return;
 
-    let next: { resolution: '720p' | '1080p'; fps: 30 | 60 } | null = null;
-    if (target.resolution === '1080p') next = { resolution: '720p', fps: target.fps };
-    else if (target.fps === 60) next = { resolution: '720p', fps: 30 };
+    let next: ShareTarget | null = null;
+    if (target.resolution === '1080p') next = { ...target, resolution: '720p' };
+    else if (target.fps === 60) next = { ...target, fps: 30 };
     if (!next) return; // já no mínimo (720p30)
+    next.bitrateKbps = Math.min(target.bitrateKbps, getTargetBitrateKbps(next.resolution, next.fps, target.mode));
+    next.simulcast = false;
 
     try {
       const publication = room.localParticipant.getTrackPublication(Track.Source.ScreenShare);
@@ -1248,29 +1289,57 @@ export function useLiveKit({ url, token, onDisconnected, onConnected }: UseLiveK
       }
       if (sender?.getParameters) {
         const params = sender.getParameters();
-        if (params.encodings?.length) {
-          params.encodings[0].maxFramerate = next.fps;
-          params.encodings[0].maxBitrate = getTargetBitrateKbps(next.resolution, next.fps) * 1000;
+        const top = highestEncoding(params);
+        if (top) {
+          top.maxFramerate = next.fps;
+          top.maxBitrate = next.bitrateKbps * 1000;
           // Se a captura continuar em 1080p, o codificador reduz a escala explicitamente.
-          params.encodings[0].scaleResolutionDownBy = target.resolution === '1080p' ? 1.5 : 1;
+          top.scaleResolutionDownBy = target.resolution === '1080p' ? 1.5 : 1;
         }
         await sender.setParameters(params);
       }
       shareTargetRef.current = next;
-      setMessages((prev) => [
-        ...prev,
-        {
-          id: `system-quality-${Date.now()}`,
-          sender: 'Sistema',
-          text: `Seu computador não está acompanhando a codificação. Qualidade reduzida para ${next!.resolution} a ${next!.fps} FPS.`,
-          timestamp: Date.now(),
-          isSystem: true,
-        },
-      ]);
+      pushSystemMessage(
+        reason === 'cpu'
+          ? `Seu computador não está acompanhando a codificação. Qualidade reduzida para ${next.resolution} a ${next.fps} FPS.`
+          : `Sua internet de envio não comporta a qualidade atual. Reduzido para ${next.resolution} a ${next.fps} FPS.`
+      );
     } catch (e) {
       console.warn('Falha ao reduzir a qualidade da transmissão:', e);
     }
   }, []);
+
+  // Limitação por banda de upload: reduz o teto de bitrate (para ~85% da banda estimada) antes de mexer em resolução/FPS
+  const adaptScreenShareForBandwidth = useCallback(async (availableKbps?: number) => {
+    const room = roomRef.current;
+    const target = shareTargetRef.current;
+    if (!room || !target) return;
+
+    const floor = MIN_BITRATE_KBPS[target.resolution];
+    if (target.bitrateKbps <= floor) {
+      await downgradeScreenShare('bandwidth');
+      return;
+    }
+
+    const byEstimate = availableKbps ? availableKbps * 0.85 : Infinity;
+    const newKbps = Math.round(Math.max(floor, Math.min(target.bitrateKbps * 0.8, byEstimate)));
+    if (newKbps >= target.bitrateKbps) return;
+
+    try {
+      const track = room.localParticipant.getTrackPublication(Track.Source.ScreenShare)?.track as LocalVideoTrack | undefined;
+      const sender = (track as any)?.sender as RTCRtpSender | undefined;
+      if (sender?.getParameters) {
+        const params = sender.getParameters();
+        const top = highestEncoding(params);
+        if (top) top.maxBitrate = newKbps * 1000;
+        await sender.setParameters(params);
+      }
+      shareTargetRef.current = { ...target, bitrateKbps: newKbps };
+      pushSystemMessage(`Sua internet de envio está limitando a transmissão. Bitrate reduzido para ${(newKbps / 1000).toFixed(1)} Mbps.`);
+    } catch (e) {
+      console.warn('Falha ao reduzir o bitrate da transmissão:', e);
+    }
+  }, [downgradeScreenShare]);
 
   // Start Screen Sharing with high-fidelity stereo audio capture (Cinema / Gaming / Music mode)
   const startScreenShare = async (config?: Partial<StreamQualityConfig>) => {
@@ -1282,14 +1351,27 @@ export function useLiveKit({ url, token, onDisconnected, onConnected }: UseLiveK
       const shouldIncludeAudio = config?.includeAudio ?? true;
       const shouldIsolateRoomAudio = config?.isolateRoomAudio ?? true;
 
-      const targetBitrate = (config?.bitrateKbps ?? getTargetBitrateKbps(config?.resolution, targetFps)) * 1000;
+      const qualityMode: QualityMode = config?.qualityMode === 'high' ? 'high' : 'stable';
+      const targetBitrateKbps = config?.bitrateKbps ?? getTargetBitrateKbps(config?.resolution, targetFps, qualityMode);
+      const targetBitrate = targetBitrateKbps * 1000;
 
       const targetResolution: '720p' | '1080p' = config?.resolution === '720p' ? '720p' : '1080p';
       const screenResolution = { ...RESOLUTION_SIZE[targetResolution], frameRate: targetFps };
 
       // Alvo atual da transmissão: usado pelo redutor automático quando o processador não acompanha
-      shareTargetRef.current = { resolution: targetResolution, fps: targetFps === 30 ? 30 : 60 };
+      const useSimulcast = Boolean(config?.simulcast) && targetResolution === '1080p';
+      const simulcastLayers = useSimulcast
+        ? [new VideoPreset(SIMULCAST_LOW_LAYER.width, SIMULCAST_LOW_LAYER.height, SIMULCAST_LOW_LAYER.bitrateKbps * 1000, SIMULCAST_LOW_LAYER.frameRate)]
+        : undefined;
+      shareTargetRef.current = {
+        resolution: targetResolution,
+        fps: targetFps === 30 ? 30 : 60,
+        bitrateKbps: targetBitrateKbps,
+        mode: qualityMode,
+        simulcast: useSimulcast,
+      };
       cpuPressureTicksRef.current = 0;
+      bandwidthPressureTicksRef.current = 0;
 
       // 1. Check if running in native Desktop App with selected source
       if (typeof window !== 'undefined' && window.desktopAPI?.isDesktop && config?.sourceId) {
@@ -1347,7 +1429,8 @@ export function useLiveKit({ url, token, onDisconnected, onConnected }: UseLiveK
               maxFramerate: targetFps,
               priority: 'high',
             },
-            simulcast: false,
+            simulcast: useSimulcast,
+            screenShareSimulcastLayers: simulcastLayers,
           });
 
           try {
@@ -1356,7 +1439,7 @@ export function useLiveKit({ url, token, onDisconnected, onConnected }: UseLiveK
               const params = sender.getParameters();
               if (params) {
                 params.degradationPreference = 'maintain-framerate';
-                if (params.encodings && params.encodings.length > 0) {
+                if (!useSimulcast && params.encodings && params.encodings.length > 0) {
                   params.encodings[0].maxFramerate = targetFps;
                   params.encodings[0].maxBitrate = targetBitrate;
                   params.encodings[0].networkPriority = 'high';
@@ -1423,7 +1506,8 @@ export function useLiveKit({ url, token, onDisconnected, onConnected }: UseLiveK
           },
           dtx: false,
           red: true,
-          simulcast: false,
+          simulcast: useSimulcast,
+          screenShareSimulcastLayers: simulcastLayers,
           videoCodec: (config?.codec as any) || 'h264',
           screenShareEncoding: {
             maxBitrate: targetBitrate,
@@ -1456,7 +1540,7 @@ export function useLiveKit({ url, token, onDisconnected, onConnected }: UseLiveK
             if (params) {
               params.degradationPreference = 'maintain-framerate';
 
-              if (params.encodings && params.encodings.length > 0) {
+              if (!useSimulcast && params.encodings && params.encodings.length > 0) {
                 params.encodings[0].maxFramerate = targetFps;
                 params.encodings[0].maxBitrate = targetBitrate;
                 params.encodings[0].networkPriority = 'high';
@@ -1488,6 +1572,7 @@ export function useLiveKit({ url, token, onDisconnected, onConnected }: UseLiveK
     stopKeepAlive();
     shareTargetRef.current = null;
     cpuPressureTicksRef.current = 0;
+    bandwidthPressureTicksRef.current = 0;
     const room = roomRef.current;
     if (!room) return;
 

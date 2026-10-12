@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Monitor, Zap, X, ShieldCheck, Sparkles, RefreshCw, Layers } from 'lucide-react';
 import { getRecommendedQuality, getTargetBitrateKbps } from '../utils/streamPresets';
-import type { StreamQualityConfig, VideoResolution, VideoFrameRate, DesktopSource } from '../types';
+import type { StreamQualityConfig, VideoResolution, VideoFrameRate, QualityMode, DesktopSource } from '../types';
 
 interface ScreenShareModalProps {
   isOpen: boolean;
@@ -20,6 +20,8 @@ export const ScreenShareModal: React.FC<ScreenShareModalProps> = ({
   const [resolution, setResolution] = useState<VideoResolution>(recommended.resolution);
   const [frameRate, setFrameRate] = useState<VideoFrameRate>(recommended.frameRate);
   const [isolateRoomAudio, setIsolateRoomAudio] = useState<boolean>(true);
+  const [qualityMode, setQualityMode] = useState<QualityMode>('stable');
+  const [simulcast, setSimulcast] = useState<boolean>(false);
 
   // Desktop native source selection
   const [sources, setSources] = useState<DesktopSource[]>([]);
@@ -54,7 +56,7 @@ export const ScreenShareModal: React.FC<ScreenShareModalProps> = ({
   if (!isOpen) return null;
 
   const handleStart = () => {
-    const finalBitrate = getTargetBitrateKbps(resolution, frameRate);
+    const finalBitrate = getTargetBitrateKbps(resolution, frameRate, qualityMode);
 
     onConfirm({
       resolution,
@@ -65,6 +67,8 @@ export const ScreenShareModal: React.FC<ScreenShareModalProps> = ({
       contentHint: 'motion',
       isolateRoomAudio,
       sourceId: selectedSourceId || undefined,
+      qualityMode,
+      simulcast: simulcast && resolution === '1080p',
     });
     onClose();
   };
@@ -271,6 +275,54 @@ export const ScreenShareModal: React.FC<ScreenShareModalProps> = ({
             </p>
           </div>
 
+          {/* Quality Mode */}
+          <div>
+            <label className="block font-medium text-xs text-gray-400 uppercase tracking-wider mb-2">
+              Prioridade
+            </label>
+            <div className="grid grid-cols-2 gap-3">
+              {[
+                { mode: 'stable' as QualityMode, label: 'Estável', desc: 'Menos banda: ideal para internet instável ou muitos espectadores' },
+                { mode: 'high' as QualityMode, label: 'Alta qualidade', desc: 'Mais nitidez, exige upload estável' },
+              ].map(({ mode, label, desc }) => (
+                <button
+                  key={mode}
+                  type="button"
+                  onClick={() => setQualityMode(mode)}
+                  className={`py-2.5 px-3 rounded-xl border text-left transition ${
+                    qualityMode === mode
+                      ? 'bg-indigo-600/30 border-indigo-500 text-white shadow-md'
+                      : 'bg-white/5 border-white/5 hover:bg-white/10 text-gray-300'
+                  }`}
+                >
+                  <span className="block font-bold text-sm text-white">{label}</span>
+                  <span className="block text-[11px] text-gray-400 leading-tight mt-0.5">
+                    {desc} ({(getTargetBitrateKbps(resolution, frameRate, mode) / 1000).toFixed(1)} Mbps)
+                  </span>
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Simulcast (camada leve para espectadores com banda fraca) */}
+          {resolution === '1080p' && (
+            <div
+              onClick={() => setSimulcast(!simulcast)}
+              className={`flex items-center justify-between p-3.5 border rounded-xl cursor-pointer transition select-none ${
+                simulcast ? 'bg-indigo-950/30 border-indigo-500/40' : 'bg-white/5 hover:bg-white/10 border-white/5'
+              }`}
+            >
+              <div>
+                <div className="font-medium text-white">Camada leve para quem tem internet fraca</div>
+                <div className="text-xs text-gray-400">
+                  Envia também uma versão 720p a 30 FPS, para os espectadores com banda baixa não travarem. Usa mais processador e upload;
+                  desative se o seu computador for simples.
+                </div>
+              </div>
+              <input type="checkbox" checked={simulcast} onChange={() => {}} className="w-4 h-4 accent-indigo-500 rounded cursor-pointer" />
+            </div>
+          )}
+
           {/* Anti-Echo / Isolate Room Voice chat toggle */}
           <div
             onClick={() => setIsolateRoomAudio(!isolateRoomAudio)}
@@ -315,7 +367,7 @@ export const ScreenShareModal: React.FC<ScreenShareModalProps> = ({
               <span>Qualidade Unificada Inteligente</span>
             </div>
             <p className="text-[11px] text-gray-400 leading-relaxed">
-              {resolution} a {frameRate} FPS, com bitrate de {(getTargetBitrateKbps(resolution, frameRate) / 1000).toFixed(1)} Mbps. Em caso de sobrecarga, a resolução é reduzida antes dos quadros para manter a fluidez.
+              {resolution} a {frameRate} FPS, com bitrate de {(getTargetBitrateKbps(resolution, frameRate, qualityMode) / 1000).toFixed(1)} Mbps. Em caso de sobrecarga, ou de rede lenta, a qualidade é reduzida automaticamente (primeiro o bitrate, depois a resolução e os quadros).
             </p>
           </div>
         </div>
