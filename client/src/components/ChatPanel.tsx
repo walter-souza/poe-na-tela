@@ -176,56 +176,92 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({
               <p className="text-xs">Mande um oi ou envie uma reação abaixo para animar a transmissão!</p>
             </div>
           ) : (
-            messages.map((m) => {
+            messages.map((m, idx) => {
               const timeString = new Date(m.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+              const prevMsg = messages[idx - 1];
+              const isSameDay = (t1: number, t2: number) => {
+                const d1 = new Date(t1);
+                const d2 = new Date(t2);
+                return d1.getFullYear() === d2.getFullYear() && d1.getMonth() === d2.getMonth() && d1.getDate() === d2.getDate();
+              };
+              const showDateDivider = !prevMsg || !isSameDay(prevMsg.timestamp, m.timestamp);
 
-              if (m.isSystem) {
-                const isJoin = m.text.includes('entrou');
-                const isLeave = m.text.includes('saiu');
+              const formatDay = (timestamp: number) => {
+                const date = new Date(timestamp);
+                const now = new Date();
+                const targetMidnight = new Date(date.getFullYear(), date.getMonth(), date.getDate()).getTime();
+                const todayMidnight = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+                const diffDays = Math.round((todayMidnight - targetMidnight) / (24 * 60 * 60 * 1000));
+                if (diffDays === 0) return 'Hoje';
+                if (diffDays === 1) return 'Ontem';
+                const formatted = date.toLocaleDateString('pt-BR', { day: 'numeric', month: 'long', year: date.getFullYear() !== now.getFullYear() ? 'numeric' : undefined });
+                return formatted.replace(/(de )([a-z])/g, (_, p1, p2) => p1 + p2.toUpperCase());
+              };
 
+              const renderMessageContent = () => {
+                if (m.isSystem) {
+                  const isJoin = m.text.includes('entrou');
+                  const isLeave = m.text.includes('saiu');
+
+                  return (
+                    <div
+                      key={m.id}
+                      className="py-1 px-2 rounded-lg text-xs leading-relaxed select-none animate-fadeIn flex items-center gap-1.5"
+                    >
+                      <span className="text-gray-500 font-mono tabular-nums text-xs select-none mr-1">
+                        {timeString}
+                      </span>
+                      {isJoin && <LogIn className="w-3.5 h-3.5 text-emerald-400 shrink-0" />}
+                      {isLeave && <LogOut className="w-3.5 h-3.5 text-rose-400 shrink-0" />}
+                      <span className={isJoin ? 'text-emerald-300 font-medium' : isLeave ? 'text-rose-300 font-medium' : 'text-gray-400'}>
+                        {m.text}
+                      </span>
+                    </div>
+                  );
+                }
+
+                const isMe = m.sender === userName;
                 return (
                   <div
                     key={m.id}
-                    className="py-1 px-2 rounded-lg text-xs leading-relaxed select-none animate-fadeIn flex items-center gap-1.5"
+                    className="py-1 px-2 rounded-lg hover:bg-white/[0.04] transition-colors text-sm leading-relaxed animate-fadeIn"
                   >
-                    <span className="text-gray-500 font-mono tabular-nums text-xs select-none mr-1">
+                    <span className="text-xs text-gray-500 font-mono tabular-nums mr-2 select-none align-baseline">
                       {timeString}
                     </span>
-                    {isJoin && <LogIn className="w-3.5 h-3.5 text-emerald-400 shrink-0" />}
-                    {isLeave && <LogOut className="w-3.5 h-3.5 text-rose-400 shrink-0" />}
-                    <span className={isJoin ? 'text-emerald-300 font-medium' : isLeave ? 'text-rose-300 font-medium' : 'text-gray-400'}>
+                    <span
+                      className={`font-semibold mr-1 cursor-default ${
+                        isMe ? 'text-indigo-400' : 'text-purple-400'
+                      }`}
+                    >
+                      {m.sender}
+                      {m.isHost && (
+                        <span className="ml-1 mr-0.5 inline-block align-baseline bg-red-500/20 text-red-400 text-[10px] px-1.5 py-0.5 rounded font-bold uppercase">
+                          HOST
+                        </span>
+                      )}
+                      :
+                    </span>
+                    <span className="text-gray-100 break-words whitespace-pre-wrap selection:bg-indigo-500/30">
                       {m.text}
                     </span>
                   </div>
                 );
-              }
+              };
 
-              const isMe = m.sender === userName;
               return (
-                <div
-                  key={m.id}
-                  className="py-1 px-2 rounded-lg hover:bg-white/[0.04] transition-colors text-sm leading-relaxed animate-fadeIn"
-                >
-                  <span className="text-xs text-gray-500 font-mono tabular-nums mr-2 select-none align-baseline">
-                    {timeString}
-                  </span>
-                  <span
-                    className={`font-semibold mr-1 cursor-default ${
-                      isMe ? 'text-indigo-400' : 'text-purple-400'
-                    }`}
-                  >
-                    {m.sender}
-                    {m.isHost && (
-                      <span className="ml-1 mr-0.5 inline-block align-baseline bg-red-500/20 text-red-400 text-[10px] px-1.5 py-0.5 rounded font-bold uppercase">
-                        HOST
+                <React.Fragment key={m.id || idx}>
+                  {showDateDivider && (
+                    <div className="relative flex items-center justify-center my-3 select-none">
+                      <div className="flex-1 border-t border-white/[0.08]" />
+                      <span className="mx-2 px-2.5 py-0.5 text-[10px] font-semibold text-zinc-400 bg-[#161824] rounded-full border border-white/[0.06] shadow-sm tracking-wide">
+                        {formatDay(m.timestamp)}
                       </span>
-                    )}
-                    :
-                  </span>
-                  <span className="text-gray-100 break-words whitespace-pre-wrap selection:bg-indigo-500/30">
-                    {m.text}
-                  </span>
-                </div>
+                      <div className="flex-1 border-t border-white/[0.08]" />
+                    </div>
+                  )}
+                  {renderMessageContent()}
+                </React.Fragment>
               );
             })
           )
