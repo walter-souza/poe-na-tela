@@ -13,6 +13,7 @@ import { AccessToken, RoomServiceClient } from 'livekit-server-sdk';
 import { supabase, isSupabaseConfigured } from './supabase';
 import { generateRoomKey, encryptRoomKey, decryptRoomKey, assertMasterKeyConfigured } from './kms';
 import { hashPasscode, verifyPasscode } from './passcode';
+import { sanitizeRoomName, sanitizeUserName } from './sanitize';
 import crypto from 'node:crypto';
 import helmet from 'helmet';
 import rateLimit from 'express-rate-limit';
@@ -209,29 +210,6 @@ const roomService = new RoomServiceClient(
   LIVEKIT_API_SECRET
 );
 
-/**
- * Unicode-safe sanitization for room names.
- */
-function sanitizeRoomName(name: string): string {
-  if (!name) return '';
-  return name
-    .normalize('NFC')
-    .trim()
-    .toLowerCase()
-    .replace(/[\/\?\\#%<>"'`\r\n\t\0]/g, '')
-    .replace(/\s+/g, ' ')
-    .slice(0, 64);
-}
-
-function sanitizeUserName(name: string): string {
-  if (!name) return '';
-  return name
-    .normalize('NFC')
-    .trim()
-    .replace(/[\r\n\t\0]/g, '')
-    .replace(/\s+/g, ' ')
-    .slice(0, 32);
-}
 
 /**
  * Health check & status endpoint (reports maintenance status)
