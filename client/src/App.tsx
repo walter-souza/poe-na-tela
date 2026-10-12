@@ -403,18 +403,6 @@ export function App() {
     setIsMaintenance(false);
   };
 
-  // If in Maintenance mode and no admin bypass token active, show Maintenance Screen
-  if (isMaintenance && !adminBypassToken) {
-    return (
-      <MaintenanceScreen
-        message={maintenanceMessage}
-        onRetry={checkMaintenanceStatus}
-        isChecking={isCheckingMaintenance}
-        onAdminBypass={handleAdminBypass}
-      />
-    );
-  }
-
   // Nome do usuário para a sessão ativa
   const effectiveUserName =
     profile?.username || localStorage.getItem('poe-na-tela-username') || 'Usuário';
@@ -437,6 +425,19 @@ export function App() {
     }
     return null;
   }, [session, activeRoomSlug, livekitUrl, effectiveUserName, roomPasscodes]);
+
+  // Hooks acima devem rodar em toda renderização; o retorno antecipado vem depois deles.
+  // If in Maintenance mode and no admin bypass token active, show Maintenance Screen
+  if (isMaintenance && !adminBypassToken) {
+    return (
+      <MaintenanceScreen
+        message={maintenanceMessage}
+        onRetry={checkMaintenanceStatus}
+        isChecking={isCheckingMaintenance}
+        onAdminBypass={handleAdminBypass}
+      />
+    );
+  }
 
   return (
     <div className="h-screen h-[100dvh] w-screen flex bg-[#07080d] text-gray-100 overflow-hidden select-none">
