@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo, useRef, type Dispatch, type SetStateAction } from 'react';
 import { ConnectionState } from 'livekit-client';
-import { Tv } from 'lucide-react';
+import { Tv, Check, X } from 'lucide-react';
 import { useLiveKit } from './hooks/useLiveKit';
 import { useVoicePresence } from './hooks/useVoicePresence';
 import { VideoPlayer } from './components/VideoPlayer';
@@ -21,7 +21,13 @@ import { TextChannelView } from './components/TextChannelView';
 import { CreateRoomModal } from './components/CreateRoomModal';
 import { PasswordModal } from './components/PasswordModal';
 import { playJoinSound, playLeaveSound } from './utils/soundEffects';
-import { getGuestRooms, saveGuestRoom, removeGuestRoom, syncGuestAccount } from './utils/guestStorage';
+import {
+  getGuestRooms,
+  saveGuestRoom,
+  removeGuestRoom,
+  syncGuestAccount,
+  migrateGuestToAccount,
+} from './utils/guestStorage';
 import type { StreamQualityConfig, Channel, UserRoom, VoiceParticipant } from './types';
 
 interface AppSession {
@@ -143,9 +149,28 @@ export function App() {
     }
   };
 
+  const [migrationNotification, setMigrationNotification] = useState<{
+    migratedCount: number;
+  } | null>(null);
+  const hasAttemptedMigrationRef = useRef(false);
+
   useEffect(() => {
     if (isAuthenticated && authSession?.access_token) {
       fetchUserRooms();
+
+      // Migração automática de servidores salvos como convidado para a nova conta Google
+      const currentGuestRooms = getGuestRooms();
+      if (currentGuestRooms.length > 0 && !hasAttemptedMigrationRef.current) {
+        hasAttemptedMigrationRef.current = true;
+        migrateGuestToAccount(authSession.access_token).then((result) => {
+          if (result.success && result.migratedCount > 0) {
+            setGuestRooms([]);
+            fetchUserRooms();
+            setMigrationNotification({ migratedCount: result.migratedCount });
+            setTimeout(() => setMigrationNotification(null), 6500);
+          }
+        });
+      }
     }
   }, [isAuthenticated, authSession?.access_token]);
 
@@ -495,6 +520,29 @@ export function App() {
           onConfirm={handleConfirmRoomPassword}
           error={passwordModalError}
         />
+      )}
+
+      {/* Notificação Toast de Migração de Servidores */}
+      {migrationNotification && (
+        <div className="fixed top-5 right-5 z-50 flex items-center gap-3 bg-[#131520] border border-emerald-500/40 text-white px-4 py-3 rounded-2xl shadow-2xl shadow-emerald-950/40 backdrop-blur-md animate-in slide-in-from-top-4 duration-300">
+          <div className="p-2 bg-emerald-500/20 text-emerald-400 rounded-xl shrink-0">
+            <Check className="w-4 h-4" />
+          </div>
+          <div className="text-xs">
+            <p className="font-bold text-emerald-300">Servidores vinculados com sucesso!</p>
+            <p className="text-gray-300">
+              {migrationNotification.migratedCount}{' '}
+              {migrationNotification.migratedCount === 1 ? 'servidor foi vinculado' : 'servidores foram vinculados'}{' '}
+              permanentemente à sua conta Google.
+            </p>
+          </div>
+          <button
+            onClick={() => setMigrationNotification(null)}
+            className="text-gray-400 hover:text-white p-1 rounded-lg transition cursor-pointer"
+          >
+            <X className="w-4 h-4" />
+          </button>
+        </div>
       )}
     </div>
   );

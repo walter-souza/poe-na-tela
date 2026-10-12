@@ -511,6 +511,95 @@ app.get(['/api/user/rooms', '/user/rooms'], async (req: Request, res: Response):
   }
 });
 
+/**
+ * Migrar dados de convidado (salas) para a conta autenticada do usuário (Google)
+ */
+app.post(['/api/user/migrate-guest', '/user/migrate-guest'], async (req: Request, res: Response): Promise<void> => {
+  try {
+    if (!isSupabaseConfigured() || !supabase) {
+      res.json({ success: true, migratedCount: 0 });
+      return;
+    }
+
+    const authUser = await getAuthUser(req);
+    if (!authUser) {
+      res.status(401).json({ error: 'Autenticação necessária para migrar dados.' });
+      return;
+    }
+
+    const { recoveryCode, guestRooms } = req.body || {};
+    const roomSlugs = new Set<string>();
+
+    // 1. Coletar slugs enviados diretamente pelo cliente
+    if (Array.isArray(guestRooms)) {
+      guestRooms.forEach((r: any) => {
+        if (r && typeof r.slug === 'string' && r.slug.trim()) {
+          roomSlugs.add(sanitizeRoomName(r.slug));
+        }
+      });
+    }
+
+    // 2. Se houver código de recuperação, mesclar também os servidores salvos na nuvem
+    const cleanCode = typeof recoveryCode === 'string' ? recoveryCode.trim().toUpperCase() : '';
+    if (cleanCode) {
+      const { data: guestAccount } = await supabase
+        .from('guest_accounts')
+        .select('rooms')
+        .eq('recovery_code', cleanCode)
+        .maybeSingle();
+
+      if (guestAccount && Array.isArray(guestAccount.rooms)) {
+        guestAccount.rooms.forEach((r: any) => {
+          if (r && typeof r.slug === 'string' && r.slug.trim()) {
+            roomSlugs.add(sanitizeRoomName(r.slug));
+          }
+        });
+      }
+    }
+
+    if (roomSlugs.size === 0) {
+      res.json({ success: true, migratedCount: 0 });
+      return;
+    }
+
+    // 3. Buscar salas existentes no banco
+    const { data: dbRooms, error: roomsError } = await supabase
+      .from('rooms')
+      .select('id, slug, owner_id')
+      .in('slug', Array.from(roomSlugs));
+
+    if (roomsError) throw roomsError;
+
+    let migratedCount = 0;
+    if (dbRooms && dbRooms.length > 0) {
+      const membershipsToInsert = dbRooms.map((r: any) => ({
+        room_id: r.id,
+        user_id: authUser.id,
+        role: r.owner_id === authUser.id ? 'owner' : 'member',
+      }));
+
+      const { error: insertError } = await supabase
+        .from('room_members')
+        .upsert(membershipsToInsert, { onConflict: 'room_id, user_id' });
+
+      if (insertError) {
+        console.warn('Erro ao inserir membros na migração:', insertError.message);
+      } else {
+        migratedCount = membershipsToInsert.length;
+      }
+    }
+
+    res.json({
+      success: true,
+      migratedCount,
+      totalRequested: roomSlugs.size,
+    });
+  } catch (err: any) {
+    console.error('Erro na migração de convidado para conta permanente:', err?.message || err);
+    res.status(500).json({ error: 'Falha ao migrar servidores do convidado.', details: err?.message });
+  }
+});
+
 interface GuestAccountData {
   recoveryCode: string;
   nickname: string;

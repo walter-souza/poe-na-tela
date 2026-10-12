@@ -16,6 +16,7 @@ import {
   recoverGuestAccount,
   getGuestRooms,
 } from '../utils/guestStorage';
+import { GoogleLoginButton } from './GoogleLoginButton';
 import type { UserRoom } from '../types';
 
 interface GuestRecoveryModalProps {
@@ -246,6 +247,17 @@ export const GuestRecoveryModal: React.FC<GuestRecoveryModalProps> = ({
                   {syncStatus}
                 </p>
               )}
+            </div>
+
+            {/* Banner de Migração Permanente para o Google */}
+            <div className="bg-indigo-950/40 border border-indigo-500/20 rounded-2xl p-3 flex items-center justify-between gap-2.5 mt-2">
+              <div className="min-w-0">
+                <p className="text-[11px] font-bold text-white leading-tight">Salvar com o Google</p>
+                <p className="text-[10px] text-gray-400">Vincule em 1 clique e dispense o código.</p>
+              </div>
+              <div className="shrink-0">
+                <GoogleLoginButton size="small" shape="pill" theme="outline" />
+              </div>
             </div>
           </div>
         )}

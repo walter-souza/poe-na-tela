@@ -198,3 +198,53 @@ export async function recoverGuestAccount(code: string): Promise<{
     return { success: false, error: 'Erro de conexão ao recuperar conta de convidado.' };
   }
 }
+
+/**
+ * Migra os servidores e histórico salvos localmente/nuvem do convidado para a conta Google permanente
+ */
+export async function migrateGuestToAccount(accessToken: string): Promise<{
+  success: boolean;
+  migratedCount: number;
+  error?: string;
+}> {
+  if (!accessToken) return { success: false, migratedCount: 0 };
+
+  const guestRooms = getGuestRooms();
+  const recoveryCode = getOrCreateGuestRecoveryCode();
+
+  if (guestRooms.length === 0 && !recoveryCode) {
+    return { success: true, migratedCount: 0 };
+  }
+
+  try {
+    const res = await fetch(`${getApiBaseUrl()}/api/user/migrate-guest`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${accessToken}`,
+      },
+      body: JSON.stringify({
+        recoveryCode,
+        guestRooms,
+      }),
+    });
+
+    const data = await res.json().catch(() => ({}));
+
+    if (res.ok && data.success) {
+      const migratedCount = data.migratedCount || 0;
+      // Limpa os registros locais de convidado já migrados
+      clearGuestRooms();
+      return { success: true, migratedCount };
+    }
+
+    return {
+      success: false,
+      migratedCount: 0,
+      error: data.error || 'Falha ao migrar servidores do convidado.',
+    };
+  } catch (err: any) {
+    console.warn('Erro ao chamar migração de convidado:', err);
+    return { success: false, migratedCount: 0, error: err?.message };
+  }
+}

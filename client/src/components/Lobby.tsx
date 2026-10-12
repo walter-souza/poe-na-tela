@@ -20,6 +20,7 @@ import { PasswordModal } from './PasswordModal';
 import { CreateRoomModal } from './CreateRoomModal';
 import { GoogleLoginButton } from './GoogleLoginButton';
 import { GuestRecoveryModal } from './GuestRecoveryModal';
+import { getGuestRooms } from '../utils/guestStorage';
 import { useAuth } from '../context/AuthContext';
 import { sanitizeRoomName, sanitizeUserName } from '../utils/sanitize';
 import type { FavoriteRoom, ActiveRoomInfo, UserRoom } from '../types';
@@ -391,6 +392,29 @@ export const Lobby: React.FC<LobbyProps> = ({ onJoin, isLoading, error, onGuestR
           Põe na tela, comandante! Transmissão de tela para amigos com ultra-baixa latência
         </p>
       </div>
+
+      {/* Banner de Incentivo de Migração para Usuários Convidados */}
+      {!isAuthenticated && getGuestRooms().length > 0 && (
+        <div className="w-full max-w-5xl mb-5 bg-gradient-to-r from-indigo-950/40 via-violet-950/30 to-black/40 border border-indigo-500/30 rounded-2xl p-3.5 sm:p-4 flex flex-col sm:flex-row items-center justify-between gap-3 shadow-lg shadow-indigo-950/20 backdrop-blur-md z-10 animate-in fade-in slide-in-from-top-2 duration-300">
+          <div className="flex items-center gap-3 text-left">
+            <div className="p-2.5 rounded-xl bg-indigo-500/20 text-indigo-400 shrink-0">
+              <Sparkles className="w-5 h-5 text-indigo-400" />
+            </div>
+            <div>
+              <p className="text-xs sm:text-sm font-bold text-white">
+                Você possui {getGuestRooms().length}{' '}
+                {getGuestRooms().length === 1 ? 'servidor salvo' : 'servidores salvos'} neste navegador
+              </p>
+              <p className="text-[11px] text-gray-400">
+                Faça login com o Google para vinculá-los permanentemente à sua conta na nuvem.
+              </p>
+            </div>
+          </div>
+          <div className="shrink-0 w-full sm:w-auto flex justify-end">
+            <GoogleLoginButton size="medium" shape="pill" theme="outline" />
+          </div>
+        </div>
+      )}
 
       {/* Main Container Grid (Standardized Fixed Height Layout) */}
       <div className="w-full max-w-5xl relative z-10 grid grid-cols-1 lg:grid-cols-12 gap-5 sm:gap-6 items-start pb-8 lg:pb-0">
