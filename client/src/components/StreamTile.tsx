@@ -43,6 +43,21 @@ export const StreamTile: React.FC<StreamTileProps> = ({
   const [isMuted, setIsMuted] = useState(false);
   const [showControls, setShowControls] = useState(false);
   const [isPreviewPaused, setIsPreviewPaused] = useState(false);
+  const autoPausedTrackRef = useRef<string | null>(null);
+
+  // Captura de aba: o Chrome reduz a resolução da captura quando quem consome os quadros (codificador +
+  // renderização da prévia local) fica sobrecarregado. Por isso a prévia local começa pausada nesse modo
+  // (o usuário pode reativá-la); os espectadores não são afetados.
+  useEffect(() => {
+    if (!stream.isLocal || !stream.videoTrack) return;
+    const mediaTrack = stream.videoTrack.mediaStreamTrack;
+    const surface = (mediaTrack?.getSettings?.() as { displaySurface?: string } | undefined)?.displaySurface;
+    const trackId = mediaTrack?.id ?? null;
+    if (surface === 'browser' && trackId && autoPausedTrackRef.current !== trackId) {
+      autoPausedTrackRef.current = trackId;
+      setIsPreviewPaused(true);
+    }
+  }, [stream.videoTrack, stream.isLocal]);
   const hideTimeoutRef = useRef<number | null>(null);
 
   // Attach and detach video track based on isPreviewPaused

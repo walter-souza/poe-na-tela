@@ -33,6 +33,11 @@ export interface StreamStats {
   targetBitrateKbps?: number;
   /** Quadros por segundo capturados da tela (antes de codificar), só no emissor */
   captureFps?: number;
+  /** Resolução entregue pela captura (antes de codificar), só no emissor */
+  captureWidth?: number;
+  captureHeight?: number;
+  /** O que está sendo capturado: 'browser' (aba), 'window' (janela) ou 'monitor' (tela inteira) */
+  displaySurface?: string;
   /** Quadros descartados pelo decodificador/renderização, só no espectador */
   framesDropped?: number;
 }

@@ -593,6 +593,8 @@ export function useLiveKit({ url, token, onDisconnected, onConnected }: UseLiveK
       let jitter = 0;
       let measuredBufferDelay: number | undefined;
       let captureFps = 0;
+      let captureWidth = 0;
+      let captureHeight = 0;
       let framesDropped = 0;
       let bestOutbound: any = null;
       const now = Date.now();
@@ -659,6 +661,10 @@ export function useLiveKit({ url, token, onDisconnected, onConnected }: UseLiveK
           // 4. Outbound RTP (Host sending video)
           if (report.type === 'media-source' && (report.kind === 'video' || report.mediaType === 'video')) {
             if (report.framesPerSecond) captureFps = Math.max(captureFps, Math.round(report.framesPerSecond));
+            if ((report.width || 0) * (report.height || 0) >= captureWidth * captureHeight) {
+              captureWidth = report.width || 0;
+              captureHeight = report.height || 0;
+            }
           }
 
           if (report.type === 'outbound-rtp' && (report.kind === 'video' || report.mediaType === 'video')) {
@@ -719,6 +725,11 @@ export function useLiveKit({ url, token, onDisconnected, onConnected }: UseLiveK
         encoderImplementation: bestOutbound?.encoderImplementation,
         targetBitrateKbps: bestOutbound?.targetBitrate ? Math.round(bestOutbound.targetBitrate / 1000) : undefined,
         captureFps: captureFps || undefined,
+        captureWidth: captureWidth || undefined,
+        captureHeight: captureHeight || undefined,
+        displaySurface: (room.localParticipant
+          .getTrackPublication(Track.Source.ScreenShare)
+          ?.track?.mediaStreamTrack?.getSettings?.() as { displaySurface?: string } | undefined)?.displaySurface,
         framesDropped: framesDropped || undefined,
       });
 

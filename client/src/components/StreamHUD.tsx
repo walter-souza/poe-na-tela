@@ -152,6 +152,14 @@ export const StreamHUD: React.FC<StreamHUDProps> = ({
               {stats.captureFps ?? '—'} → {stats.fps > 0 ? stats.fps : '—'} FPS
             </span>
           </div>
+          {stats.captureWidth !== undefined && (
+            <div className="flex items-center justify-between">
+              <span className="text-gray-400">
+                Captura de {stats.displaySurface === 'browser' ? 'aba' : stats.displaySurface === 'window' ? 'janela' : stats.displaySurface === 'monitor' ? 'tela' : 'origem'}
+              </span>
+              <span className="font-bold text-white">{stats.captureWidth}x{stats.captureHeight}</span>
+            </div>
+          )}
           {stats.targetBitrateKbps !== undefined && (
             <div className="flex items-center justify-between">
               <span className="text-gray-400">Bitrate-alvo</span>
