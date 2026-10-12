@@ -89,10 +89,12 @@ export function useLiveKit({ url, token, onDisconnected, onConnected }: UseLiveK
   interface VadNode {
     source: MediaStreamAudioSourceNode;
     analyser: AnalyserNode;
+    silentGain?: GainNode;
     buffer: Uint8Array<ArrayBuffer>;
     track: MediaStreamTrack;
   }
 
+  const [isLocalSpeaking, setIsLocalSpeaking] = useState<boolean>(false);
   const vadContextRef = useRef<AudioContext | null>(null);
   const vadNodesRef = useRef<Map<string, VadNode>>(new Map());
   const vadSpeakingMapRef = useRef<Map<string, boolean>>(new Map());
@@ -117,11 +119,17 @@ export function useLiveKit({ url, token, onDisconnected, onConnected }: UseLiveK
       try {
         node.source.disconnect();
         node.analyser.disconnect();
+        if (node.silentGain) {
+          node.silentGain.disconnect();
+        }
       } catch {}
       vadNodesRef.current.delete(identity);
     }
     vadSpeakingMapRef.current.delete(identity);
     vadLastSpokeAtRef.current.delete(identity);
+    if (identity === roomRef.current?.localParticipant?.identity) {
+      setIsLocalSpeaking(false);
+    }
   }, []);
 
   const registerVadTrack = useCallback((identity: string, mediaTrack: MediaStreamTrack) => {
@@ -138,13 +146,27 @@ export function useLiveKit({ url, token, onDisconnected, onConnected }: UseLiveK
       const source = ctx.createMediaStreamSource(stream);
       const analyser = ctx.createAnalyser();
       analyser.fftSize = 64; // 32 frequency bins for minimal compute overhead
-      analyser.smoothingTimeConstant = 0.2; // fast attack response
-      analyser.minDecibels = -70;
+      analyser.smoothingTimeConstant = 0.15; // fast attack response (< 20ms)
+      analyser.minDecibels = -75;
       analyser.maxDecibels = -10;
-      source.connect(analyser); // NOT connected to destination to avoid loopback/echo
+      source.connect(analyser);
+
+      // Chromium Web Audio clock fix: MediaStreamAudioSourceNode only pulls frames reliably
+      // in real time if the graph terminates at ctx.destination.
+      // We route analyser -> silentGain(gain=0) -> ctx.destination so frames are pulled with 0ms delay
+      // without producing any audible loopback or echo to speakers.
+      let silentGain: GainNode | undefined;
+      try {
+        silentGain = ctx.createGain();
+        silentGain.gain.value = 0;
+        analyser.connect(silentGain);
+        silentGain.connect(ctx.destination);
+      } catch (gainErr) {
+        console.warn('[VAD] Failed to connect silent gain to destination:', gainErr);
+      }
 
       const buffer = new Uint8Array(analyser.frequencyBinCount);
-      vadNodesRef.current.set(identity, { source, analyser, buffer, track: mediaTrack });
+      vadNodesRef.current.set(identity, { source, analyser, silentGain, buffer, track: mediaTrack });
     } catch (err) {
       console.warn(`[VAD] Failed to register track for ${identity}:`, err);
     }
@@ -471,25 +493,36 @@ export function useLiveKit({ url, token, onDisconnected, onConnected }: UseLiveK
     setParticipants(list);
   }, []);
 
-  // Real-time audio activity detector (runs every 40ms, updates React ONLY on state change)
+  // Real-time audio activity detector (runs every 30ms, updates React on state change)
   const checkAudioActivity = useCallback(() => {
     const room = roomRef.current;
     if (!room || room.state !== ConnectionState.Connected) return;
 
+    if (vadContextRef.current && vadContextRef.current.state === 'suspended') {
+      vadContextRef.current.resume().catch(() => {});
+    }
+
     const now = Date.now();
     let stateChanged = false;
+    const localIdentity = room.localParticipant?.identity;
 
     vadNodesRef.current.forEach((node, identity) => {
+      const isLocal = Boolean(localIdentity && identity === localIdentity);
+
       if (node.track.readyState === 'ended') {
         unregisterVadTrack(identity);
+        if (isLocal) {
+          setIsLocalSpeaking(false);
+        }
         stateChanged = true;
         return;
       }
 
       // If local participant and mic is disabled, force not speaking
-      if (identity === room.localParticipant?.identity && !room.localParticipant.isMicrophoneEnabled) {
+      if (isLocal && !room.localParticipant.isMicrophoneEnabled) {
         if (vadSpeakingMapRef.current.get(identity)) {
           vadSpeakingMapRef.current.set(identity, false);
+          setIsLocalSpeaking(false);
           stateChanged = true;
         }
         return;
@@ -505,18 +538,21 @@ export function useLiveKit({ url, token, onDisconnected, onConnected }: UseLiveK
       }
       const avg = sum / node.buffer.length;
 
-      // Sensitivity: avg > 8 or peak frequency > 35 indicates speech
-      const isAboveThreshold = avg > 8 || max > 35;
+      // Sensitivity: avg > 5 or peak frequency > 24 indicates speech instantly (< 20ms)
+      const isAboveThreshold = avg > 5 || max > 24;
       if (isAboveThreshold) {
         vadLastSpokeAtRef.current.set(identity, now);
       }
 
       const lastSpoke = vadLastSpokeAtRef.current.get(identity) || 0;
-      const shouldBeSpeaking = now - lastSpoke < 350; // 350ms smooth hold time
+      const shouldBeSpeaking = now - lastSpoke < 280; // 280ms smooth hold decay
       const currentSpeaking = vadSpeakingMapRef.current.get(identity) || false;
 
       if (shouldBeSpeaking !== currentSpeaking) {
         vadSpeakingMapRef.current.set(identity, shouldBeSpeaking);
+        if (isLocal) {
+          setIsLocalSpeaking(shouldBeSpeaking);
+        }
         stateChanged = true;
       }
     });
@@ -750,7 +786,7 @@ export function useLiveKit({ url, token, onDisconnected, onConnected }: UseLiveK
           registerVadTrack(room.localParticipant.identity, localMicPub.track.mediaStreamTrack);
         }
         if (vadIntervalRef.current) clearInterval(vadIntervalRef.current);
-        vadIntervalRef.current = window.setInterval(checkAudioActivity, 40);
+        vadIntervalRef.current = window.setInterval(checkAudioActivity, 30);
       } catch (vadErr) {
         console.warn('Failed to start VAD on connect:', vadErr);
       }
@@ -777,11 +813,15 @@ export function useLiveKit({ url, token, onDisconnected, onConnected }: UseLiveK
         try {
           node.source.disconnect();
           node.analyser.disconnect();
+          if (node.silentGain) {
+            node.silentGain.disconnect();
+          }
         } catch {}
       });
       vadNodesRef.current.clear();
       vadSpeakingMapRef.current.clear();
       vadLastSpokeAtRef.current.clear();
+      setIsLocalSpeaking(false);
 
       if (isExplicitDisconnectRef.current) {
         onDisconnectedRef.current?.();
@@ -1005,11 +1045,15 @@ export function useLiveKit({ url, token, onDisconnected, onConnected }: UseLiveK
         try {
           node.source.disconnect();
           node.analyser.disconnect();
+          if (node.silentGain) {
+            node.silentGain.disconnect();
+          }
         } catch {}
       });
       vadNodesRef.current.clear();
       vadSpeakingMapRef.current.clear();
       vadLastSpokeAtRef.current.clear();
+      setIsLocalSpeaking(false);
       if (vadContextRef.current && vadContextRef.current.state !== 'closed') {
         vadContextRef.current.close().catch(() => {});
         vadContextRef.current = null;
@@ -1439,6 +1483,7 @@ export function useLiveKit({ url, token, onDisconnected, onConnected }: UseLiveK
         }
       } else {
         unregisterVadTrack(room.localParticipant.identity);
+        setIsLocalSpeaking(false);
       }
       updateParticipantList(room);
     } catch (err) {
@@ -1596,6 +1641,7 @@ export function useLiveKit({ url, token, onDisconnected, onConnected }: UseLiveK
     isScreenSharing,
     isLocalScreenAudioMuted,
     isMicEnabled,
+    isLocalSpeaking,
     isDeafened,
     isNoiseSuppressionEnabled,
     isNoiseSuppressionSupported: isNoiseSuppressionSupported(),

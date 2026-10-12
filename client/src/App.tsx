@@ -477,6 +477,7 @@ function StreamRoom({
     isScreenSharing,
     isLocalScreenAudioMuted,
     isMicEnabled,
+    isLocalSpeaking,
     isDeafened,
     isNoiseSuppressionEnabled,
     canPlaybackAudio,
@@ -525,8 +526,6 @@ function StreamRoom({
     }
   }, [connectionState]);
 
-  // Status de fala do participante local
-  const localParticipant = participants.find((p) => p.identity === session.userName);
   const recentlyLeftMapRef = useRef<Map<string, number>>(new Map());
 
   // Presença em tempo real cross-channel via Supabase Realtime
@@ -562,7 +561,7 @@ function StreamRoom({
         identity: session.userName,
         name: session.userName,
         voiceChannelId: activeVoiceChannelId,
-        isSpeaking: localParticipant?.isSpeaking ?? false,
+        isSpeaking: isMicEnabled && isLocalSpeaking,
         isMuted: !isMicEnabled,
         avatarUrl: profile?.avatar_url || existing?.avatarUrl,
         isConnecting: isLocalConnecting,
@@ -618,7 +617,7 @@ function StreamRoom({
     isLocalConnecting,
     activeVoiceChannelId,
     session.userName,
-    localParticipant?.isSpeaking,
+    isLocalSpeaking,
     isMicEnabled,
     profile?.avatar_url,
   ]);
