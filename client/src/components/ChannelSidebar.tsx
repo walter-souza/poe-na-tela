@@ -233,9 +233,15 @@ export const ChannelSidebar: React.FC<ChannelSidebarProps> = ({
 
                   {/* Participantes conectados neste canal de voz específico */}
                   {(() => {
-                    const channelUsers = voiceParticipants.filter(
-                      (p) => p.voiceChannelId === channel.id
-                    );
+                    const channelUsers = voiceParticipants
+                      .filter((p) => p.voiceChannelId === channel.id)
+                      .sort((a, b) => {
+                        const nameA = a.name || a.identity || '';
+                        const nameB = b.name || b.identity || '';
+                        const cmp = nameA.localeCompare(nameB, undefined, { sensitivity: 'base', numeric: true });
+                        if (cmp !== 0) return cmp;
+                        return (a.identity || '').localeCompare(b.identity || '');
+                      });
                     if (channelUsers.length === 0) return null;
 
                     return (

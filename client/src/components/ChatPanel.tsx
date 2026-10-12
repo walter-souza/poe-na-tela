@@ -231,7 +231,15 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({
           )
         ) : (
           <div className="space-y-2">
-            {participants.map((p) => {
+            {[...participants]
+              .sort((a, b) => {
+                const nameA = a.name || a.identity || '';
+                const nameB = b.name || b.identity || '';
+                const cmp = nameA.localeCompare(nameB, undefined, { sensitivity: 'base', numeric: true });
+                if (cmp !== 0) return cmp;
+                return (a.identity || '').localeCompare(b.identity || '');
+              })
+              .map((p) => {
               const isMe = p.identity === userName || p.name === userName;
               const userVol = userVolumes?.[p.identity] !== undefined ? userVolumes[p.identity] : 1;
               const isUserMuted = userVol === 0;

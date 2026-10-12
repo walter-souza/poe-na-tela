@@ -17,6 +17,19 @@ interface UseVoicePresenceOptions {
 }
 
 /**
+ * Ordenação estável e determinística para participantes (alfabética por nome com desempate por identity)
+ */
+function sortVoiceParticipants(list: VoiceParticipant[]): VoiceParticipant[] {
+  return [...list].sort((a, b) => {
+    const nameA = a.name || a.identity || '';
+    const nameB = b.name || b.identity || '';
+    const cmp = nameA.localeCompare(nameB, undefined, { sensitivity: 'base', numeric: true });
+    if (cmp !== 0) return cmp;
+    return (a.identity || '').localeCompare(b.identity || '');
+  });
+}
+
+/**
  * Hook de presença em canais de voz com autoridade absoluta do servidor LiveKit (Abordagem 2).
  * Consulta a lista oficial de WebRTC do LiveKit via API backend e sincroniza instantaneamente
  * entre navegadores via Supabase Broadcast leve + polling periódico de segurança (2.5s).
@@ -187,7 +200,7 @@ export function useVoicePresence({
       }
       prevMyChannelParticipantsRef.current = currentInMyChannel;
 
-      setVoiceParticipants(mapped);
+      setVoiceParticipants(sortVoiceParticipants(mapped));
     } catch (err) {
       console.warn('[VoicePresence] Erro ao consultar presença no LiveKit:', err);
     } finally {
@@ -286,13 +299,15 @@ export function useVoicePresence({
               }
 
               if (existing) {
-                return prev.map((p) =>
-                  p.identity === ident
-                    ? { ...p, voiceChannelId: vChan, avatarUrl: payload.avatarUrl || p.avatarUrl }
-                    : p
+                return sortVoiceParticipants(
+                  prev.map((p) =>
+                    p.identity === ident
+                      ? { ...p, voiceChannelId: vChan, avatarUrl: payload.avatarUrl || p.avatarUrl }
+                      : p
+                  )
                 );
               } else {
-                return [
+                return sortVoiceParticipants([
                   ...prev,
                   {
                     identity: ident,
@@ -303,7 +318,7 @@ export function useVoicePresence({
                     avatarUrl: payload.avatarUrl,
                     isConnecting: false,
                   },
-                ];
+                ]);
               }
             });
           }

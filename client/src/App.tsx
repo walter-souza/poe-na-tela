@@ -603,7 +603,13 @@ function StreamRoom({
       }
     }
 
-    return Array.from(map.values());
+    return Array.from(map.values()).sort((a, b) => {
+      const nameA = a.name || a.identity || '';
+      const nameB = b.name || b.identity || '';
+      const cmp = nameA.localeCompare(nameB, undefined, { sensitivity: 'base', numeric: true });
+      if (cmp !== 0) return cmp;
+      return (a.identity || '').localeCompare(b.identity || '');
+    });
   }, [
     voiceParticipants,
     participants,
