@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Monitor, Zap, X, ShieldCheck, Sparkles, RefreshCw, Layers } from 'lucide-react';
-import { getTargetBitrateKbps } from '../utils/streamPresets';
+import { getRecommendedQuality, getTargetBitrateKbps } from '../utils/streamPresets';
 import type { StreamQualityConfig, VideoResolution, VideoFrameRate, DesktopSource } from '../types';
 
 interface ScreenShareModalProps {
@@ -16,8 +16,9 @@ export const ScreenShareModal: React.FC<ScreenShareModalProps> = ({
 }) => {
   const isDesktopApp = typeof window !== 'undefined' && !!window.desktopAPI?.isDesktop;
 
-  const [resolution, setResolution] = useState<VideoResolution>('1080p');
-  const [frameRate, setFrameRate] = useState<VideoFrameRate>(60);
+  const recommended = React.useMemo(() => getRecommendedQuality(), []);
+  const [resolution, setResolution] = useState<VideoResolution>(recommended.resolution);
+  const [frameRate, setFrameRate] = useState<VideoFrameRate>(recommended.frameRate);
   const [isolateRoomAudio, setIsolateRoomAudio] = useState<boolean>(true);
 
   // Desktop native source selection
@@ -200,13 +201,13 @@ export const ScreenShareModal: React.FC<ScreenShareModalProps> = ({
                   fps: 60 as VideoFrameRate,
                   label: '60 FPS',
                   desc: 'Máxima fluidez para jogos e movimento rápido',
-                  badge: 'Destravado',
+                  badge: recommended.frameRate === 60 ? 'Recomendado' : 'Fluido',
                 },
                 {
                   fps: 30 as VideoFrameRate,
                   label: '30 FPS',
                   desc: 'Menor consumo de banda e CPU',
-                  badge: 'Econômico',
+                  badge: recommended.frameRate === 30 ? 'Recomendado' : 'Econômico',
                 },
               ].map(({ fps, label, desc, badge }) => (
                 <button
@@ -258,9 +259,16 @@ export const ScreenShareModal: React.FC<ScreenShareModalProps> = ({
                   }`}
                 >
                   {label}
+                  {recommended.resolution === res && (
+                    <span className="block text-[10px] font-bold text-emerald-300 mt-0.5">Recomendado</span>
+                  )}
                 </button>
               ))}
             </div>
+            <p className="text-[11px] text-gray-500 mt-2 leading-relaxed">
+              Sugestão para o seu computador: {recommended.resolution} a {recommended.frameRate} FPS ({recommended.reason}).
+              Se o processador não acompanhar durante a transmissão, a qualidade é reduzida automaticamente.
+            </p>
           </div>
 
           {/* Anti-Echo / Isolate Room Voice chat toggle */}
@@ -307,7 +315,7 @@ export const ScreenShareModal: React.FC<ScreenShareModalProps> = ({
               <span>Qualidade Unificada Inteligente</span>
             </div>
             <p className="text-[11px] text-gray-400 leading-relaxed">
-              Taxa de quadros fluida ({frameRate} FPS) para jogos e filmes combinada com nitidez cristalina automática para textos, abas e janelas, sem necessidade de alternar modos.
+              {resolution} a {frameRate} FPS, com bitrate de {(getTargetBitrateKbps(resolution, frameRate) / 1000).toFixed(1)} Mbps. Em caso de sobrecarga, a resolução é reduzida antes dos quadros para manter a fluidez.
             </p>
           </div>
         </div>

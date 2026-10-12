@@ -8,7 +8,7 @@
 
 - ⚡ **Ultra-Baixa Latência (< 200ms)**: Streaming em tempo real via WebRTC SFU com aceleração de hardware (VP9 / H.264 / AV1).
 - 🎮 **Feito para Jogos (60 FPS & Stereo Loopback)**:
-  - Presets de 720p, 1080p, 1440p (2K) e 4K a 60 FPS.
+  - Presets de 720p e 1080p a 30 ou 60 FPS, com sugestão automática conforme o computador de quem transmite e redução automática de qualidade se o processador não acompanhar.
   - Bitrate configurável (de 2 Mbps até 20 Mbps).
   - Captura direta do áudio do sistema/jogo + microfone integrado.
 - 🔗 **Zero Instalação para Espectadores**: Amigos entram direto pelo link do navegador (`https://seu-dominio/?room=jogatina`), funcionando no PC, celular ou tablet.
@@ -100,7 +100,7 @@ quick-tesla/
 │   │   │   ├── ChatPanel.tsx        # Chat ao vivo, reações e lista de amigos
 │   │   │   ├── ControlsBar.tsx      # Barra de controles (Mic, Áudio, Compartilhamento)
 │   │   │   ├── Lobby.tsx            # Criação/Entrada de salas e teste de microfone
-│   │   │   ├── ScreenShareModal.tsx # Seletor de 60 FPS, 1080p/4K, Bitrate e Áudio
+│   │   │   ├── ScreenShareModal.tsx # Seletor de FPS (30/60), 720p/1080p, Bitrate e Áudio
 │   │   │   ├── StreamHUD.tsx        # Diagnósticos técnicos de WebRTC ao vivo
 │   │   │   └── VideoPlayer.tsx      # Player de vídeo com PiP, tela cheia e som
 │   │   ├── hooks/

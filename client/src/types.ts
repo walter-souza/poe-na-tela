@@ -1,4 +1,4 @@
-export type VideoResolution = '720p' | '1080p' | '1440p' | '4k';
+export type VideoResolution = '720p' | '1080p';
 export type VideoFrameRate = 30 | 60;
 export type VideoCodecPreference = 'vp9' | 'vp8' | 'h264' | 'av1';
 

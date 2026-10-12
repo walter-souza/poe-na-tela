@@ -13,7 +13,7 @@ import type { StreamQualityConfig, StreamStats, ChatMessage, ReactionEvent, Part
 import { playJoinSound, playLeaveSound } from '../utils/soundEffects';
 import { isSupabaseConfigured } from '../utils/supabase';
 import { startKeepAlive, stopKeepAlive } from '../utils/keepAlive';
-import { getTargetBitrateKbps } from '../utils/streamPresets';
+import { RESOLUTION_SIZE, getTargetBitrateKbps } from '../utils/streamPresets';
 import { isNoiseSuppressionSupported, NoiseSuppressionProcessor } from '../utils/noiseSuppression';
 
 export interface UseLiveKitOptions {
@@ -200,6 +200,9 @@ export function useLiveKit({ url, token, onDisconnected, onConnected }: UseLiveK
 
   const statsIntervalRef = useRef<number | null>(null);
   const prevStatsRef = useRef<{ bytes: number; frames: number; timestamp: number } | null>(null);
+  // Alvo da transmissão em andamento e contagem de segundos sob pressão de CPU (redutor automático)
+  const shareTargetRef = useRef<{ resolution: '720p' | '1080p'; fps: 30 | 60 } | null>(null);
+  const cpuPressureTicksRef = useRef<number>(0);
   const currentVolumeRef = useRef<number>(1);
   const desktopTracksRef = useRef<{ videoTrack?: LocalVideoTrack; audioTrack?: LocalAudioTrack }>({});
 
@@ -718,6 +721,19 @@ export function useLiveKit({ url, token, onDisconnected, onConnected }: UseLiveK
         captureFps: captureFps || undefined,
         framesDropped: framesDropped || undefined,
       });
+
+      // Redutor automático: se o codificador está limitado por CPU e entregando bem menos que o alvo
+      // por ~8s seguidos, reduz um degrau (1080p -> 720p, depois 60 -> 30 FPS) para manter a fluidez.
+      const target = shareTargetRef.current;
+      if (target && bestOutbound?.qualityLimitationReason === 'cpu' && fps > 0 && fps < target.fps * 0.8) {
+        cpuPressureTicksRef.current += 1;
+      } else {
+        cpuPressureTicksRef.current = Math.max(0, cpuPressureTicksRef.current - 1);
+      }
+      if (target && cpuPressureTicksRef.current >= 8) {
+        cpuPressureTicksRef.current = 0;
+        void downgradeScreenShareForCpu();
+      }
     } catch {
       // Ignore stats collection error during renegotiations
     }
@@ -1197,6 +1213,54 @@ export function useLiveKit({ url, token, onDisconnected, onConnected }: UseLiveK
     });
   };
 
+  // Reduz um degrau de qualidade da transmissão de tela quando a CPU de quem transmite não acompanha
+  const downgradeScreenShareForCpu = useCallback(async () => {
+    const room = roomRef.current;
+    const target = shareTargetRef.current;
+    if (!room || !target) return;
+
+    let next: { resolution: '720p' | '1080p'; fps: 30 | 60 } | null = null;
+    if (target.resolution === '1080p') next = { resolution: '720p', fps: target.fps };
+    else if (target.fps === 60) next = { resolution: '720p', fps: 30 };
+    if (!next) return; // já no mínimo (720p30)
+
+    try {
+      const publication = room.localParticipant.getTrackPublication(Track.Source.ScreenShare);
+      const track = publication?.track as LocalVideoTrack | undefined;
+      const mediaTrack = track?.mediaStreamTrack;
+      const sender = (track as any)?.sender as RTCRtpSender | undefined;
+
+      if (mediaTrack) {
+        await mediaTrack
+          .applyConstraints({ ...RESOLUTION_SIZE[next.resolution], frameRate: next.fps })
+          .catch((e) => console.warn('applyConstraints na captura falhou:', e));
+      }
+      if (sender?.getParameters) {
+        const params = sender.getParameters();
+        if (params.encodings?.length) {
+          params.encodings[0].maxFramerate = next.fps;
+          params.encodings[0].maxBitrate = getTargetBitrateKbps(next.resolution, next.fps) * 1000;
+          // Se a captura continuar em 1080p, o codificador reduz a escala explicitamente.
+          params.encodings[0].scaleResolutionDownBy = target.resolution === '1080p' ? 1.5 : 1;
+        }
+        await sender.setParameters(params);
+      }
+      shareTargetRef.current = next;
+      setMessages((prev) => [
+        ...prev,
+        {
+          id: `system-quality-${Date.now()}`,
+          sender: 'Sistema',
+          text: `Seu computador não está acompanhando a codificação. Qualidade reduzida para ${next!.resolution} a ${next!.fps} FPS.`,
+          timestamp: Date.now(),
+          isSystem: true,
+        },
+      ]);
+    } catch (e) {
+      console.warn('Falha ao reduzir a qualidade da transmissão:', e);
+    }
+  }, []);
+
   // Start Screen Sharing with high-fidelity stereo audio capture (Cinema / Gaming / Music mode)
   const startScreenShare = async (config?: Partial<StreamQualityConfig>) => {
     const room = roomRef.current;
@@ -1209,14 +1273,12 @@ export function useLiveKit({ url, token, onDisconnected, onConnected }: UseLiveK
 
       const targetBitrate = (config?.bitrateKbps ?? getTargetBitrateKbps(config?.resolution, targetFps)) * 1000;
 
-      const screenResolution =
-        config?.resolution === '4k'
-          ? { width: 3840, height: 2160, frameRate: targetFps }
-          : config?.resolution === '1440p'
-          ? { width: 2560, height: 1440, frameRate: targetFps }
-          : config?.resolution === '720p'
-          ? { width: 1280, height: 720, frameRate: targetFps }
-          : { width: 1920, height: 1080, frameRate: targetFps };
+      const targetResolution: '720p' | '1080p' = config?.resolution === '720p' ? '720p' : '1080p';
+      const screenResolution = { ...RESOLUTION_SIZE[targetResolution], frameRate: targetFps };
+
+      // Alvo atual da transmissão: usado pelo redutor automático quando o processador não acompanha
+      shareTargetRef.current = { resolution: targetResolution, fps: targetFps === 30 ? 30 : 60 };
+      cpuPressureTicksRef.current = 0;
 
       // 1. Check if running in native Desktop App with selected source
       if (typeof window !== 'undefined' && window.desktopAPI?.isDesktop && config?.sourceId) {
@@ -1413,6 +1475,8 @@ export function useLiveKit({ url, token, onDisconnected, onConnected }: UseLiveK
 
   const stopScreenShare = async () => {
     stopKeepAlive();
+    shareTargetRef.current = null;
+    cpuPressureTicksRef.current = 0;
     const room = roomRef.current;
     if (!room) return;
 
