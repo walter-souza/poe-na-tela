@@ -21,7 +21,7 @@ import { TextChannelView } from './components/TextChannelView';
 import { CreateRoomModal } from './components/CreateRoomModal';
 import { PasswordModal } from './components/PasswordModal';
 import { playJoinSound, playLeaveSound } from './utils/soundEffects';
-import { getGuestRooms, saveGuestRoom, removeGuestRoom } from './utils/guestStorage';
+import { getGuestRooms, saveGuestRoom, removeGuestRoom, syncGuestAccount } from './utils/guestStorage';
 import type { StreamQualityConfig, Channel, UserRoom, VoiceParticipant } from './types';
 
 interface AppSession {
@@ -36,7 +36,7 @@ interface AppSession {
 }
 
 export function App() {
-  const { profile, isAuthenticated, session: authSession } = useAuth();
+  const { profile, isAuthenticated, session: authSession, updateNickname } = useAuth();
   const [session, setSession] = useState<AppSession | null>(null);
 
   const [isLoading, setIsLoading] = useState(false);
@@ -219,6 +219,7 @@ export function App() {
         hasPasscode: Boolean(passcode),
       });
       setGuestRooms(getGuestRooms());
+      syncGuestAccount(effectiveUserName).catch(() => {});
 
       window.history.replaceState({}, '', window.location.pathname);
       setInviteServerName(null);
@@ -283,6 +284,7 @@ export function App() {
           hasPasscode: true,
         });
         setGuestRooms(getGuestRooms());
+        syncGuestAccount(effectiveUserName).catch(() => {});
 
         fetchUserRooms();
       } else {
@@ -339,6 +341,7 @@ export function App() {
         hasPasscode: Boolean(passcode),
       });
       setGuestRooms(getGuestRooms());
+      syncGuestAccount(effectiveUserName).catch(() => {});
 
       window.history.replaceState({}, '', window.location.pathname);
       setInviteServerName(null);
@@ -439,7 +442,17 @@ export function App() {
           />
         ) : (
           <div className="flex-1 overflow-y-auto">
-            <Lobby onJoin={handleJoin} isLoading={isLoading} error={error} />
+            <Lobby
+              onJoin={handleJoin}
+              isLoading={isLoading}
+              error={error}
+              onGuestRecovered={(rec) => {
+                setGuestRooms(rec.rooms);
+                if (rec.nickname && updateNickname) {
+                  updateNickname(rec.nickname);
+                }
+              }}
+            />
           </div>
         )}
       </div>
@@ -465,6 +478,7 @@ export function App() {
             hasPasscode: Boolean(passcode),
           });
           setGuestRooms(getGuestRooms());
+          syncGuestAccount(effectiveUserName).catch(() => {});
           fetchUserRooms();
           if (passcode) {
             setRoomPasscodes((prev) => ({ ...prev, [slug]: passcode }));

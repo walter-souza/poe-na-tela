@@ -200,6 +200,27 @@ create policy "Qualquer pessoa pode enviar mensagens"
 alter publication supabase_realtime add table public.messages;
 alter publication supabase_realtime add table public.channels;
 
+-- 7.5 TABELA DE CONTAS DE CONVIDADOS (GUEST_ACCOUNTS - CROSS-DEVICE RECOVERY)
+create table if not exists public.guest_accounts (
+  recovery_code text primary key,
+  nickname text not null,
+  avatar_url text,
+  rooms jsonb not null default '[]'::jsonb,
+  created_at timestamptz default now(),
+  updated_at timestamptz default now()
+);
+
+alter table public.guest_accounts enable row level security;
+
+create policy "Leitura pública de guest_accounts"
+  on public.guest_accounts for select
+  using (true);
+
+create policy "Gravação de guest_accounts"
+  on public.guest_accounts for all
+  using (true)
+  with check (true);
+
 -- 8. PERMISSÕES DE TABELAS (GRANTS)
 grant usage on schema public to anon, authenticated, service_role;
 grant all on all tables in schema public to anon, authenticated, service_role;

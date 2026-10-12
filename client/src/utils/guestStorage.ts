@@ -1,6 +1,8 @@
 import type { UserRoom } from '../types';
+import { getApiBaseUrl } from './api';
 
 export const GUEST_ROOMS_STORAGE_KEY = 'poe_na_tela_guest_rooms';
+export const GUEST_RECOVERY_KEY = 'poe_na_tela_guest_recovery_code';
 
 /**
  * Retorna as salas salvas localmente para o convidado
@@ -88,4 +90,111 @@ export function clearGuestRooms(): void {
   try {
     localStorage.removeItem(GUEST_ROOMS_STORAGE_KEY);
   } catch {}
+}
+
+/**
+ * Gera um código de recuperação amigável no formato PNT-XXXX-YYYY
+ */
+export function generateGuestRecoveryCode(): string {
+  const chars = '23456789ABCDEFGHJKLMNPQRSTUVWXYZ';
+  const randPart = (len: number) =>
+    Array.from({ length: len }, () => chars[Math.floor(Math.random() * chars.length)]).join('');
+  return `PNT-${randPart(4)}-${randPart(4)}`;
+}
+
+/**
+ * Obtém ou inicializa o código de recuperação exclusivo deste convidado
+ */
+export function getOrCreateGuestRecoveryCode(): string {
+  try {
+    const saved = localStorage.getItem(GUEST_RECOVERY_KEY);
+    if (saved && saved.trim()) return saved.trim().toUpperCase();
+    const newCode = generateGuestRecoveryCode();
+    localStorage.setItem(GUEST_RECOVERY_KEY, newCode);
+    return newCode;
+  } catch {
+    return generateGuestRecoveryCode();
+  }
+}
+
+/**
+ * Define o código de recuperação manualmente (usado ao restaurar)
+ */
+export function setGuestRecoveryCode(code: string): void {
+  try {
+    localStorage.setItem(GUEST_RECOVERY_KEY, code.trim().toUpperCase());
+  } catch {}
+}
+
+/**
+ * Sincroniza a conta do convidado (apelido, avatar e salas) com a nuvem
+ */
+export async function syncGuestAccount(nickname: string, avatarUrl?: string | null): Promise<boolean> {
+  const recoveryCode = getOrCreateGuestRecoveryCode();
+  const rooms = getGuestRooms();
+
+  try {
+    const res = await fetch(`${getApiBaseUrl()}/api/guest/sync`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        recoveryCode,
+        nickname: nickname || 'Convidado',
+        avatarUrl,
+        rooms,
+      }),
+    });
+    return res.ok;
+  } catch (err) {
+    console.warn('Falha ao sincronizar conta de convidado com servidor:', err);
+    return false;
+  }
+}
+
+/**
+ * Recupera os dados de convidado a partir de um código de recuperação
+ */
+export async function recoverGuestAccount(code: string): Promise<{
+  success: boolean;
+  recoveryCode?: string;
+  nickname?: string;
+  avatarUrl?: string | null;
+  rooms?: UserRoom[];
+  error?: string;
+}> {
+  const cleanCode = code.trim().toUpperCase();
+  if (!cleanCode || cleanCode.length < 6) {
+    return { success: false, error: 'Por favor, insira um código de recuperação válido.' };
+  }
+
+  try {
+    const res = await fetch(`${getApiBaseUrl()}/api/guest/${encodeURIComponent(cleanCode)}`);
+    const data = await res.json().catch(() => ({}));
+
+    if (!res.ok || !data.success || !data.account) {
+      return { success: false, error: data.error || 'Código de convidado não encontrado.' };
+    }
+
+    const account = data.account;
+    const finalCode = account.recoveryCode || cleanCode;
+    setGuestRecoveryCode(finalCode);
+
+    if (Array.isArray(account.rooms)) {
+      localStorage.setItem(GUEST_ROOMS_STORAGE_KEY, JSON.stringify(account.rooms));
+    }
+
+    if (account.nickname) {
+      localStorage.setItem('poe-na-tela-username', account.nickname);
+    }
+
+    return {
+      success: true,
+      recoveryCode: finalCode,
+      nickname: account.nickname,
+      avatarUrl: account.avatarUrl,
+      rooms: account.rooms || [],
+    };
+  } catch (err: any) {
+    return { success: false, error: 'Erro de conexão ao recuperar conta de convidado.' };
+  }
 }

@@ -14,13 +14,15 @@ import {
   Wand2,
   LogOut,
   ShieldCheck,
+  KeyRound,
 } from 'lucide-react';
 import { PasswordModal } from './PasswordModal';
 import { CreateRoomModal } from './CreateRoomModal';
 import { GoogleLoginButton } from './GoogleLoginButton';
+import { GuestRecoveryModal } from './GuestRecoveryModal';
 import { useAuth } from '../context/AuthContext';
 import { sanitizeRoomName, sanitizeUserName } from '../utils/sanitize';
-import type { FavoriteRoom, ActiveRoomInfo } from '../types';
+import type { FavoriteRoom, ActiveRoomInfo, UserRoom } from '../types';
 import { getRoomsUrl, getRoomInfoUrl } from '../utils/api';
 import { isNoiseSuppressionSupported, NoiseSuppressionProcessor } from '../utils/noiseSuppression';
 
@@ -28,14 +30,16 @@ interface LobbyProps {
   onJoin: (roomName: string, userName: string, isPublisher: boolean, passcode?: string) => void;
   isLoading: boolean;
   error?: string | null;
+  onGuestRecovered?: (recovered: { nickname: string; rooms: UserRoom[] }) => void;
 }
 
 const USERNAME_STORAGE_KEY = 'poe-na-tela-username';
 const FAVORITES_STORAGE_KEY = 'poe-na-tela-favorites';
 
-export const Lobby: React.FC<LobbyProps> = ({ onJoin, isLoading, error }) => {
+export const Lobby: React.FC<LobbyProps> = ({ onJoin, isLoading, error, onGuestRecovered }) => {
   const { profile, isAuthenticated, signOut } = useAuth();
   const [isCreateRoomOpen, setIsCreateRoomOpen] = useState(false);
+  const [isGuestModalOpen, setIsGuestModalOpen] = useState(false);
   const [roomName, setRoomName] = useState('');
   const [userName, setUserName] = useState(() => {
     return localStorage.getItem(USERNAME_STORAGE_KEY) || '';
@@ -353,6 +357,14 @@ export const Lobby: React.FC<LobbyProps> = ({ onJoin, isLoading, error }) => {
           ) : (
             <div className="flex items-center gap-2 bg-white/5 border border-white/10 rounded-2xl px-3 py-1.5 backdrop-blur-md">
               <span className="text-[11px] text-gray-400">Modo Convidado</span>
+              <button
+                onClick={() => setIsGuestModalOpen(true)}
+                className="flex items-center gap-1.5 text-[11px] font-medium text-indigo-300 hover:text-white bg-indigo-500/15 hover:bg-indigo-500/25 border border-indigo-500/25 px-2.5 py-1 rounded-xl transition cursor-pointer"
+                title="Ver meu ID de convidado ou recuperar servidores de outro PC"
+              >
+                <KeyRound className="w-3 h-3 text-indigo-400" />
+                <span>ID Convidado</span>
+              </button>
               <GoogleLoginButton size="medium" shape="pill" theme="outline" />
             </div>
           )}
@@ -696,6 +708,20 @@ export const Lobby: React.FC<LobbyProps> = ({ onJoin, isLoading, error }) => {
         onConfirm={handlePasswordConfirm}
         error={passwordModalError}
       />
+
+      {/* Guest Recovery Modal */}
+      {isGuestModalOpen && (
+        <GuestRecoveryModal
+          isOpen={isGuestModalOpen}
+          onClose={() => setIsGuestModalOpen(false)}
+          currentNickname={userName || profile?.username || 'Convidado'}
+          onRecoverSuccess={(rec) => {
+            setUserName(rec.nickname);
+            localStorage.setItem(USERNAME_STORAGE_KEY, rec.nickname);
+            onGuestRecovered?.(rec);
+          }}
+        />
+      )}
     </div>
   );
 };
