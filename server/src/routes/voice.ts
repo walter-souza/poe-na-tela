@@ -4,6 +4,9 @@ import { sanitizeRoomName } from '../sanitize';
 import { listParticipantsWithTimeout, roomService } from '../services/livekit';
 import { supabase } from '../supabase';
 
+import { voiceDisconnectBody } from '../schemas';
+import { validateBody } from '../middleware/validate';
+
 const router = Router();
 
 /**
@@ -79,7 +82,7 @@ router.get([
 router.post([
   '/api/rooms/:roomName/voice-disconnect',
   '/rooms/:roomName/voice-disconnect',
-], async (req: Request, res: Response): Promise<void> => {
+], validateBody(voiceDisconnectBody), async (req: Request, res: Response): Promise<void> => {
   try {
     const rawRoom = req.params.roomName;
     const sanitizedRoom = sanitizeRoomName(rawRoom);

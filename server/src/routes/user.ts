@@ -3,6 +3,9 @@ import { getAuthUser } from '../middleware/auth';
 import { sanitizeRoomName } from '../sanitize';
 import { isSupabaseConfigured, supabase } from '../supabase';
 
+import { migrateGuestBody, updateProfileBody } from '../schemas';
+import { validateBody } from '../middleware/validate';
+
 const router = Router();
 
 /**
@@ -132,7 +135,7 @@ router.get(['/api/user/profile', '/user/profile'], async (req: Request, res: Res
 /**
  * Atualizar perfil do usuário autenticado (username, avatar_url)
  */
-router.put(['/api/user/profile', '/user/profile'], async (req: Request, res: Response): Promise<void> => {
+router.put(['/api/user/profile', '/user/profile'], validateBody(updateProfileBody), async (req: Request, res: Response): Promise<void> => {
   try {
     if (!isSupabaseConfigured() || !supabase) {
       res.status(503).json({ error: 'Banco de dados não configurado.' });
@@ -183,7 +186,7 @@ router.put(['/api/user/profile', '/user/profile'], async (req: Request, res: Res
 /**
  * Migrar dados de convidado (salas) para a conta autenticada do usuário (Google)
  */
-router.post(['/api/user/migrate-guest', '/user/migrate-guest'], async (req: Request, res: Response): Promise<void> => {
+router.post(['/api/user/migrate-guest', '/user/migrate-guest'], validateBody(migrateGuestBody), async (req: Request, res: Response): Promise<void> => {
   try {
     if (!isSupabaseConfigured() || !supabase) {
       res.json({ success: true, migratedCount: 0 });

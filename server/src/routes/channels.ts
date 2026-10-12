@@ -3,6 +3,9 @@ import { getAuthUser } from '../middleware/auth';
 import { sanitizeRoomName } from '../sanitize';
 import { isSupabaseConfigured, supabase } from '../supabase';
 
+import { createChannelBody } from '../schemas';
+import { validateBody } from '../middleware/validate';
+
 const router = Router();
 
 /**
@@ -66,7 +69,7 @@ router.post([
   '/rooms/:roomName/channels',
   '/api/room/:roomName/channels',
   '/room/:roomName/channels'
-], async (req: Request, res: Response): Promise<void> => {
+], validateBody(createChannelBody), async (req: Request, res: Response): Promise<void> => {
   try {
     const roomSlug = sanitizeRoomName(req.params.roomName);
     const { name, type } = req.body;

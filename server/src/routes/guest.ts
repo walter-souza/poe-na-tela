@@ -1,6 +1,9 @@
 import { Router, Request, Response } from 'express';
 import { isSupabaseConfigured, supabase } from '../supabase';
 
+import { guestSyncBody } from '../schemas';
+import { validateBody } from '../middleware/validate';
+
 const router = Router();
 
 interface GuestAccountData {
@@ -16,7 +19,7 @@ const guestAccountsMemory = new Map<string, GuestAccountData>();
 /**
  * Sincronizar dados de Convidado (Apelido, Avatar, Lista de Salas salvas)
  */
-router.post(['/api/guest/sync', '/guest/sync'], async (req: Request, res: Response): Promise<void> => {
+router.post(['/api/guest/sync', '/guest/sync'], validateBody(guestSyncBody), async (req: Request, res: Response): Promise<void> => {
   try {
     const { recoveryCode, nickname, avatarUrl, rooms } = req.body || {};
     const cleanCode = typeof recoveryCode === 'string' ? recoveryCode.trim().toUpperCase() : '';

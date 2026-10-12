@@ -11,9 +11,12 @@ import { getActiveRoomStreams } from '../services/streams';
 import { roomStore } from '../state';
 import { isSupabaseConfigured, supabase } from '../supabase';
 
+import { createRoomBody, joinRoomBody } from '../schemas';
+import { validateBody } from '../middleware/validate';
+
 const router = Router();
 
-router.post(['/api/rooms', '/rooms'], writeLimiter, async (req: Request, res: Response): Promise<void> => {
+router.post(['/api/rooms', '/rooms'], writeLimiter, validateBody(createRoomBody), async (req: Request, res: Response): Promise<void> => {
   try {
     const { name, slug, passcode } = req.body;
     const sanitizedName = (name || '').trim().slice(0, 64);
@@ -113,7 +116,7 @@ router.post(['/api/rooms', '/rooms'], writeLimiter, async (req: Request, res: Re
 /**
  * Ingressar como membro da sala (Discord-like)
  */
-router.post(['/api/rooms/:roomName/join', '/rooms/:roomName/join'], passcodeGuards, async (req: Request, res: Response): Promise<void> => {
+router.post(['/api/rooms/:roomName/join', '/rooms/:roomName/join'], passcodeGuards, validateBody(joinRoomBody), async (req: Request, res: Response): Promise<void> => {
   try {
     const roomSlug = sanitizeRoomName(req.params.roomName);
     const { passcode } = req.body;

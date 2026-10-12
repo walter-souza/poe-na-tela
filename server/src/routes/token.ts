@@ -8,12 +8,15 @@ import { listParticipantsWithTimeout, roomService } from '../services/livekit';
 import { roomStore } from '../state';
 import { isSupabaseConfigured, supabase } from '../supabase';
 
+import { tokenBody } from '../schemas';
+import { validateBody } from '../middleware/validate';
+
 const router = Router();
 
 /**
  * Generate a secure JWT AccessToken to join a LiveKit room
  */
-router.post(['/api/token', '/token'], passcodeGuards, async (req: Request, res: Response): Promise<void> => {
+router.post(['/api/token', '/token'], passcodeGuards, validateBody(tokenBody), async (req: Request, res: Response): Promise<void> => {
   try {
     const { roomName, participantName, isPublisher, passcode, bypassToken, voiceChannelId, avatarUrl } = req.body;
 
