@@ -8,7 +8,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 Monorepo com dois pacotes independentes (cada um com seu `package-lock.json`) mais infra:
 - `client/` — React 19 + Vite + Tailwind 4 + `livekit-client` (TypeScript, ESM)
-- `server/` — Express 4 + `livekit-server-sdk` + Supabase (TypeScript, tudo em `src/index.ts`)
+- `server/` — Express 4 + `livekit-server-sdk` + Supabase (TypeScript, modular em `src/`)
 - `supabase/schema.sql` — schema do banco (profiles, rooms, room_members, channels, messages, guest_accounts)
 - `livekit.yaml` / `docker-compose.yml` — SFU LiveKit + api + client para rodar local
 
@@ -22,7 +22,7 @@ npm run dev:client     # só frontend
 npm run build          # tsc do server + (tsc -b && vite build) do client
 npm run docker:up      # LiveKit + API + frontend (client em :3000)
 ```
-Lint (só no client, oxlint): `cd client && npm run lint`. Não há testes automatizados no repositório; a verificação é `build` (type-check) + lint.
+Lint (só no client, oxlint): `cd client && npm run lint`. Testes do servidor (vitest): `cd server && npm test` (um arquivo: `npx vitest run test/passcode.test.ts`; type-check: `npx tsc --noEmit`). O CI (`.github/workflows/ci.yml`) roda tsc, testes e build do servidor, e lint + build do client; o client não tem testes.
 
 Dev local precisa de um LiveKit rodando em `ws://127.0.0.1:7880` (chaves `devkey`/`secret`, ver `.env.example` na raiz) — suba com `docker compose up -d livekit`. Em dev o Vite faz proxy de `/api` para o backend (`client/vite.config.ts`).
 
@@ -30,12 +30,13 @@ Dev local precisa de um LiveKit rodando em `ws://127.0.0.1:7880` (chaves `devkey
 
 **Fluxo geral:** o cliente pede um JWT do LiveKit ao backend (`POST /api/token`), conecta direto ao SFU LiveKit via WebRTC e usa o backend também para salas, perfis, chat e convidados. Streams de OBS (SRT) passam por MediaMTX (`MEDIAMTX_API_URL`, webhook `/api/webhooks/mediamtx`) e são reproduzidos no cliente via WHEP (`WhepPlayer`/`WhepTile`).
 
-**Backend (`server/src/index.ts`, ~1800 linhas, arquivo único):**
+**Backend (`server/src`, modular):**
+- `index.ts` só inicializa (valida `MASTER_KEY`, `listen`, monitor de streams). `app.ts` monta middlewares (helmet, CORS, rate limit) e os routers de `routes/` (health, token, rooms, user, guest, channels, voice, webhooks). `config.ts` concentra env/constantes e o mapeamento de nomes de sala; `state.ts` guarda o `roomStore` em memória; `services/` (LiveKit, MediaMTX/streams) e `middleware/` (auth, limits, cache) são compartilhados pelos routers.
 - Toda rota é registrada com dois caminhos (`['/api/x', '/x']`) — mantenha o par ao criar rotas.
 - Todo acesso ao Supabase passa pelo backend com service-role (`server/src/supabase.ts`); o cliente **não** deve ler/gravar tabelas direto (commit "migrar operações de banco do Supabase para o backend"). Autenticação: `Authorization: Bearer <jwt supabase>` validado com `supabase.auth.getUser`. Sem Supabase configurado, o servidor opera em modo de memória (`roomStore` Map).
 - **Isolamento de ambientes:** `ROOM_PREFIX` (padrão `dev_` quando `PORT=3002`) prefixa os nomes de sala no LiveKit; use `toLiveKitRoomName` / `fromLiveKitRoomName` / `extractBaseRoomSlug` ao converter slug ↔ nome LiveKit. Em produção, canais de voz usam salas LiveKit separadas com sufixo `_v_{channelId}`.
 - `server/src/kms.ts`: envelope encryption (AES-256-GCM) — `MASTER_KEY` (só no backend) cifra a chave simétrica de cada sala. Sem `MASTER_KEY` cai numa chave de dev determinística.
-- Segurança de borda: `helmet`, CORS por lista de origens (`ALLOWED_ORIGINS` + Vercel/localhost; requests sem `Origin` ou `null` do Electron passam) e rate limit. Rotas que validam senha de sala (`/token`, `/join`, `/key`) usam `passcodeGuards`: só tentativas com senha errada contam (`markWrongPasscode`) — chame-o ao adicionar novos pontos de validação. Senhas são hash scrypt (`passcode.ts`), com migração automática do formato legado.
+- Segurança de borda: `helmet`, CORS por lista de origens (`ALLOWED_ORIGINS` + Vercel/localhost; requests sem `Origin` ou `null` do Electron passam) e rate limit. Rotas que validam senha de sala (`/token`, `/join`, `/key`) usam `passcodeGuards` (`middleware/limits.ts`): só tentativas com senha errada contam (`markWrongPasscode`) — chame-o ao adicionar novos pontos de validação. Senhas são hash scrypt (`passcode.ts`), com migração automática do formato legado.
 - Modo de manutenção via `MAINTENANCE_MODE` / `ADMIN_BYPASS_TOKEN`.
 - Contas guest (`/api/guest/*`, `/api/user/migrate-guest`) migram para conta Google automaticamente no login.
 

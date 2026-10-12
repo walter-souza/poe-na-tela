@@ -54,3 +54,24 @@ export async function verifyPasscode(stored: string, provided: string): Promise<
   const derived = await scrypt(provided, Buffer.from(saltHex, 'hex'), expected.length);
   return { ok: safeEqual(derived, expected), needsUpgrade: false };
 }
+
+/**
+ * Valida a senha informada contra o valor armazenado (hash scrypt ou legado em texto puro).
+ * Se o valor era legado e a senha confere, chama `onUpgrade` com o novo hash para regravar.
+ */
+export async function checkPasscode(
+  stored: string,
+  provided: string | null | undefined,
+  onUpgrade?: (newHash: string) => PromiseLike<unknown>
+): Promise<boolean> {
+  if (!provided) return false;
+  const result = await verifyPasscode(stored, provided);
+  if (result.ok && result.needsUpgrade && onUpgrade) {
+    try {
+      await onUpgrade(await hashPasscode(provided));
+    } catch (err) {
+      console.warn('Falha ao migrar senha de sala para hash:', err);
+    }
+  }
+  return result.ok;
+}
