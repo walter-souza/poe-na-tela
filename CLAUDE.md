@@ -35,6 +35,7 @@ Dev local precisa de um LiveKit rodando em `ws://127.0.0.1:7880` (chaves `devkey
 - Todo acesso ao Supabase passa pelo backend com service-role (`server/src/supabase.ts`); o cliente **não** deve ler/gravar tabelas direto (commit "migrar operações de banco do Supabase para o backend"). Autenticação: `Authorization: Bearer <jwt supabase>` validado com `supabase.auth.getUser`. Sem Supabase configurado, o servidor opera em modo de memória (`roomStore` Map).
 - **Isolamento de ambientes:** `ROOM_PREFIX` (padrão `dev_` quando `PORT=3002`) prefixa os nomes de sala no LiveKit; use `toLiveKitRoomName` / `fromLiveKitRoomName` / `extractBaseRoomSlug` ao converter slug ↔ nome LiveKit. Em produção, canais de voz usam salas LiveKit separadas com sufixo `_v_{channelId}`.
 - `server/src/kms.ts`: envelope encryption (AES-256-GCM) — `MASTER_KEY` (só no backend) cifra a chave simétrica de cada sala. Sem `MASTER_KEY` cai numa chave de dev determinística.
+- Segurança de borda: `helmet`, CORS por lista de origens (`ALLOWED_ORIGINS` + Vercel/localhost; requests sem `Origin` ou `null` do Electron passam) e rate limit. Rotas que validam senha de sala (`/token`, `/join`, `/key`) usam `passcodeGuards`: só tentativas com senha errada contam (`markWrongPasscode`) — chame-o ao adicionar novos pontos de validação. Senhas são hash scrypt (`passcode.ts`), com migração automática do formato legado.
 - Modo de manutenção via `MAINTENANCE_MODE` / `ADMIN_BYPASS_TOKEN`.
 - Contas guest (`/api/guest/*`, `/api/user/migrate-guest`) migram para conta Google automaticamente no login.
 
