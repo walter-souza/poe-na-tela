@@ -45,6 +45,30 @@ export function fromLiveKitRoomName(liveKitName: string): string | null {
   return liveKitName;
 }
 
+/**
+ * Extrai o slug base da sala a partir do nome da sala no LiveKit.
+ * No ambiente de PRODUÇÃO, canais de voz isolados possuem o sufixo `_v_{channelId}`.
+ * Em DEV, preserva o comportamento original sem alterações conforme solicitado.
+ */
+export function extractBaseRoomSlug(liveKitName: string): string | null {
+  const unprefixed = fromLiveKitRoomName(liveKitName);
+  if (!unprefixed) return null;
+
+  const isDev = ROOM_PREFIX === 'dev_' || String(PORT) === '3002';
+  if (isDev) {
+    // Não altera o comportamento em ambiente de DEV
+    return unprefixed;
+  }
+
+  // Em produção: extrai o slug base da sala removendo o sufixo do canal de voz
+  const vIndex = unprefixed.indexOf('_v_');
+  if (vIndex !== -1) {
+    return unprefixed.slice(0, vIndex);
+  }
+  return unprefixed;
+}
+
+
 // Maintenance Mode Helper
 const isMaintenanceMode = () =>
   process.env.MAINTENANCE_MODE === 'true' || process.env.MAINTENANCE_MODE === '1';
@@ -1157,11 +1181,84 @@ app.get(['/api/rooms', '/rooms'], async (_req: Request, res: Response) => {
   try {
     const liveRooms = await listRoomsWithTimeout();
     const activeLiveRooms = Array.isArray(liveRooms) ? liveRooms.filter(r => r.numParticipants > 0) : [];
+    const isDev = ROOM_PREFIX === 'dev_' || String(PORT) === '3002';
     const liveParticipantsMap = new Map<string, number>();
+
+    if (isDev) {
+      // DEV: Mantém comportamento original 100% inalterado
+      for (const r of activeLiveRooms) {
+        const appSlug = fromLiveKitRoomName(r.name);
+        if (appSlug) {
+          liveParticipantsMap.set(appSlug.toLowerCase(), r.numParticipants);
+        }
+      }
+
+      // Clean up dead rooms from memory store
+      for (const [name] of roomStore.entries()) {
+        if (!liveParticipantsMap.has(name.toLowerCase())) {
+          roomStore.delete(name);
+        }
+      }
+
+      const resultMap = new Map<string, any>();
+
+      // 1. Carregar salas persistentes do Supabase se disponível
+      if (isSupabaseConfigured() && supabase) {
+        try {
+          const { data: dbRooms } = await supabase
+            .from('rooms')
+            .select('id, slug, name, passcode_hash, created_at')
+            .order('created_at', { ascending: false });
+
+          if (Array.isArray(dbRooms)) {
+            for (const room of dbRooms) {
+              const count = liveParticipantsMap.get(room.slug.toLowerCase()) || 0;
+              resultMap.set(room.slug.toLowerCase(), {
+                id: room.id,
+                name: room.name,
+                slug: room.slug,
+                numParticipants: count,
+                creationTime: new Date(room.created_at).getTime(),
+                hasPasscode: Boolean(room.passcode_hash),
+                isPersistent: true,
+              });
+            }
+          }
+        } catch (dbErr) {
+          console.warn('Erro ao carregar salas do Supabase:', dbErr);
+        }
+      }
+
+      // 2. Adicionar salas ativas em memória (ou temporárias) filtradas pelo ambiente
+      for (const r of activeLiveRooms) {
+        const appSlug = fromLiveKitRoomName(r.name);
+        if (!appSlug) continue;
+
+        const lower = appSlug.toLowerCase();
+        if (!resultMap.has(lower)) {
+          resultMap.set(lower, {
+            name: appSlug,
+            slug: appSlug,
+            numParticipants: r.numParticipants,
+            creationTime: Number(r.creationTime),
+            hasPasscode: roomStore.has(appSlug) && Boolean(roomStore.get(appSlug)?.passcode),
+            isPersistent: false,
+          });
+        }
+      }
+
+      res.json({ rooms: Array.from(resultMap.values()) });
+      return;
+    }
+
+    // --- PRODUÇÃO ---
+    // Agrega participantes de todos os canais de voz da sala ({roomName}_v_{channelId})
     for (const r of activeLiveRooms) {
-      const appSlug = fromLiveKitRoomName(r.name);
-      if (appSlug) {
-        liveParticipantsMap.set(appSlug.toLowerCase(), r.numParticipants);
+      const baseSlug = extractBaseRoomSlug(r.name);
+      if (baseSlug) {
+        const lower = baseSlug.toLowerCase();
+        const currentCount = liveParticipantsMap.get(lower) || 0;
+        liveParticipantsMap.set(lower, currentCount + r.numParticipants);
       }
     }
 
@@ -1203,17 +1300,17 @@ app.get(['/api/rooms', '/rooms'], async (_req: Request, res: Response) => {
 
     // 2. Adicionar salas ativas em memória (ou temporárias) filtradas pelo ambiente
     for (const r of activeLiveRooms) {
-      const appSlug = fromLiveKitRoomName(r.name);
-      if (!appSlug) continue;
+      const baseSlug = extractBaseRoomSlug(r.name);
+      if (!baseSlug) continue;
 
-      const lower = appSlug.toLowerCase();
+      const lower = baseSlug.toLowerCase();
       if (!resultMap.has(lower)) {
         resultMap.set(lower, {
-          name: appSlug,
-          slug: appSlug,
-          numParticipants: r.numParticipants,
+          name: baseSlug,
+          slug: baseSlug,
+          numParticipants: liveParticipantsMap.get(lower) || r.numParticipants,
           creationTime: Number(r.creationTime),
-          hasPasscode: roomStore.has(appSlug) && Boolean(roomStore.get(appSlug)?.passcode),
+          hasPasscode: roomStore.has(baseSlug) && Boolean(roomStore.get(baseSlug)?.passcode),
           isPersistent: false,
         });
       }
@@ -1239,13 +1336,33 @@ app.get([
   let numParticipants = 0;
   let isActive = false;
 
+  const isDev = ROOM_PREFIX === 'dev_' || String(PORT) === '3002';
+
   try {
-    const rooms = await listRoomsWithTimeout([toLiveKitRoomName(roomName)]);
-    if (rooms && rooms.length > 0 && rooms[0].numParticipants > 0) {
-      isActive = true;
-      numParticipants = rooms[0].numParticipants;
+    if (isDev) {
+      // DEV: Mantém verificação original 100% inalterada
+      const rooms = await listRoomsWithTimeout([toLiveKitRoomName(roomName)]);
+      if (rooms && rooms.length > 0 && rooms[0].numParticipants > 0) {
+        isActive = true;
+        numParticipants = rooms[0].numParticipants;
+      } else {
+        roomStore.delete(roomName);
+      }
     } else {
-      roomStore.delete(roomName);
+      // PRODUÇÃO: contabiliza participantes do canal exato ou de canais de voz {roomName}_v_
+      const prefix = toLiveKitRoomName(`${roomName}_v_`);
+      const exactName = toLiveKitRoomName(roomName);
+      const allRooms = await listRoomsWithTimeout();
+      const matchingRooms = Array.isArray(allRooms)
+        ? allRooms.filter(r => r.name === exactName || (typeof r.name === 'string' && r.name.startsWith(prefix)))
+        : [];
+      const totalParticipants = matchingRooms.reduce((acc, r) => acc + (r.numParticipants || 0), 0);
+      if (totalParticipants > 0) {
+        isActive = true;
+        numParticipants = totalParticipants;
+      } else {
+        roomStore.delete(roomName);
+      }
     }
   } catch {}
 
