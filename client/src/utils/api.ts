@@ -4,12 +4,16 @@
 export function getApiBaseUrl(): string {
   const envUrl = import.meta.env.VITE_API_URL;
   if (envUrl && typeof envUrl === 'string' && envUrl.trim().length > 0) {
-    return envUrl.replace(/\/$/, '');
+    const trimmed = envUrl.replace(/\/$/, '');
+    if (trimmed === '/api' || trimmed === '/') {
+      return '';
+    }
+    return trimmed;
   }
   if (typeof window !== 'undefined' && (window.location.protocol === 'file:' || window.desktopAPI?.isDesktop)) {
     return 'http://127.0.0.1:3001';
   }
-  return '/api';
+  return '';
 }
 
 export function getRoomsUrl(): string {
