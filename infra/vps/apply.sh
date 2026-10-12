@@ -9,6 +9,8 @@ SRC="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 STACK="$HOME/app-stack"
 PUBLIC_IP="${PUBLIC_IP:-$(ip -4 route get 1.1.1.1 | awk '{for (i = 1; i <= NF; i++) if ($i == "src") print $(i + 1)}')}"
 STREAM_HOST="stream.${PUBLIC_IP}.sslip.io"
+# OBS (MediaMTX) fica desligado por padrão. Para ligar: ENABLE_OBS=1 bash infra/vps/apply.sh
+ENABLE_OBS="${ENABLE_OBS:-0}"
 BACKEND_ENVS=("$HOME/poe-na-tela/server/.env" "$HOME/poe-na-tela-dev/server/.env")
 
 [ "$(id -u)" -eq 0 ] || { echo "Rode como root."; exit 1; }
@@ -55,7 +57,7 @@ export PATH="/root/.nvm/versions/node/v20.20.2/bin:$PATH"
 pm2 restart backend backend-dev --update-env >/dev/null 2>&1 || echo "   (pm2 restart falhou; reinicie os backends manualmente)"
 
 echo "== 5/7 Caddy, firewall e buffers UDP"
-if ! grep -q "^${STREAM_HOST} {" /etc/caddy/Caddyfile; then
+if [ "$ENABLE_OBS" = "1" ] && ! grep -q "^${STREAM_HOST} {" /etc/caddy/Caddyfile; then
   cp /etc/caddy/Caddyfile "/etc/caddy/Caddyfile.bak-$(date +%Y%m%d%H%M%S)"
   printf '\n%s {\n    reverse_proxy localhost:8889\n}\n' "$STREAM_HOST" >> /etc/caddy/Caddyfile
 fi
@@ -63,9 +65,16 @@ caddy validate --config /etc/caddy/Caddyfile >/dev/null
 systemctl reload caddy
 
 ufw allow 7882/udp  >/dev/null   # LiveKit (UDP multiplexado)
-ufw allow 8890/udp  >/dev/null   # SRT do OBS
-ufw allow 8189/udp  >/dev/null   # WebRTC do MediaMTX
-ufw allow 8189/tcp  >/dev/null
+if [ "$ENABLE_OBS" = "1" ]; then
+  ufw allow 8890/udp >/dev/null   # SRT do OBS
+  ufw allow 8189/udp >/dev/null   # WebRTC do MediaMTX
+  ufw allow 8189/tcp >/dev/null
+else
+  # OBS desligado: fecha as portas do MediaMTX (ignora se a regra não existir)
+  ufw delete allow 8890/udp >/dev/null 2>&1 || true
+  ufw delete allow 8189/udp >/dev/null 2>&1 || true
+  ufw delete allow 8189/tcp >/dev/null 2>&1 || true
+fi
 
 cat > /etc/sysctl.d/99-poe-na-tela.conf <<'EOF'
 # Buffers UDP maiores: evita descarte de pacotes em picos de vídeo (WebRTC/SRT).
@@ -76,8 +85,14 @@ sysctl --system >/dev/null
 
 echo "== 6/7 Containers (LiveKit é recriado)"
 cd "$STACK"
-docker compose pull
-docker compose up -d --remove-orphans
+if [ "$ENABLE_OBS" = "1" ]; then
+  docker compose --profile obs pull
+  docker compose --profile obs up -d --remove-orphans
+else
+  docker compose pull livekit
+  docker compose up -d --remove-orphans
+  docker compose rm -sf mediamtx >/dev/null 2>&1 || true   # garante o MediaMTX parado
+fi
 
 echo "== 7/7 PM2: rotação de logs e persistência"
 pm2 describe pm2-logrotate >/dev/null 2>&1 || pm2 install pm2-logrotate >/dev/null
@@ -90,12 +105,16 @@ echo
 echo "== Verificação"
 sleep 5
 docker ps --format '   {{.Names}}  {{.Image}}  {{.Status}}'
-printf '   API MediaMTX:   '; curl -s -m 5 -o /dev/null -w '%{http_code}\n' http://127.0.0.1:9997/v3/paths/list || echo falhou
-printf '   WHEP (HTTPS):   '; curl -s -m 8 -o /dev/null -w '%{http_code}\n' "https://${STREAM_HOST}/teste/whep" || echo falhou
-echo '   (WHEP sem stream responde 404; 200/404 = Caddy e MediaMTX no ar)'
 ss -ulnp | grep -E ':(7882|8890|8189)\b' | awk '{print "   UDP escutando:", $5}'
-echo '   Últimas linhas do MediaMTX:'
-docker logs --tail 12 poe-mediamtx 2>&1 | sed 's/^/   /'
+if [ "$ENABLE_OBS" = "1" ]; then
+  printf '   API MediaMTX:   '; curl -s -m 5 -o /dev/null -w '%{http_code}\n' http://127.0.0.1:9997/v3/paths/list || echo falhou
+  printf '   WHEP (HTTPS):   '; curl -s -m 8 -o /dev/null -w '%{http_code}\n' "https://${STREAM_HOST}/teste/whep" || echo falhou
+  echo '   (WHEP sem stream responde 404; 200/404 = Caddy e MediaMTX no ar)'
+  echo '   Últimas linhas do MediaMTX:'
+  docker logs --tail 12 poe-mediamtx 2>&1 | sed 's/^/   /'
+else
+  echo '   OBS (MediaMTX) desligado. Para ligar: ENABLE_OBS=1 bash infra/vps/apply.sh'
+fi
 echo
 echo "Depois de confirmar que chamadas e OBS funcionam, remova a regra antiga do LiveKit:"
 echo "   ufw delete allow 50000:50100/udp"

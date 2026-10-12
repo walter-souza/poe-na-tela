@@ -11,7 +11,7 @@ import {
 import type { ScreenShareItem, ReactionEvent, StreamLayoutMode } from '../types';
 import { StreamTile } from './StreamTile';
 import { WhepTile } from './WhepTile';
-import { fetchRoomStreams, type ObsStreamItem } from '../utils/api';
+import { OBS_ENABLED, fetchRoomStreams, type ObsStreamItem } from '../utils/api';
 import { supabase, isSupabaseConfigured } from '../utils/supabase';
 import confetti from 'canvas-confetti';
 
@@ -76,7 +76,7 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
 
   // Escuta reativa de streams via Supabase Realtime com verificação inicial única
   useEffect(() => {
-    if (!roomName) return;
+    if (!roomName || !OBS_ENABLED) return;
     let isMounted = true;
 
     // 1. Verificação inicial única ao abrir a sala

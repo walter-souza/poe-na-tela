@@ -13,6 +13,8 @@ services:
       - ./livekit.yaml:/etc/livekit.yaml:ro
 
   mediamtx:
+    # Só sobe com ENABLE_OBS=1 no apply.sh (docker compose --profile obs).
+    profiles: ["obs"]
     # Variante -ffmpeg (Alpine): traz sh e wget, usados pelos hooks que avisam o backend.
     image: bluenviron/mediamtx:1.21.2-ffmpeg
     container_name: poe-mediamtx

@@ -37,6 +37,9 @@ export function getRoomInfoUrl(roomName: string): string {
   return `${endpoint}/${encodeURIComponent(roomName)}`;
 }
 
+/** Transmissão via OBS (MediaMTX). Desligada por padrão: defina VITE_ENABLE_OBS=true para ligar. */
+export const OBS_ENABLED = import.meta.env.VITE_ENABLE_OBS === 'true';
+
 export function getWhepUrl(roomName: string): string {
   const envUrl = import.meta.env.VITE_STREAM_URL;
   if (envUrl && typeof envUrl === 'string' && envUrl.trim().length > 0) {

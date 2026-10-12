@@ -1,4 +1,4 @@
-import { MEDIAMTX_API_URL, STREAM_BASE_URL } from '../config';
+import { MEDIAMTX_API_URL, OBS_ENABLED, STREAM_BASE_URL } from '../config';
 import { sanitizeRoomName } from '../sanitize';
 import { isSupabaseConfigured, supabase } from '../supabase';
 
@@ -17,6 +17,8 @@ export async function getActiveRoomStreams(roomName: string): Promise<Array<{
     path: string;
     whepUrl: string;
   }> = [];
+
+  if (!OBS_ENABLED) return streams;
 
   try {
     const controller = new AbortController();
@@ -100,6 +102,7 @@ export function roomSlugFromStreamPath(path: unknown): string {
 const MTX_RECONCILE_INTERVAL_MS = Number(process.env.MEDIAMTX_RECONCILE_MS) || 15_000;
 let lastReadyPaths: Set<string> | null = null;
 export function startStreamsMonitor(): void {
+  if (!OBS_ENABLED) return;
   setInterval(async () => {
   if (!isSupabaseConfigured() || !supabase) return;
 

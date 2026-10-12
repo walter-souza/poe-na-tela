@@ -10,6 +10,8 @@ export const LIVEKIT_INTERNAL_URL =
   LIVEKIT_URL.replace(/^ws:\/\//i, 'http://').replace(/^wss:\/\//i, 'https://');
 export const LIVEKIT_API_KEY = process.env.LIVEKIT_API_KEY || 'devkey';
 export const LIVEKIT_API_SECRET = process.env.LIVEKIT_API_SECRET || 'secret';
+// Integração com OBS/MediaMTX: desligada por padrão (ENABLE_OBS=true para ligar).
+export const OBS_ENABLED = process.env.ENABLE_OBS === 'true';
 export const MEDIAMTX_API_URL = process.env.MEDIAMTX_API_URL || 'http://127.0.0.1:9997';
 export const STREAM_BASE_URL = (process.env.STREAM_URL || process.env.VITE_STREAM_URL || 'https://stream.194.61.238.98.sslip.io').replace(/\/$/, '');
 

@@ -1,5 +1,6 @@
 import crypto from 'node:crypto';
 import { Router, Request, Response } from 'express';
+import { OBS_ENABLED } from '../config';
 import { broadcastRoomStreams, roomSlugFromStreamPath } from '../services/streams';
 
 const router = Router();
@@ -9,6 +10,11 @@ const router = Router();
  * Se MEDIAMTX_WEBHOOK_SECRET estiver definido, exige o header x-webhook-secret ou ?secret=.
  */
 router.post(['/api/webhooks/mediamtx', '/webhooks/mediamtx'], async (req: Request, res: Response): Promise<void> => {
+  if (!OBS_ENABLED) {
+    res.json({ ok: true, ignored: true });
+    return;
+  }
+
   const expectedSecret = process.env.MEDIAMTX_WEBHOOK_SECRET;
   if (expectedSecret) {
     const given = req.headers['x-webhook-secret'] ?? req.query.secret;

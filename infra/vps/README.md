@@ -12,6 +12,8 @@ no navegador) e **MediaMTX** (transmissão pelo **OBS** via SRT, assistida por W
 
 Segredos **não** ficam no Git: `~/app-stack/.env` (chmod 600) guarda `LIVEKIT_KEYS` e `WEBHOOK_SECRET`.
 
+> **OBS desligado por enquanto.** O `apply.sh` só sobe o MediaMTX com `ENABLE_OBS=1` e fecha as portas 8890/8189 caso contrário. No app, a flag `VITE_ENABLE_OBS=true` (cliente) e `ENABLE_OBS=true` (backend) religam o botão/lista e a integração.
+
 ## Aplicar
 O LiveKit é recriado: chamadas em andamento caem por alguns segundos. Faça com a sala vazia.
 
@@ -19,6 +21,8 @@ O LiveKit é recriado: chamadas em andamento caem por alguns segundos. Faça com
 cd ~/poe-na-tela-dev && git fetch origin develop && git reset --hard origin/develop
 bash infra/vps/apply.sh
 ```
+
+Para ligar o OBS depois: `ENABLE_OBS=1 bash infra/vps/apply.sh`.
 
 O script: faz backup de `~/app-stack`, cria o `.env` (reaproveita a chave atual do LiveKit e gera o segredo do webhook),
 grava `MEDIAMTX_WEBHOOK_SECRET` nos `.env` dos dois backends e os reinicia, publica `stream.<IP>.sslip.io` no Caddy,

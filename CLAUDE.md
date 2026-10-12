@@ -51,7 +51,7 @@ Dev local precisa de um LiveKit rodando em `ws://127.0.0.1:7880` (chaves `devkey
 
 ## Infra da VPS
 
-`infra/vps/` versiona a stack de mídia (LiveKit com versão fixa e UDP em porta única 7882; MediaMTX para OBS: SRT :8890 → WHEP via Caddy em `stream.<IP>.sslip.io`, API :9997 só local) e o `apply.sh` idempotente que a aplica (firewall, Caddy, PM2 logrotate). Segredos ficam em `~/app-stack/.env` na VPS, nunca no Git. O deploy dos backends não aplica a infra: rode `apply.sh` à mão (detalhes em `infra/vps/README.md`).
+`infra/vps/` versiona a stack de mídia (LiveKit com versão fixa e UDP em porta única 7882; MediaMTX para OBS: SRT :8890 → WHEP via Caddy em `stream.<IP>.sslip.io`, API :9997 só local) e o `apply.sh` idempotente que a aplica (firewall, Caddy, PM2 logrotate). Segredos ficam em `~/app-stack/.env` na VPS, nunca no Git. **OBS está desligado por padrão** (flags `VITE_ENABLE_OBS` no client e `ENABLE_OBS` no backend; `ENABLE_OBS=1 bash infra/vps/apply.sh` sobe o MediaMTX). O deploy dos backends não aplica a infra: rode `apply.sh` à mão (detalhes em `infra/vps/README.md`).
 
 ## Deploy e branches
 

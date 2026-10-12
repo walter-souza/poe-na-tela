@@ -13,7 +13,7 @@ import {
   Tv,
   Check,
 } from 'lucide-react';
-import { getObsSrtUrl } from '../utils/api';
+import { OBS_ENABLED, getObsSrtUrl } from '../utils/api';
 
 interface ControlsBarProps {
   isMicEnabled: boolean;
@@ -143,25 +143,27 @@ export const ControlsBar: React.FC<ControlsBarProps> = ({
         )}
       </div>
 
-      {/* Link OBS Studio (SRT) */}
-      <button
-        onClick={handleCopyObsLink}
-        title="Copiar Link de Transmissão para OBS Studio (SRT 60 FPS)"
-        className={`flex items-center gap-1.5 px-2.5 py-2 rounded-xl border text-xs font-semibold transition cursor-pointer ${
-          copiedObs
-            ? 'bg-emerald-600/30 border-emerald-500/50 text-emerald-300'
-            : 'bg-white/5 hover:bg-white/10 border-white/10 text-gray-300 hover:text-white'
-        }`}
-      >
-        {copiedObs ? (
-          <Check className="w-4 h-4 text-emerald-400" />
-        ) : (
-          <Tv className="w-4 h-4 text-purple-400" />
-        )}
-        <span className="hidden md:inline">
-          {copiedObs ? 'Link Copiado!' : 'Link OBS'}
-        </span>
-      </button>
+      {/* Link OBS Studio (SRT) — desligado por padrão (VITE_ENABLE_OBS) */}
+      {OBS_ENABLED && (
+        <button
+          onClick={handleCopyObsLink}
+          title="Copiar Link de Transmissão para OBS Studio (SRT 60 FPS)"
+          className={`flex items-center gap-1.5 px-2.5 py-2 rounded-xl border text-xs font-semibold transition cursor-pointer ${
+            copiedObs
+              ? 'bg-emerald-600/30 border-emerald-500/50 text-emerald-300'
+              : 'bg-white/5 hover:bg-white/10 border-white/10 text-gray-300 hover:text-white'
+          }`}
+        >
+          {copiedObs ? (
+            <Check className="w-4 h-4 text-emerald-400" />
+          ) : (
+            <Tv className="w-4 h-4 text-purple-400" />
+          )}
+          <span className="hidden md:inline">
+            {copiedObs ? 'Link Copiado!' : 'Link OBS'}
+          </span>
+        </button>
+      )}
 
       {/* Divisor */}
       <div className="h-5 w-[1px] bg-white/10 mx-0.5" />
