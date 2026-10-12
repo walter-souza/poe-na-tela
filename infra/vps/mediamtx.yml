@@ -27,6 +27,7 @@ webrtcAdditionalHosts:
 rtsp: no
 rtmp: no
 hls: no
+moq: no
 playback: no
 metrics: no
 pprof: no
