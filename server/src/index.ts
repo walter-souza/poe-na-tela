@@ -11,7 +11,12 @@ import express, { Request, Response } from 'express';
 import cors from 'cors';
 import { AccessToken, RoomServiceClient } from 'livekit-server-sdk';
 import { supabase, isSupabaseConfigured } from './supabase';
-import { generateRoomKey, encryptRoomKey, decryptRoomKey } from './kms';
+import { generateRoomKey, encryptRoomKey, decryptRoomKey, assertMasterKeyConfigured } from './kms';
+import { hashPasscode, verifyPasscode } from './passcode';
+import crypto from 'node:crypto';
+
+// Falha cedo se a MASTER_KEY estiver ausente em ambiente com banco real.
+assertMasterKeyConfigured();
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -75,7 +80,36 @@ const isMaintenanceMode = () =>
 const getMaintenanceMessage = () =>
   process.env.MAINTENANCE_MESSAGE ||
   'Estamos realizando melhorias e otimizações de infraestrutura. O Põe na Tela voltará em breve!';
-const ADMIN_BYPASS_TOKEN = process.env.ADMIN_BYPASS_TOKEN || 'admin_preview';
+// Sem ADMIN_BYPASS_TOKEN definido, o bypass de manutenção fica desativado.
+const ADMIN_BYPASS_TOKEN = process.env.ADMIN_BYPASS_TOKEN || '';
+
+function isValidBypassToken(provided: unknown): boolean {
+  if (!ADMIN_BYPASS_TOKEN || typeof provided !== 'string' || !provided) return false;
+  const a = crypto.createHash('sha256').update(provided).digest();
+  const b = crypto.createHash('sha256').update(ADMIN_BYPASS_TOKEN).digest();
+  return crypto.timingSafeEqual(a, b);
+}
+
+/**
+ * Valida a senha informada contra o valor armazenado (hash scrypt ou legado em texto puro).
+ * Se o valor era legado e a senha confere, chama `onUpgrade` com o novo hash para regravar.
+ */
+async function checkPasscode(
+  stored: string,
+  provided: string | null | undefined,
+  onUpgrade?: (newHash: string) => PromiseLike<unknown>
+): Promise<boolean> {
+  if (!provided) return false;
+  const result = await verifyPasscode(stored, provided);
+  if (result.ok && result.needsUpgrade && onUpgrade) {
+    try {
+      await onUpgrade(await hashPasscode(provided));
+    } catch (err) {
+      console.warn('Falha ao migrar senha de sala para hash:', err);
+    }
+  }
+  return result.ok;
+}
 
 app.use(cors({
   origin: '*',
@@ -147,10 +181,7 @@ app.post(['/api/token', '/token'], async (req: Request, res: Response): Promise<
 
     // Check maintenance mode
     if (isMaintenanceMode()) {
-      const isBypassValid =
-        bypassToken &&
-        (bypassToken === ADMIN_BYPASS_TOKEN || bypassToken === 'admin_preview');
-      if (!isBypassValid) {
+      if (!isValidBypassToken(bypassToken)) {
         res.status(503).json({
           error: getMaintenanceMessage(),
           maintenance: true,
@@ -214,7 +245,7 @@ app.post(['/api/token', '/token'], async (req: Request, res: Response): Promise<
       try {
         const { data: dbRoom } = await supabase
           .from('rooms')
-          .select('passcode_hash')
+          .select('id, passcode_hash')
           .eq('slug', sanitizedRoom)
           .maybeSingle();
 
@@ -226,7 +257,10 @@ app.post(['/api/token', '/token'], async (req: Request, res: Response): Promise<
             });
             return;
           }
-          if (dbRoom.passcode_hash !== cleanPasscode) {
+          const passcodeOk = await checkPasscode(dbRoom.passcode_hash, cleanPasscode, (h) =>
+            supabase!.from('rooms').update({ passcode_hash: h }).eq('id', dbRoom.id)
+          );
+          if (!passcodeOk) {
             res.status(403).json({ error: 'Senha incorreta para esta sala.' });
             return;
           }
@@ -278,7 +312,7 @@ app.post(['/api/token', '/token'], async (req: Request, res: Response): Promise<
           });
           return;
         }
-        if (existingConfig.passcode !== cleanPasscode) {
+        if (!(await checkPasscode(existingConfig.passcode, cleanPasscode))) {
           res.status(403).json({ error: 'Senha incorreta para esta sala.' });
           return;
         }
@@ -293,7 +327,7 @@ app.post(['/api/token', '/token'], async (req: Request, res: Response): Promise<
     } else if (!existingConfig) {
       roomStore.set(sanitizedRoom, {
         name: sanitizedRoom,
-        passcode: cleanPasscode,
+        passcode: cleanPasscode ? await hashPasscode(cleanPasscode) : undefined,
         hostIdentity: sanitizedParticipant,
         createdAt: Date.now(),
       });
@@ -403,6 +437,7 @@ app.post(['/api/rooms', '/rooms'], async (req: Request, res: Response): Promise<
     }
 
     const cleanPasscode = typeof passcode === 'string' && passcode.trim() ? passcode.trim() : null;
+    const passcodeHash = cleanPasscode ? await hashPasscode(cleanPasscode) : null;
 
     // Se Supabase estiver disponível, faz a persistência completa
     if (isSupabaseConfigured() && supabase) {
@@ -423,7 +458,7 @@ app.post(['/api/rooms', '/rooms'], async (req: Request, res: Response): Promise<
           slug: sanitizedSlug,
           name: sanitizedName,
           encrypted_room_key: encryptedRoomKey,
-          passcode_hash: cleanPasscode, // TODO: bcrypt hash em produção
+          passcode_hash: passcodeHash,
           owner_id: authUser.id,
         })
         .select()
@@ -466,7 +501,7 @@ app.post(['/api/rooms', '/rooms'], async (req: Request, res: Response): Promise<
     // Fallback: modo em memória se Supabase não estiver configurado
     roomStore.set(sanitizedSlug, {
       name: sanitizedName,
-      passcode: cleanPasscode || undefined,
+      passcode: passcodeHash || undefined,
       createdAt: Date.now(),
     });
 
@@ -906,7 +941,10 @@ app.post(['/api/rooms/:roomName/join', '/rooms/:roomName/join'], async (req: Req
     }
 
     if (room.passcode_hash && room.owner_id !== authUser.id) {
-      if (!cleanPasscode || cleanPasscode !== room.passcode_hash) {
+      const passcodeOk = await checkPasscode(room.passcode_hash, cleanPasscode, (h) =>
+        supabase!.from('rooms').update({ passcode_hash: h }).eq('id', room.id)
+      );
+      if (!passcodeOk) {
         res.status(403).json({ error: 'Senha incorreta para esta sala.', requiresPasscode: true });
         return;
       }
@@ -956,7 +994,9 @@ app.get([
 ], async (req: Request, res: Response): Promise<void> => {
   try {
     const roomSlug = sanitizeRoomName(req.params.roomName);
-    const providedPasscode = (req.query.passcode as string) || (req.headers['x-room-passcode'] as string);
+    // A senha vai apenas por header: query string vaza em logs de proxy e no histórico.
+    const headerPasscode = req.headers['x-room-passcode'];
+    const providedPasscode = typeof headerPasscode === 'string' ? headerPasscode : '';
 
     if (isSupabaseConfigured() && supabase) {
       const { data: room, error } = await supabase
@@ -969,7 +1009,7 @@ app.get([
         // Fallback para roomStore se a sala foi criada em memória
         const memConfig = roomStore.get(roomSlug);
         if (memConfig) {
-          if (memConfig.passcode && memConfig.passcode !== providedPasscode) {
+          if (memConfig.passcode && !(await checkPasscode(memConfig.passcode, providedPasscode))) {
             res.status(403).json({ error: 'Senha incorreta para acessar esta sala.', requiresPasscode: true });
             return;
           }
@@ -982,7 +1022,10 @@ app.get([
 
       // Validar senha caso a sala possua
       if (room.passcode_hash) {
-        if (!providedPasscode || providedPasscode !== room.passcode_hash) {
+        const passcodeOk = await checkPasscode(room.passcode_hash, providedPasscode, (h) =>
+          supabase!.from('rooms').update({ passcode_hash: h }).eq('id', room.id)
+        );
+        if (!passcodeOk) {
           res.status(403).json({ error: 'Senha incorreta para acessar esta sala.', requiresPasscode: true });
           return;
         }
@@ -996,7 +1039,7 @@ app.get([
 
     // Modo memória
     const memConfig = roomStore.get(roomSlug);
-    if (memConfig?.passcode && memConfig.passcode !== providedPasscode) {
+    if (memConfig?.passcode && !(await checkPasscode(memConfig.passcode, providedPasscode))) {
       res.status(403).json({ error: 'Senha incorreta.', requiresPasscode: true });
       return;
     }

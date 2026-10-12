@@ -32,8 +32,9 @@ export function usePersistentChat({
 
     async function loadRoomKey() {
       try {
-        const query = passcode ? `?passcode=${encodeURIComponent(passcode)}` : '';
-        const res = await fetch(`${getApiBaseUrl()}/api/rooms/${roomSlug}/key${query}`);
+        const res = await fetch(`${getApiBaseUrl()}/api/rooms/${roomSlug}/key`, {
+          headers: passcode ? { 'x-room-passcode': passcode } : undefined,
+        });
         if (res.ok) {
           const data = await res.json();
           if (data.roomKey) {

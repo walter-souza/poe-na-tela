@@ -11,13 +11,24 @@ import crypto from 'node:crypto';
 const ALGORITHM = 'aes-256-gcm';
 const IV_LENGTH = 12; // 96 bits recomendado para GCM
 
+/**
+ * A chave de fallback é pública (está no repositório). Só é aceita sem banco real:
+ * com Supabase configurado ou NODE_ENV=production, a ausência da MASTER_KEY é fatal.
+ */
+export function assertMasterKeyConfigured(): void {
+  if (process.env.MASTER_KEY) return;
+  if (process.env.NODE_ENV === 'production' || process.env.SUPABASE_URL) {
+    throw new Error(
+      '[KMS] MASTER_KEY não definida. Recusando iniciar com a chave de fallback pública em ambiente com banco de dados.'
+    );
+  }
+}
+
 function getMasterKey(): Buffer {
   const envKey = process.env.MASTER_KEY;
   if (!envKey) {
-    console.warn(
-      '⚠️ [KMS] MASTER_KEY não definida no .env! Usando chave de fallback em desenvolvimento. Defina MASTER_KEY em produção.'
-    );
-    // Derivação determinística para ambiente de dev local caso a env ainda não esteja setada
+    assertMasterKeyConfigured();
+    console.warn('⚠️ [KMS] MASTER_KEY não definida. Usando chave de fallback apenas para desenvolvimento local sem banco.');
     return crypto.createHash('sha256').update('poe-na-tela-dev-master-key-seed').digest();
   }
 
