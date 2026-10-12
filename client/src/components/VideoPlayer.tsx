@@ -399,7 +399,7 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
       )}
 
       {/* Main Video View Area */}
-      <div className="flex-1 flex flex-col p-1 sm:p-2 min-h-0 pt-12 sm:pt-14">
+      <div className="flex-1 flex flex-col p-1 sm:p-2 min-h-0 pt-12 sm:pt-14 pb-16 sm:pb-20">
         {layoutMode === 'grid' || unifiedStreams.length === 1 ? (
           // GRID MODE LAYOUT
           <div

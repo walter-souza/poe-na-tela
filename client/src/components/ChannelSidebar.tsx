@@ -11,6 +11,10 @@ import {
   UserPlus,
   Check,
   Loader2,
+  Mic,
+  MicOff,
+  Headphones,
+  HeadphoneOff,
 } from 'lucide-react';
 import type { Channel, VoiceParticipant } from '../types';
 import { useAuth } from '../context/AuthContext';
@@ -24,6 +28,10 @@ interface ChannelSidebarProps {
   connectingVoiceChannelId?: string | null;
   isOwner: boolean;
   voiceParticipants?: VoiceParticipant[];
+  isMicEnabled?: boolean;
+  isDeafened?: boolean;
+  onToggleMic?: () => void;
+  onToggleDeafen?: () => void;
   onSelectTextChannel: (channel: Channel) => void;
   onSelectVoiceChannel: (channel: Channel) => void;
   onDisconnectVoice: () => void;
@@ -41,6 +49,10 @@ export const ChannelSidebar: React.FC<ChannelSidebarProps> = ({
   connectingVoiceChannelId = null,
   isOwner,
   voiceParticipants = [],
+  isMicEnabled = true,
+  isDeafened = false,
+  onToggleMic,
+  onToggleDeafen,
   onSelectTextChannel,
   onSelectVoiceChannel,
   onDisconnectVoice,
@@ -311,14 +323,14 @@ export const ChannelSidebar: React.FC<ChannelSidebarProps> = ({
         </div>
       )}
 
-      {/* User Footer Panel */}
-      <div className="h-14 border-t border-white/10 px-3 bg-[#11131c] flex items-center justify-between">
-        <div className="flex items-center gap-2 min-w-0">
+      {/* User Footer Panel (Discord-like) */}
+      <div className="h-14 border-t border-white/10 px-2 sm:px-3 bg-[#11131c] flex items-center justify-between">
+        <div className="flex items-center gap-2 min-w-0 mr-1">
           {profile?.avatar_url ? (
             <img
               src={profile.avatar_url}
               alt={profile.username}
-              className="w-8 h-8 rounded-full object-cover ring-1 ring-white/10"
+              className="w-8 h-8 rounded-full object-cover ring-1 ring-white/10 shrink-0"
             />
           ) : (
             <div className="w-8 h-8 rounded-full bg-indigo-600/30 text-indigo-300 font-bold text-xs flex items-center justify-center shrink-0">
@@ -326,7 +338,7 @@ export const ChannelSidebar: React.FC<ChannelSidebarProps> = ({
             </div>
           )}
           <div className="flex flex-col min-w-0">
-            <span className="text-xs font-bold text-white truncate max-w-[100px]">
+            <span className="text-xs font-bold text-white truncate max-w-[70px] sm:max-w-[85px]">
               {profile?.username || 'Convidado'}
             </span>
             <span className="text-[10px] text-gray-500 flex items-center gap-1">
@@ -341,13 +353,44 @@ export const ChannelSidebar: React.FC<ChannelSidebarProps> = ({
           </div>
         </div>
 
-        <button
-          onClick={onLeaveRoom}
-          title="Sair da Sala"
-          className="p-1.5 text-gray-400 hover:text-rose-400 hover:bg-rose-500/10 rounded-lg transition cursor-pointer"
-        >
-          <LogOut className="w-4 h-4" />
-        </button>
+        {/* Quick Audio Controls in Sidebar */}
+        <div className="flex items-center gap-0.5 shrink-0">
+          {onToggleMic && (
+            <button
+              onClick={onToggleMic}
+              title={isMicEnabled ? 'Silenciar Microfone' : 'Ativar Microfone'}
+              className={`p-1.5 rounded-lg transition cursor-pointer ${
+                isMicEnabled
+                  ? 'text-gray-300 hover:text-white hover:bg-white/10'
+                  : 'text-rose-400 bg-rose-500/10 hover:bg-rose-500/20'
+              }`}
+            >
+              {isMicEnabled ? <Mic className="w-4 h-4" /> : <MicOff className="w-4 h-4" />}
+            </button>
+          )}
+
+          {onToggleDeafen && (
+            <button
+              onClick={onToggleDeafen}
+              title={isDeafened ? 'Desativar Ensordecer' : 'Ensordecer'}
+              className={`p-1.5 rounded-lg transition cursor-pointer ${
+                isDeafened
+                  ? 'text-rose-400 bg-rose-500/10 hover:bg-rose-500/20'
+                  : 'text-gray-300 hover:text-white hover:bg-white/10'
+              }`}
+            >
+              {isDeafened ? <HeadphoneOff className="w-4 h-4" /> : <Headphones className="w-4 h-4" />}
+            </button>
+          )}
+
+          <button
+            onClick={onLeaveRoom}
+            title="Sair da Sala"
+            className="p-1.5 text-gray-400 hover:text-rose-400 hover:bg-rose-500/10 rounded-lg transition cursor-pointer"
+          >
+            <LogOut className="w-4 h-4" />
+          </button>
+        </div>
       </div>
     </aside>
   );

@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo, useRef, type Dispatch, type SetStateAction } from 'react';
 import { ConnectionState } from 'livekit-client';
-import { MessageSquare, Tv } from 'lucide-react';
+import { Tv } from 'lucide-react';
 import { useLiveKit } from './hooks/useLiveKit';
 import { useVoicePresence } from './hooks/useVoicePresence';
 import { VideoPlayer } from './components/VideoPlayer';
@@ -834,27 +834,31 @@ function StreamRoom({
   };
 
   return (
-    <div className="h-screen h-[100dvh] w-full flex flex-col bg-[#090a0f] text-gray-100 overflow-hidden select-none">
-      <div className="flex-1 flex overflow-hidden relative">
-        {/* Channel Sidebar (Discord-like) */}
-        <ChannelSidebar
-          roomName={session.roomName}
-          channels={channels}
-          activeTextChannelId={activeTextChannelId}
-          activeVoiceChannelId={activeVoiceChannelId}
-          isVoiceConnected={isVoiceFullyConnected}
-          connectingVoiceChannelId={connectingVoiceChannelId}
-          isOwner={isOwner}
-          voiceParticipants={mergedVoiceParticipants}
-          onSelectTextChannel={handleSelectTextChannel}
-          onSelectVoiceChannel={handleSelectVoiceChannel}
-          onDisconnectVoice={handleDisconnectVoice}
-          onOpenCreateChannel={() => setIsCreateChannelOpen(true)}
-          onDeleteChannel={handleDeleteChannel}
-          onLeaveRoom={handleExitRoom}
-        />
+    <div className="h-screen h-[100dvh] w-full flex bg-[#090a0f] text-gray-100 overflow-hidden select-none">
+      {/* Channel Sidebar (Discord-like) */}
+      <ChannelSidebar
+        roomName={session.roomName}
+        channels={channels}
+        activeTextChannelId={activeTextChannelId}
+        activeVoiceChannelId={activeVoiceChannelId}
+        isVoiceConnected={isVoiceFullyConnected}
+        connectingVoiceChannelId={connectingVoiceChannelId}
+        isOwner={isOwner}
+        voiceParticipants={mergedVoiceParticipants}
+        isMicEnabled={isMicEnabled}
+        isDeafened={isDeafened}
+        onToggleMic={handleToggleMic}
+        onToggleDeafen={toggleDeafen}
+        onSelectTextChannel={handleSelectTextChannel}
+        onSelectVoiceChannel={handleSelectVoiceChannel}
+        onDisconnectVoice={handleDisconnectVoice}
+        onOpenCreateChannel={() => setIsCreateChannelOpen(true)}
+        onDeleteChannel={handleDeleteChannel}
+        onLeaveRoom={handleExitRoom}
+      />
 
-        {/* Central View: Text Chat OU Video Stage */}
+      {/* Central View: Text Chat OU Video Stage */}
+      <div className="flex-1 flex overflow-hidden relative">
         {activeView === 'chat' ? (
           <TextChannelView
             channelName={channels.find((c) => c.id === activeTextChannelId)?.name || 'geral'}
@@ -873,7 +877,7 @@ function StreamRoom({
             onSwitchToStage={() => setActiveView('stage')}
           />
         ) : (
-          <div className="flex-1 flex flex-col p-1 sm:p-3 md:p-4 min-w-0 relative">
+          <div className="flex-1 flex flex-col p-1 sm:p-2 min-w-0 relative">
             <StreamHUD
               stats={stats}
               isOpen={isHUDOpen}
@@ -911,21 +915,29 @@ function StreamRoom({
               </div>
             </div>
 
-            {!isChatOpen && (
-              <button
-                onClick={() => setIsChatOpen(true)}
-                title="Exibir Chat Lateral"
-                className="absolute top-2 right-2 sm:top-6 sm:right-6 z-30 flex items-center gap-1.5 sm:gap-2 px-2.5 sm:px-3.5 py-1.5 sm:py-2.5 rounded-2xl bg-[#11131c]/90 hover:bg-[#181a26] border border-white/15 text-white text-xs font-semibold shadow-2xl backdrop-blur-md transition-all hover:scale-105 active:scale-95 group cursor-pointer"
-              >
-                <MessageSquare className="w-4 h-4 text-indigo-400 group-hover:text-indigo-300 transition-colors" />
-                <span className="hidden sm:inline">Exibir Chat</span>
-                {persistentMessages.length > 0 && (
-                  <span className="bg-indigo-600 text-[10px] px-1.5 py-0.2 rounded-full font-bold">
-                    {persistentMessages.length}
-                  </span>
-                )}
-              </button>
-            )}
+            {/* Floating Stage Controls Bar */}
+            <div className="absolute bottom-3 sm:bottom-4 inset-x-0 mx-auto w-fit z-30 pointer-events-none flex items-center justify-center px-2">
+              <div className="pointer-events-auto">
+                <ControlsBar
+                  isMicEnabled={isMicEnabled}
+                  isDeafened={isDeafened}
+                  isNoiseSuppressionEnabled={isNoiseSuppressionEnabled}
+                  isScreenSharing={isScreenSharing}
+                  isChatOpen={isChatOpen}
+                  isHUDOpen={isHUDOpen}
+                  roomName={session.roomName}
+                  userName={session.userName}
+                  unreadCount={persistentMessages.length}
+                  onToggleMic={handleToggleMic}
+                  onToggleDeafen={toggleDeafen}
+                  onToggleNoiseSuppression={toggleNoiseSuppression}
+                  onToggleScreenShare={handleToggleScreenShare}
+                  onOpenScreenShareConfig={() => setIsScreenShareModalOpen(true)}
+                  onToggleChat={() => setIsChatOpen(!isChatOpen)}
+                  onToggleHUD={() => setIsHUDOpen(!isHUDOpen)}
+                />
+              </div>
+            </div>
           </div>
         )}
 
@@ -946,35 +958,6 @@ function StreamRoom({
           />
         )}
       </div>
-
-      {/* Controls Bar (visível quando em modo palco ou quando voz está conectada) */}
-      {(activeView === 'stage' || isVoiceConnected) && (
-        <ControlsBar
-          isMicEnabled={isMicEnabled}
-          isDeafened={isDeafened}
-          isNoiseSuppressionEnabled={isNoiseSuppressionEnabled}
-          isScreenSharing={isScreenSharing}
-          isChatOpen={isChatOpen}
-          isHUDOpen={isHUDOpen}
-          roomName={session.roomName}
-          userName={session.userName}
-          onToggleMic={handleToggleMic}
-          onToggleDeafen={toggleDeafen}
-          onToggleNoiseSuppression={toggleNoiseSuppression}
-          onToggleScreenShare={handleToggleScreenShare}
-          onOpenScreenShareConfig={() => setIsScreenShareModalOpen(true)}
-          onToggleChat={() => {
-            if (activeView === 'chat') {
-              setActiveView('stage');
-              setIsChatOpen(true);
-            } else {
-              setIsChatOpen(!isChatOpen);
-            }
-          }}
-          onToggleHUD={() => setIsHUDOpen(!isHUDOpen)}
-          onLeave={handleExitRoom}
-        />
-      )}
 
       <ScreenShareModal
         isOpen={isScreenShareModalOpen}
