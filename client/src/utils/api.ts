@@ -116,3 +116,15 @@ export async function postVoiceDisconnect(roomName: string, identity: string): P
   } catch {}
 }
 
+export function getChannelMessagesUrl(channelId: string): string {
+  const base = getApiBaseUrl();
+  const endpoint = base.endsWith('/api') ? `${base}/channels` : `${base}/api/channels`;
+  return `${endpoint}/${encodeURIComponent(channelId)}/messages`;
+}
+
+export function getUserProfileUrl(): string {
+  const base = getApiBaseUrl();
+  return base.endsWith('/api') ? `${base}/user/profile` : `${base}/api/user/profile`;
+}
+
+

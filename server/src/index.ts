@@ -536,6 +536,133 @@ app.get(['/api/user/rooms', '/user/rooms'], async (req: Request, res: Response):
 });
 
 /**
+ * Obter perfil do usuário autenticado
+ */
+app.get(['/api/user/profile', '/user/profile'], async (req: Request, res: Response): Promise<void> => {
+  try {
+    if (!isSupabaseConfigured() || !supabase) {
+      res.status(503).json({ error: 'Banco de dados não configurado.' });
+      return;
+    }
+
+    const authUser = await getAuthUser(req);
+    if (!authUser) {
+      res.status(401).json({ error: 'Autenticação necessária.' });
+      return;
+    }
+
+    const { data, error } = await supabase
+      .from('profiles')
+      .select('*')
+      .eq('id', authUser.id)
+      .maybeSingle();
+
+    if (error) {
+      console.warn('Erro ao buscar perfil no Supabase:', error);
+      res.status(500).json({ error: 'Erro ao buscar perfil.' });
+      return;
+    }
+
+    if (!data) {
+      // Auto-provisionar perfil se ainda não existir
+      const isAnon = authUser.is_anonymous || authUser.app_metadata?.provider === 'anonymous';
+      const name =
+        authUser.user_metadata?.name ||
+        authUser.user_metadata?.user_name ||
+        authUser.user_metadata?.nickname ||
+        authUser.email?.split('@')[0] ||
+        (isAnon ? 'Convidado' : 'Usuário');
+
+      const avatar =
+        authUser.user_metadata?.avatar_url ||
+        authUser.user_metadata?.picture ||
+        null;
+
+      const { data: newProfile, error: insertError } = await supabase
+        .from('profiles')
+        .insert({
+          id: authUser.id,
+          username: name,
+          avatar_url: avatar,
+          is_guest: isAnon,
+        })
+        .select()
+        .maybeSingle();
+
+      if (insertError) {
+        console.warn('Erro ao auto-provisionar perfil no Supabase:', insertError);
+      }
+
+      res.json({
+        profile: newProfile || {
+          id: authUser.id,
+          username: name,
+          avatar_url: avatar,
+          is_guest: isAnon,
+        },
+      });
+      return;
+    }
+
+    res.json({ profile: data });
+  } catch (err: any) {
+    console.error('Erro ao buscar perfil do usuário:', err?.message || err);
+    res.status(500).json({ error: 'Falha ao buscar perfil do usuário.' });
+  }
+});
+
+/**
+ * Atualizar perfil do usuário autenticado (username, avatar_url)
+ */
+app.put(['/api/user/profile', '/user/profile'], async (req: Request, res: Response): Promise<void> => {
+  try {
+    if (!isSupabaseConfigured() || !supabase) {
+      res.status(503).json({ error: 'Banco de dados não configurado.' });
+      return;
+    }
+
+    const authUser = await getAuthUser(req);
+    if (!authUser) {
+      res.status(401).json({ error: 'Autenticação necessária.' });
+      return;
+    }
+
+    const { username, avatar_url } = req.body || {};
+    const updates: Record<string, any> = {};
+
+    if (typeof username === 'string' && username.trim()) {
+      updates.username = username.trim().slice(0, 32);
+    }
+    if (typeof avatar_url === 'string') {
+      updates.avatar_url = avatar_url.trim();
+    }
+
+    if (Object.keys(updates).length === 0) {
+      res.status(400).json({ error: 'Nenhum campo para atualizar.' });
+      return;
+    }
+
+    const { data, error } = await supabase
+      .from('profiles')
+      .update(updates)
+      .eq('id', authUser.id)
+      .select()
+      .single();
+
+    if (error) {
+      console.warn('Erro ao atualizar perfil no Supabase:', error);
+      res.status(500).json({ error: 'Erro ao atualizar perfil.' });
+      return;
+    }
+
+    res.json({ profile: data });
+  } catch (err: any) {
+    console.error('Erro ao atualizar perfil do usuário:', err?.message || err);
+    res.status(500).json({ error: 'Falha ao atualizar perfil do usuário.' });
+  }
+});
+
+/**
  * Migrar dados de convidado (salas) para a conta autenticada do usuário (Google)
  */
 app.post(['/api/user/migrate-guest', '/user/migrate-guest'], async (req: Request, res: Response): Promise<void> => {
@@ -1057,6 +1184,107 @@ app.delete([
   } catch (err: any) {
     console.error('Erro ao excluir canal:', err?.message || err);
     res.status(500).json({ error: 'Falha ao excluir canal.' });
+  }
+});
+
+/**
+ * Buscar histórico de mensagens de um canal
+ */
+app.get([
+  '/api/channels/:channelId/messages',
+  '/channels/:channelId/messages'
+], async (req: Request, res: Response): Promise<void> => {
+  try {
+    const channelId = req.params.channelId;
+    if (!channelId) {
+      res.status(400).json({ error: 'channelId é obrigatório.' });
+      return;
+    }
+
+    if (!isSupabaseConfigured() || !supabase) {
+      res.json({ messages: [] });
+      return;
+    }
+
+    const limit = Math.min(Math.max(parseInt(req.query.limit as string) || 100, 1), 200);
+
+    const { data, error } = await supabase
+      .from('messages')
+      .select('id, user_id, author_name, ciphertext, iv, created_at')
+      .eq('channel_id', channelId)
+      .order('created_at', { ascending: true })
+      .limit(limit);
+
+    if (error) {
+      console.warn('Erro ao buscar mensagens do canal no Supabase:', error);
+      res.status(500).json({ error: 'Erro ao buscar mensagens do canal.' });
+      return;
+    }
+
+    res.json({ messages: data || [] });
+  } catch (err: any) {
+    console.error('Erro ao listar mensagens do canal:', err?.message || err);
+    res.status(500).json({ error: 'Falha ao buscar mensagens do canal.' });
+  }
+});
+
+/**
+ * Enviar mensagem para um canal (armazenada com cifragem AES-GCM ponta a ponta)
+ */
+app.post([
+  '/api/channels/:channelId/messages',
+  '/channels/:channelId/messages'
+], async (req: Request, res: Response): Promise<void> => {
+  try {
+    const channelId = req.params.channelId;
+    const { authorName, ciphertext, iv } = req.body || {};
+
+    if (!channelId) {
+      res.status(400).json({ error: 'channelId é obrigatório.' });
+      return;
+    }
+
+    const sanitizedAuthor = typeof authorName === 'string' ? authorName.trim().slice(0, 32) : 'Convidado';
+    if (!ciphertext || typeof ciphertext !== 'string' || ciphertext.length > 65536) {
+      res.status(400).json({ error: 'ciphertext inválido ou excede o limite permitido (64KB).' });
+      return;
+    }
+
+    if (!iv || typeof iv !== 'string' || iv.length > 128) {
+      res.status(400).json({ error: 'iv inválido.' });
+      return;
+    }
+
+    if (!isSupabaseConfigured() || !supabase) {
+      res.status(503).json({ error: 'Banco de dados não configurado.' });
+      return;
+    }
+
+    const authUser = await getAuthUser(req);
+    const userId = authUser?.id || null;
+
+    const { data, error } = await supabase
+      .from('messages')
+      .insert({
+        channel_id: channelId,
+        user_id: userId,
+        author_name: sanitizedAuthor,
+        ciphertext,
+        iv,
+      })
+      .select('id, user_id, author_name, ciphertext, iv, created_at')
+      .single();
+
+    if (error) {
+      console.warn('Erro ao inserir mensagem no Supabase:', error);
+      res.status(500).json({ error: 'Erro ao salvar mensagem.' });
+      return;
+    }
+
+    res.json({ success: true, message: data });
+  } catch (err: any) {
+    console.error('Erro ao salvar mensagem:', err?.message || err);
+    res.status(500).json({ error: 'Falha interna ao salvar mensagem.' });
   }
 });
 

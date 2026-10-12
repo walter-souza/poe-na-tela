@@ -2,7 +2,7 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import type { ChatMessage } from '../types';
 import { supabase, isSupabaseConfigured } from '../utils/supabase';
 import { importRoomKey, encryptText, decryptText } from '../utils/cryptoService';
-import { getApiBaseUrl } from '../utils/api';
+import { getApiBaseUrl, getChannelMessagesUrl } from '../utils/api';
 
 interface UsePersistentChatOptions {
   roomSlug: string;
@@ -72,22 +72,19 @@ export function usePersistentChat({
     // Carregar histórico inicial do canal
     async function fetchHistoricalMessages() {
       try {
-        const { data, error } = await supabase!
-          .from('messages')
-          .select('id, user_id, author_name, ciphertext, iv, created_at')
-          .eq('channel_id', channelId)
-          .order('created_at', { ascending: true })
-          .limit(100);
-
-        if (error) {
-          console.warn('Erro ao buscar mensagens do Supabase:', error);
+        const res = await fetch(getChannelMessagesUrl(channelId!));
+        if (!res.ok) {
+          console.warn('Erro ao buscar mensagens do servidor:', res.statusText);
           if (isMounted) setMessages(fallbackMessages);
           return;
         }
 
+        const json = await res.json();
+        const data = json.messages;
+
         if (data && isMounted) {
           const decrypted = await Promise.all(
-            data.map(async (m) => ({
+            data.map(async (m: any) => ({
               id: m.id,
               sender: m.author_name,
               text: await decryptText(m.ciphertext, m.iv, cryptoKey!),
@@ -153,20 +150,35 @@ export function usePersistentChat({
 
       const currentKey = cryptoKeyRef.current || cryptoKey;
 
-      if (isSupabaseConfigured && supabase && channelId && currentKey) {
+      if (isSupabaseConfigured && channelId && currentKey) {
         try {
           // Cifra o texto com AES-GCM 256 bits
           const { ciphertext, iv } = await encryptText(cleanText, currentKey);
 
-          const { error } = await supabase.from('messages').insert({
-            channel_id: channelId,
-            author_name: authorName,
-            ciphertext,
-            iv,
+          // Obter token de autenticação se disponível
+          let token: string | undefined;
+          if (supabase) {
+            try {
+              const sessionRes = await supabase.auth.getSession();
+              token = sessionRes.data.session?.access_token;
+            } catch {}
+          }
+
+          const res = await fetch(getChannelMessagesUrl(channelId), {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              ...(token ? { Authorization: `Bearer ${token}` } : {}),
+            },
+            body: JSON.stringify({
+              authorName,
+              ciphertext,
+              iv,
+            }),
           });
 
-          if (error) {
-            console.warn('Erro ao salvar mensagem no Supabase:', error);
+          if (!res.ok) {
+            console.warn('Erro ao salvar mensagem no servidor:', res.statusText);
             if (onFallbackSend) onFallbackSend(cleanText);
           }
           return;

@@ -1,6 +1,8 @@
 import React, { createContext, useContext, useEffect, useState, useMemo } from 'react';
 import type { User, Session } from '@supabase/supabase-js';
 import { supabase, isSupabaseConfigured } from '../utils/supabase';
+import { getUserProfileUrl } from '../utils/api';
+
 
 export interface UserProfile {
   id: string;
@@ -87,19 +89,32 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   }, []);
 
   const fetchProfile = async (currentUser: User) => {
-    if (!supabase) return;
-
     try {
       const isAnon = currentUser.is_anonymous || currentUser.app_metadata?.provider === 'anonymous';
-      
-      const { data, error } = await supabase
-        .from('profiles')
-        .select('*')
-        .eq('id', currentUser.id)
-        .maybeSingle();
+      let profileData: UserProfile | null = null;
 
-      if (data && !error) {
-        setProfile(data);
+      if (isSupabaseConfigured && supabase) {
+        try {
+          const sessionRes = await supabase.auth.getSession();
+          const token = sessionRes.data.session?.access_token;
+          if (token) {
+            const res = await fetch(getUserProfileUrl(), {
+              headers: { Authorization: `Bearer ${token}` },
+            });
+            if (res.ok) {
+              const json = await res.json();
+              if (json.profile) {
+                profileData = json.profile;
+              }
+            }
+          }
+        } catch (apiErr) {
+          console.warn('Erro ao buscar perfil via backend:', apiErr);
+        }
+      }
+
+      if (profileData) {
+        setProfile(profileData);
       } else {
         // Fallback construído a partir dos metadados do auth
         const name =
