@@ -15,12 +15,27 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
+      - name: Validar credenciais SSH (sem expor o valor)
+        env:
+          VPS_SSH_KEY: ${{ secrets.VPS_SSH_KEY }}
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+          VPS_USERNAME: ${{ secrets.VPS_USERNAME }}
+        run: |
+          [ -n "$VPS_HOST" ] || { echo "::error::Segredo VPS_HOST vazio ou ausente"; exit 1; }
+          [ -n "$VPS_USERNAME" ] || { echo "::error::Segredo VPS_USERNAME vazio ou ausente"; exit 1; }
+          [ -n "$VPS_SSH_KEY" ] || { echo "::error::Segredo VPS_SSH_KEY vazio ou ausente neste job"; exit 1; }
+          first=$(printf '%s' "$VPS_SSH_KEY" | head -n1 | tr -d '\r')
+          last=$(printf '%s' "$VPS_SSH_KEY" | tail -n1 | tr -d '\r')
+          lines=$(printf '%s\n' "$VPS_SSH_KEY" | wc -l)
+          echo "Chave: $lines linhas | primeira: $first | ultima: $last"
+          [ "$first" = "-----BEGIN OPENSSH PRIVATE KEY-----" ] || { echo "::error::Primeira linha da chave inesperada"; exit 1; }
+          [ "$last" = "-----END OPENSSH PRIVATE KEY-----" ] || { echo "::error::Ultima linha da chave inesperada"; exit 1; }
+
       - name: Executar Deploy via SSH na VPS
         uses: appleboy/ssh-action@v1.0.3
         with:
           host: ${{ secrets.VPS_HOST }}
           username: ${{ secrets.VPS_USERNAME }}
-          password: ${{ secrets.VPS_PASSWORD }}
           key: ${{ secrets.VPS_SSH_KEY }}
           port: 22
           script: |
