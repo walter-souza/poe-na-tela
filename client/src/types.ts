@@ -25,6 +25,16 @@ export interface StreamStats {
   bufferDelayMs?: number;
   playoutBufferMs?: number;
   bytesReceivedOrSent: number;
+  /** Quem limita o envio (só no emissor): 'none' | 'cpu' | 'bandwidth' | 'other' */
+  limitationReason?: string;
+  /** Implementação do codificador no emissor (ex.: 'OpenH264' = software, 'MediaFoundation'/'ExternalEncoder' = hardware) */
+  encoderImplementation?: string;
+  /** Bitrate-alvo do codificador (kbps), só no emissor */
+  targetBitrateKbps?: number;
+  /** Quadros por segundo capturados da tela (antes de codificar), só no emissor */
+  captureFps?: number;
+  /** Quadros descartados pelo decodificador/renderização, só no espectador */
+  framesDropped?: number;
 }
 
 export interface ChatMessage {

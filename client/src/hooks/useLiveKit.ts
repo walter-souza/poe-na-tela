@@ -13,6 +13,7 @@ import type { StreamQualityConfig, StreamStats, ChatMessage, ReactionEvent, Part
 import { playJoinSound, playLeaveSound } from '../utils/soundEffects';
 import { isSupabaseConfigured } from '../utils/supabase';
 import { startKeepAlive, stopKeepAlive } from '../utils/keepAlive';
+import { getTargetBitrateKbps } from '../utils/streamPresets';
 import { isNoiseSuppressionSupported, NoiseSuppressionProcessor } from '../utils/noiseSuppression';
 
 export interface UseLiveKitOptions {
@@ -588,6 +589,9 @@ export function useLiveKit({ url, token, onDisconnected, onConnected }: UseLiveK
       let totalFrames = 0;
       let jitter = 0;
       let measuredBufferDelay: number | undefined;
+      let captureFps = 0;
+      let framesDropped = 0;
+      let bestOutbound: any = null;
       const now = Date.now();
 
       reports.forEach((rtcReport) => {
@@ -629,6 +633,7 @@ export function useLiveKit({ url, token, onDisconnected, onConnected }: UseLiveK
             if (report.jitter !== undefined) {
               jitter = Math.round(report.jitter * 1000);
             }
+            if (report.framesDropped) framesDropped = Math.max(framesDropped, report.framesDropped);
             if (report.jitterBufferDelay !== undefined && report.jitterBufferEmittedCount) {
               measuredBufferDelay = Math.round(
                 (report.jitterBufferDelay / report.jitterBufferEmittedCount) * 1000
@@ -649,7 +654,15 @@ export function useLiveKit({ url, token, onDisconnected, onConnected }: UseLiveK
           }
 
           // 4. Outbound RTP (Host sending video)
+          if (report.type === 'media-source' && (report.kind === 'video' || report.mediaType === 'video')) {
+            if (report.framesPerSecond) captureFps = Math.max(captureFps, Math.round(report.framesPerSecond));
+          }
+
           if (report.type === 'outbound-rtp' && (report.kind === 'video' || report.mediaType === 'video')) {
+            // Várias saídas (câmera + tela): o diagnóstico vale para a de maior resolução.
+            if (!bestOutbound || (report.frameWidth || 0) * (report.frameHeight || 0) >= (bestOutbound.frameWidth || 0) * (bestOutbound.frameHeight || 0)) {
+              bestOutbound = report;
+            }
             if (report.framesPerSecond) fps = Math.max(fps, Math.round(report.framesPerSecond));
             if (report.frameWidth) width = Math.max(width, report.frameWidth);
             if (report.frameHeight) height = Math.max(height, report.frameHeight);
@@ -687,16 +700,11 @@ export function useLiveKit({ url, token, onDisconnected, onConnected }: UseLiveK
 
       prevStatsRef.current = { bytes: totalBytes, frames: totalFrames, timestamp: now };
 
-      if (width === 0 || height === 0) {
-        width = 1920;
-        height = 1080;
-      }
-
       setStats({
         bitrateKbps: bitrate,
         rttMs: rtt,
         packetLossPercent: parseFloat(packetLoss.toFixed(1)),
-        fps: fps || (totalBytes > 0 ? 60 : 0),
+        fps,
         width,
         height,
         codec,
@@ -704,6 +712,11 @@ export function useLiveKit({ url, token, onDisconnected, onConnected }: UseLiveK
         bufferDelayMs: measuredBufferDelay ?? playoutBufferMsRef.current,
         playoutBufferMs: playoutBufferMsRef.current,
         bytesReceivedOrSent: totalBytes,
+        limitationReason: bestOutbound?.qualityLimitationReason,
+        encoderImplementation: bestOutbound?.encoderImplementation,
+        targetBitrateKbps: bestOutbound?.targetBitrate ? Math.round(bestOutbound.targetBitrate / 1000) : undefined,
+        captureFps: captureFps || undefined,
+        framesDropped: framesDropped || undefined,
       });
     } catch {
       // Ignore stats collection error during renegotiations
@@ -734,7 +747,7 @@ export function useLiveKit({ url, token, onDisconnected, onConnected }: UseLiveK
       publishDefaults: {
         videoCodec: 'h264',
         screenShareEncoding: {
-          maxBitrate: 3500000,
+          maxBitrate: 8_000_000,
           maxFramerate: 60,
           priority: 'high',
         },
@@ -1191,19 +1204,10 @@ export function useLiveKit({ url, token, onDisconnected, onConnected }: UseLiveK
 
     try {
       const targetFps = config?.frameRate || 60;
-      const is60Fps = targetFps === 60;
       const shouldIncludeAudio = config?.includeAudio ?? true;
       const shouldIsolateRoomAudio = config?.isolateRoomAudio ?? true;
 
-      const targetBitrate = config?.bitrateKbps
-        ? config.bitrateKbps * 1000
-        : config?.resolution === '4k'
-        ? (is60Fps ? 12000000 : 7000000)
-        : config?.resolution === '1440p'
-        ? (is60Fps ? 7000000 : 4500000)
-        : config?.resolution === '1080p'
-        ? (is60Fps ? 4500000 : 3000000)
-        : (is60Fps ? 2800000 : 1800000);
+      const targetBitrate = (config?.bitrateKbps ?? getTargetBitrateKbps(config?.resolution, targetFps)) * 1000;
 
       const screenResolution =
         config?.resolution === '4k'
@@ -1265,7 +1269,7 @@ export function useLiveKit({ url, token, onDisconnected, onConnected }: UseLiveK
             name: 'screen_share',
             source: Track.Source.ScreenShare,
             videoCodec: (config?.codec as any) || 'h264',
-            videoEncoding: {
+            screenShareEncoding: {
               maxBitrate: targetBitrate,
               maxFramerate: targetFps,
               priority: 'high',
@@ -1278,7 +1282,7 @@ export function useLiveKit({ url, token, onDisconnected, onConnected }: UseLiveK
             if (sender && typeof sender.getParameters === 'function') {
               const params = sender.getParameters();
               if (params) {
-                params.degradationPreference = 'balanced';
+                params.degradationPreference = 'maintain-framerate';
                 if (params.encodings && params.encodings.length > 0) {
                   params.encodings[0].maxFramerate = targetFps;
                   params.encodings[0].maxBitrate = targetBitrate;
@@ -1289,7 +1293,7 @@ export function useLiveKit({ url, token, onDisconnected, onConnected }: UseLiveK
               }
             }
           } catch (e) {
-            // Non-critical
+            console.warn('Não foi possível aplicar parâmetros do emissor (desktop):', e);
           }
 
           desktopTracksRef.current.videoTrack = localVideoTrack;
@@ -1348,7 +1352,7 @@ export function useLiveKit({ url, token, onDisconnected, onConnected }: UseLiveK
           red: true,
           simulcast: false,
           videoCodec: (config?.codec as any) || 'h264',
-          videoEncoding: {
+          screenShareEncoding: {
             maxBitrate: targetBitrate,
             maxFramerate: targetFps,
             priority: 'high',
@@ -1366,7 +1370,7 @@ export function useLiveKit({ url, token, onDisconnected, onConnected }: UseLiveK
       if (videoTrackPub && videoTrackPub.track) {
         const mediaTrack = videoTrackPub.track.mediaStreamTrack;
 
-        // Unified mode: 'motion' contentHint + balanced degradation ensures 60 FPS smoothness while preserving crisp text
+        // 'motion' contentHint + maintain-framerate: sob pressão reduz a resolução antes dos quadros, preservando os 60 FPS
         if (mediaTrack) {
           mediaTrack.contentHint = 'motion';
         }
@@ -1377,7 +1381,7 @@ export function useLiveKit({ url, token, onDisconnected, onConnected }: UseLiveK
           if (sender && typeof sender.getParameters === 'function') {
             const params = sender.getParameters();
             if (params) {
-              params.degradationPreference = 'balanced';
+              params.degradationPreference = 'maintain-framerate';
 
               if (params.encodings && params.encodings.length > 0) {
                 params.encodings[0].maxFramerate = targetFps;
@@ -1389,7 +1393,7 @@ export function useLiveKit({ url, token, onDisconnected, onConnected }: UseLiveK
             }
           }
         } catch (e) {
-          // Non-critical fallback
+          console.warn('Não foi possível aplicar parâmetros do emissor:', e);
         }
 
         setLocalScreenTrack(videoTrackPub.track);

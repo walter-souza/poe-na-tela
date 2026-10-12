@@ -30,6 +30,24 @@ export const StreamHUD: React.FC<StreamHUDProps> = ({
   };
 
   const bitrateMbps = (stats.bitrateKbps / 1000).toFixed(2);
+  const isSender = stats.limitationReason !== undefined || stats.encoderImplementation !== undefined;
+
+  const limitation = (() => {
+    switch (stats.limitationReason) {
+      case 'none':
+        return { label: 'Sem limitação', color: 'text-emerald-400', hint: 'O codificador entrega o que foi pedido.' };
+      case 'cpu':
+        return { label: 'CPU / codificador', color: 'text-rose-400', hint: 'O codificador não acompanha. Reduza a resolução ou use codificação por hardware.' };
+      case 'bandwidth':
+        return { label: 'Banda de upload', color: 'text-amber-400', hint: 'A rede de envio está limitando o bitrate. Reduza o bitrate ou a resolução.' };
+      case 'other':
+        return { label: 'Outro', color: 'text-amber-400', hint: 'Limitação por outro motivo (ex.: resolução imposta pela captura).' };
+      default:
+        return null;
+    }
+  })();
+
+  const encoderIsSoftware = /openh264|libvpx|libaom|software|ffmpeg/i.test(stats.encoderImplementation ?? '');
   const currentBuffer = stats.bufferDelayMs ?? stats.playoutBufferMs ?? playoutBufferMs ?? 800;
 
   return (
@@ -64,7 +82,7 @@ export const StreamHUD: React.FC<StreamHUDProps> = ({
             <span>Taxa de Quadros</span>
           </div>
           <div className="text-base font-bold text-white flex items-center gap-1.5">
-            <span>{stats.fps} FPS</span>
+            <span>{stats.fps > 0 ? `${stats.fps} FPS` : '— FPS'}</span>
             {stats.fps >= 55 && (
               <span className="text-[9px] bg-purple-500/20 text-purple-300 font-bold px-1.5 py-0.2 rounded border border-purple-500/30">
                 60 FPS
@@ -112,10 +130,48 @@ export const StreamHUD: React.FC<StreamHUDProps> = ({
         </div>
       </div>
 
+      {isSender && (
+        <div className="mt-2.5 bg-white/5 p-2 rounded-xl border border-white/5 space-y-1.5">
+          <div className="text-gray-400 font-semibold">Diagnóstico do emissor</div>
+          <div className="flex items-center justify-between">
+            <span className="text-gray-400">Limitação</span>
+            <span className={`font-bold ${limitation?.color ?? 'text-gray-300'}`}>{limitation?.label ?? '—'}</span>
+          </div>
+          {limitation && stats.limitationReason !== 'none' && (
+            <div className="text-[10px] text-gray-500 leading-snug">{limitation.hint}</div>
+          )}
+          <div className="flex items-center justify-between">
+            <span className="text-gray-400">Codificador</span>
+            <span className={`font-bold ${encoderIsSoftware ? 'text-rose-400' : 'text-emerald-400'}`}>
+              {stats.encoderImplementation || '—'}{encoderIsSoftware ? ' (software)' : ''}
+            </span>
+          </div>
+          <div className="flex items-center justify-between">
+            <span className="text-gray-400">Captura → envio</span>
+            <span className="font-bold text-white">
+              {stats.captureFps ?? '—'} → {stats.fps > 0 ? stats.fps : '—'} FPS
+            </span>
+          </div>
+          {stats.targetBitrateKbps !== undefined && (
+            <div className="flex items-center justify-between">
+              <span className="text-gray-400">Bitrate-alvo</span>
+              <span className="font-bold text-indigo-300">{(stats.targetBitrateKbps / 1000).toFixed(1)} Mbps</span>
+            </div>
+          )}
+        </div>
+      )}
+
+      {!isSender && stats.framesDropped !== undefined && (
+        <div className="mt-2.5 bg-white/5 p-2 rounded-xl border border-white/5 flex items-center justify-between">
+          <span className="text-gray-400">Quadros descartados</span>
+          <span className={`font-bold ${stats.framesDropped > 30 ? 'text-amber-400' : 'text-emerald-400'}`}>{stats.framesDropped}</span>
+        </div>
+      )}
+
       <div className="mt-2.5 pt-2 border-t border-white/10 flex items-center justify-between text-gray-400">
         <div className="flex items-center gap-1">
           <Film className="w-3.5 h-3.5 text-purple-400" />
-          <span>{stats.width}x{stats.height}</span>
+          <span>{stats.width > 0 ? `${stats.width}x${stats.height}` : '—'}</span>
         </div>
         <span className="px-2 py-0.5 rounded-md bg-indigo-950/60 border border-indigo-500/30 text-indigo-300 uppercase font-semibold">
           {stats.codec}

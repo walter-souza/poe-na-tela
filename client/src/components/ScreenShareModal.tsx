@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Monitor, Zap, X, ShieldCheck, Sparkles, RefreshCw, Layers } from 'lucide-react';
+import { getTargetBitrateKbps } from '../utils/streamPresets';
 import type { StreamQualityConfig, VideoResolution, VideoFrameRate, DesktopSource } from '../types';
 
 interface ScreenShareModalProps {
@@ -52,15 +53,7 @@ export const ScreenShareModal: React.FC<ScreenShareModalProps> = ({
   if (!isOpen) return null;
 
   const handleStart = () => {
-    const is60 = frameRate === 60;
-    const finalBitrate =
-      resolution === '4k'
-        ? (is60 ? 12000 : 7000)
-        : resolution === '1440p'
-        ? (is60 ? 7000 : 4500)
-        : resolution === '1080p'
-        ? (is60 ? 4500 : 3000)
-        : (is60 ? 2800 : 1800);
+    const finalBitrate = getTargetBitrateKbps(resolution, frameRate);
 
     onConfirm({
       resolution,
