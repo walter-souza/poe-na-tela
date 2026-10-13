@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Sparkles, Plus, Share2, LogOut, Check } from 'lucide-react';
+import { Sparkles, Plus, Share2, LogOut, Check, Settings } from 'lucide-react';
 import type { UserRoom } from '../types';
 
 interface GuildBarProps {
@@ -8,6 +8,7 @@ interface GuildBarProps {
   onSelectRoom: (slug: string) => void;
   onSelectHome: () => void;
   onOpenCreateRoom: () => void;
+  onOpenSettings: () => void;
   onRemoveRoom?: (slug: string) => void;
 }
 
@@ -17,6 +18,7 @@ export const GuildBar: React.FC<GuildBarProps> = ({
   onSelectRoom,
   onSelectHome,
   onOpenCreateRoom,
+  onOpenSettings,
   onRemoveRoom,
 }) => {
   const [contextMenu, setContextMenu] = useState<{
@@ -168,6 +170,19 @@ export const GuildBar: React.FC<GuildBarProps> = ({
             Adicionar uma Sala
           </div>
         </div>
+      </div>
+
+      {/* Ajustes (microfone, ruído, tema e conta) */}
+      <div className="flex justify-center pb-3 pt-2 border-t border-line">
+        <button
+          type="button"
+          onClick={onOpenSettings}
+          title="Ajustes"
+          aria-label="Ajustes"
+          className="w-11 h-11 rounded-2xl bg-surface hover:bg-surface-2 text-gray-400 hover:text-gray-100 flex items-center justify-center transition cursor-pointer"
+        >
+          <Settings className="w-5 h-5" />
+        </button>
       </div>
 
       {/* Menu de Contexto Flutuante (Botão Direito no Servidor) */}

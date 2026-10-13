@@ -5,6 +5,7 @@ import { Button, ErrorText, Field, Modal, inputClass } from './ui';
 import { useAuth } from '../context/AuthContext';
 import { sanitizeRoomName, sanitizeUserName } from '../utils/sanitize';
 import { getRoomInfoUrl } from '../utils/api';
+import { userNamePref } from '../utils/preferences';
 
 interface ServerInviteModalProps {
   isOpen: boolean;
@@ -20,8 +21,6 @@ interface ServerInfo {
   numParticipants: number;
 }
 
-const USERNAME_STORAGE_KEY = 'poe-na-tela-username';
-
 /** Entrada por link ou código: mostra o servidor, pede apelido (convidado) e senha só se houver. */
 export const ServerInviteModal: React.FC<ServerInviteModalProps> = ({
   isOpen,
@@ -33,7 +32,7 @@ export const ServerInviteModal: React.FC<ServerInviteModalProps> = ({
   const { profile, isAuthenticated } = useAuth();
   // Montado de novo a cada convite (App usa key={roomName}), então o estado inicial basta.
   const [userName, setUserName] = useState(
-    () => profile?.username || localStorage.getItem(USERNAME_STORAGE_KEY)?.trim() || defaultUserName
+    () => profile?.username || userNamePref.get() || defaultUserName
   );
   const [passcode, setPasscode] = useState('');
   const [showPassword, setShowPassword] = useState(false);
@@ -88,7 +87,7 @@ export const ServerInviteModal: React.FC<ServerInviteModalProps> = ({
     setIsSubmitting(true);
     setErrorMessage(null);
     try {
-      localStorage.setItem(USERNAME_STORAGE_KEY, cleanUser);
+      userNamePref.set(cleanUser);
       await onAccept(sanitizeRoomName(roomName), cleanUser, cleanPass);
     } catch (err: any) {
       setErrorMessage(err?.message || 'Não foi possível entrar no servidor. Confira a senha e tente de novo.');

@@ -14,6 +14,7 @@ import type { StreamQualityConfig, StreamStats, ChatMessage, ReactionEvent, Part
 import { playJoinSound, playLeaveSound } from '../utils/soundEffects';
 import { isSupabaseConfigured } from '../utils/supabase';
 import { startKeepAlive, stopKeepAlive } from '../utils/keepAlive';
+import { micDevicePref, noiseSuppressionPref, usePreference } from '../utils/preferences';
 import { MIN_BITRATE_KBPS, RESOLUTION_SIZE, SIMULCAST_LOW_LAYER, getTargetBitrateKbps } from '../utils/streamPresets';
 import { isNoiseSuppressionSupported, NoiseSuppressionProcessor } from '../utils/noiseSuppression';
 
@@ -196,16 +197,9 @@ export function useLiveKit({ url, token, onDisconnected, onConnected }: UseLiveK
   const [reaction, setReaction] = useState<ReactionEvent | null>(null);
   const [hostName, setHostName] = useState<string>('');
 
-  // Noise Suppression (RNNoise AI) - opt-in (desativado por padrão para voz 100% natural)
-  const NOISE_SUPPRESSION_KEY = 'poe-na-tela-noise-suppression';
-  const [isNoiseSuppressionEnabled, setIsNoiseSuppressionEnabledState] = useState<boolean>(() => {
-    try {
-      const saved = localStorage.getItem(NOISE_SUPPRESSION_KEY);
-      return saved === 'true';
-    } catch {
-      return false;
-    }
-  });
+  // Noise Suppression (RNNoise AI) - opt-in; preferência compartilhada com Ajustes (utils/preferences.ts)
+  const isNoiseSuppressionEnabled = usePreference(noiseSuppressionPref);
+  const micDeviceId = usePreference(micDevicePref);
   const isNoiseSuppressionEnabledRef = useRef<boolean>(false);
   isNoiseSuppressionEnabledRef.current = isNoiseSuppressionEnabled;
   const activeProcessorRef = useRef<NoiseSuppressionProcessor | null>(null);
@@ -805,6 +799,7 @@ export function useLiveKit({ url, token, onDisconnected, onConnected }: UseLiveK
         autoGainControl: true,
         noiseSuppression: true,
         echoCancellation: true,
+        deviceId: micDevicePref.get() || undefined,
       },
       videoCaptureDefaults: {
         resolution: VideoPresets.h1080.resolution,
@@ -1631,6 +1626,7 @@ export function useLiveKit({ url, token, onDisconnected, onConnected }: UseLiveK
         echoCancellation: true,
         noiseSuppression: !isNoiseSuppressionEnabledRef.current,
         autoGainControl: true,
+        deviceId: micDevicePref.get() || undefined,
       });
       setIsMicEnabled(nextState);
       if (nextState) {
@@ -1656,23 +1652,30 @@ export function useLiveKit({ url, token, onDisconnected, onConnected }: UseLiveK
   };
 
   // Toggle Noise Suppression (AI RNNoise)
-  const toggleNoiseSuppression = useCallback(async () => {
-    const next = !isNoiseSuppressionEnabled;
-    setIsNoiseSuppressionEnabledState(next);
-    isNoiseSuppressionEnabledRef.current = next;
-    try {
-      localStorage.setItem(NOISE_SUPPRESSION_KEY, String(next));
-    } catch {}
+  const toggleNoiseSuppression = useCallback(() => {
+    noiseSuppressionPref.set(!noiseSuppressionPref.get());
+  }, []);
 
-    const room = roomRef.current;
-    if (!room) return;
-
-    const micPub = room.localParticipant.getTrackPublication(Track.Source.Microphone);
-    const micTrack = micPub?.track as LocalAudioTrack | undefined;
-    if (micTrack) {
-      await applyNoiseSuppression(micTrack, next);
+  // Aplica a supressão no microfone atual sempre que a preferência muda (barra da sala ou Ajustes).
+  useEffect(() => {
+    const micTrack = roomRef.current?.localParticipant.getTrackPublication(Track.Source.Microphone)?.track as
+      | LocalAudioTrack
+      | undefined;
+    if (!micTrack) return;
+    const isActive = Boolean(activeProcessorRef.current || (micTrack as any).processor);
+    if (isActive !== isNoiseSuppressionEnabled) {
+      void applyNoiseSuppression(micTrack, isNoiseSuppressionEnabled);
     }
   }, [isNoiseSuppressionEnabled, applyNoiseSuppression]);
+
+  // Troca o microfone da chamada quando o usuário escolhe outro em Ajustes.
+  useEffect(() => {
+    const room = roomRef.current;
+    if (!room || room.state !== ConnectionState.Connected) return;
+    room.switchActiveDevice('audioinput', micDeviceId || 'default').catch((err) => {
+      console.warn('Não foi possível trocar o microfone:', err);
+    });
+  }, [micDeviceId]);
 
   // Toggle Deafen
   const toggleDeafen = () => {

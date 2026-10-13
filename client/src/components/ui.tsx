@@ -100,3 +100,68 @@ export const Modal: React.FC<{
     </div>
   );
 };
+
+/** Interruptor liga/desliga com rótulo e descrição. */
+export const Switch: React.FC<{
+  checked: boolean;
+  onChange: (next: boolean) => void;
+  label: string;
+  description?: string;
+  disabled?: boolean;
+}> = ({ checked, onChange, label, description, disabled }) => (
+  <label className={`flex items-center gap-3 py-2 ${disabled ? 'opacity-50' : 'cursor-pointer'}`}>
+    <span className="flex-1 min-w-0">
+      <span className="block text-sm">{label}</span>
+      {description && <span className="block text-xs text-gray-400">{description}</span>}
+    </span>
+    <button
+      type="button"
+      role="switch"
+      aria-checked={checked}
+      aria-label={label}
+      disabled={disabled}
+      onClick={() => onChange(!checked)}
+      className={`relative w-9 h-5 rounded-full border transition cursor-pointer disabled:cursor-not-allowed ${
+        checked ? 'bg-accent border-accent' : 'bg-surface-2 border-line'
+      }`}
+    >
+      <span
+        className={`absolute top-0.5 w-3.5 h-3.5 rounded-full transition-all ${
+          checked ? 'left-[18px] bg-on-accent' : 'left-0.5 bg-gray-400'
+        }`}
+      />
+    </button>
+  </label>
+);
+
+/** Grupo de opções exclusivas (ex.: Sistema / Claro / Escuro). */
+export function Segmented<T extends string>({
+  options,
+  value,
+  onChange,
+  ariaLabel,
+}: {
+  options: { value: T; label: string }[];
+  value: T;
+  onChange: (next: T) => void;
+  ariaLabel: string;
+}) {
+  return (
+    <div role="radiogroup" aria-label={ariaLabel} className="inline-flex bg-app border border-line rounded-xl p-0.5">
+      {options.map((option) => (
+        <button
+          key={option.value}
+          type="button"
+          role="radio"
+          aria-checked={option.value === value}
+          onClick={() => onChange(option.value)}
+          className={`px-3 py-1.5 rounded-[10px] text-sm transition cursor-pointer ${
+            option.value === value ? 'bg-surface-2 text-gray-100 shadow-sm' : 'text-gray-400 hover:text-gray-100'
+          }`}
+        >
+          {option.label}
+        </button>
+      ))}
+    </div>
+  );
+}

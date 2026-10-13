@@ -14,7 +14,6 @@ import {
   Check,
 } from 'lucide-react';
 import { OBS_ENABLED, getObsSrtUrl } from '../utils/api';
-import { ThemeToggle } from './ThemeToggle';
 
 interface ControlsBarProps {
   isMicEnabled: boolean;
@@ -168,8 +167,6 @@ export const ControlsBar: React.FC<ControlsBarProps> = ({
 
       {/* Divisor */}
       <div className="h-5 w-[1px] bg-white/10 mx-0.5" />
-
-      <ThemeToggle />
 
       {/* Toggle HUD Estatísticas */}
       <button

@@ -1,12 +1,12 @@
 import React, { useEffect, useState } from 'react';
 import { ArrowRight, KeyRound, Link2, Lock, LogOut, Plus, Radio, Users } from 'lucide-react';
 import { GoogleLoginButton } from './GoogleLoginButton';
-import { ThemeToggle } from './ThemeToggle';
 import { GuestRecoveryModal } from './GuestRecoveryModal';
 import { Button, inputClass } from './ui';
 import { useAuth } from '../context/AuthContext';
 import { parseRoomInput, sanitizeUserName } from '../utils/sanitize';
 import { getRoomsUrl } from '../utils/api';
+import { usePreference, userNamePref } from '../utils/preferences';
 import type { UserRoom } from '../types';
 
 interface LobbyProps {
@@ -19,7 +19,6 @@ interface LobbyProps {
   onGuestRecovered?: (recovered: { nickname: string; rooms: UserRoom[] }) => void;
 }
 
-const USERNAME_STORAGE_KEY = 'poe-na-tela-username';
 function greeting(): string {
   const hour = new Date().getHours();
   if (hour < 12) return 'Bom dia';
@@ -27,17 +26,9 @@ function greeting(): string {
   return 'Boa noite';
 }
 
-function readStoredName(): string {
-  try {
-    return localStorage.getItem(USERNAME_STORAGE_KEY)?.trim() || '';
-  } catch {
-    return '';
-  }
-}
-
 export const Lobby: React.FC<LobbyProps> = ({ rooms, onOpenRoom, onOpenInvite, onOpenCreateRoom, onGuestRecovered }) => {
   const { profile, isAuthenticated, signOut } = useAuth();
-  const [guestName, setGuestName] = useState(readStoredName);
+  const guestName = usePreference(userNamePref);
   const [isGuestModalOpen, setIsGuestModalOpen] = useState(false);
   const [isJoinOpen, setIsJoinOpen] = useState(false);
   const [joinInput, setJoinInput] = useState('');
@@ -97,14 +88,7 @@ export const Lobby: React.FC<LobbyProps> = ({ rooms, onOpenRoom, onOpenInvite, o
     return (
       <>
         <WelcomeCard
-          onContinue={(name) => {
-            try {
-              localStorage.setItem(USERNAME_STORAGE_KEY, name);
-            } catch {
-              // Sem armazenamento: o nome vale só nesta sessão.
-            }
-            setGuestName(name);
-          }}
+          onContinue={(name) => userNamePref.set(name)}
           onRecover={() => setIsGuestModalOpen(true)}
         />
         {isGuestModalOpen && (
@@ -113,8 +97,7 @@ export const Lobby: React.FC<LobbyProps> = ({ rooms, onOpenRoom, onOpenInvite, o
             onClose={() => setIsGuestModalOpen(false)}
             currentNickname="Convidado"
             onRecoverSuccess={(rec) => {
-              setGuestName(rec.nickname);
-              localStorage.setItem(USERNAME_STORAGE_KEY, rec.nickname);
+              userNamePref.set(rec.nickname);
               onGuestRecovered?.(rec);
             }}
           />
@@ -136,7 +119,6 @@ export const Lobby: React.FC<LobbyProps> = ({ rooms, onOpenRoom, onOpenInvite, o
           Põe na Tela
         </span>
         <div className="ml-auto flex items-center gap-2">
-          <ThemeToggle />
           {isAuthenticated ? (
             <div className="flex items-center gap-2 bg-surface border border-line rounded-full pl-1 pr-1.5 py-1">
               <Avatar name={profile?.username || ''} url={profile?.avatar_url} />
@@ -251,8 +233,7 @@ export const Lobby: React.FC<LobbyProps> = ({ rooms, onOpenRoom, onOpenInvite, o
           onClose={() => setIsGuestModalOpen(false)}
           currentNickname={displayName || 'Convidado'}
           onRecoverSuccess={(rec) => {
-            setGuestName(rec.nickname);
-            localStorage.setItem(USERNAME_STORAGE_KEY, rec.nickname);
+            userNamePref.set(rec.nickname);
             onGuestRecovered?.(rec);
           }}
         />

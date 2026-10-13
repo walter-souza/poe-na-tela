@@ -1,5 +1,6 @@
 import type { UserRoom } from '../types';
 import { getApiBaseUrl } from './api';
+import { userNamePref } from './preferences';
 
 export const GUEST_ROOMS_STORAGE_KEY = 'poe_na_tela_guest_rooms';
 export const GUEST_RECOVERY_KEY = 'poe_na_tela_guest_recovery_code';
@@ -184,7 +185,7 @@ export async function recoverGuestAccount(code: string): Promise<{
     }
 
     if (account.nickname) {
-      localStorage.setItem('poe-na-tela-username', account.nickname);
+      userNamePref.set(account.nickname);
     }
 
     return {

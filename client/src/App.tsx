@@ -10,6 +10,8 @@ import { StreamHUD } from './components/StreamHUD';
 import { ScreenShareModal } from './components/ScreenShareModal';
 import { MaintenanceScreen } from './components/MaintenanceScreen';
 import { Lobby } from './components/Lobby';
+import { SettingsModal } from './components/SettingsModal';
+import { usePreference, userNamePref } from './utils/preferences';
 import { ServerInviteModal } from './components/ServerInviteModal';
 import { ChannelSidebar } from './components/ChannelSidebar';
 import { CreateChannelModal } from './components/CreateChannelModal';
@@ -74,6 +76,8 @@ export function App() {
   });
   const [activeRoomSlug, setActiveRoomSlug] = useState<string | null>(null);
   const [isCreateRoomOpen, setIsCreateRoomOpen] = useState(false);
+  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  const storedUserName = usePreference(userNamePref);
   const [passwordPromptRoom, setPasswordPromptRoom] = useState<UserRoom | null>(null);
   const [passwordModalError, setPasswordModalError] = useState<string | null>(null);
   const [roomPasscodes, setRoomPasscodes] = useState<Record<string, string>>({});
@@ -286,7 +290,7 @@ export function App() {
     }
 
     if (guestUserName) {
-      localStorage.setItem('poe-na-tela-username', guestUserName);
+      userNamePref.set(guestUserName);
     }
 
     // Persistir sala no histórico de convidados
@@ -327,8 +331,7 @@ export function App() {
   };
 
   // Nome do usuário para a sessão ativa
-  const effectiveUserName =
-    profile?.username || localStorage.getItem('poe-na-tela-username') || 'Usuário';
+  const effectiveUserName = profile?.username || storedUserName || 'Usuário';
 
   // Sessão atual: se já foi gerada com token ou modo de navegação sem voz
   const currentSession: AppSession | null = useMemo(() => {
@@ -371,6 +374,7 @@ export function App() {
         onSelectRoom={handleSelectRoom}
         onSelectHome={handleSelectHome}
         onOpenCreateRoom={() => setIsCreateRoomOpen(true)}
+        onOpenSettings={() => setIsSettingsOpen(true)}
         onRemoveRoom={handleRemoveRoom}
       />
 
@@ -408,6 +412,15 @@ export function App() {
       </div>
 
       {/* Modais Globais */}
+      <SettingsModal
+        open={isSettingsOpen}
+        onClose={() => setIsSettingsOpen(false)}
+        onGuestRecovered={(rec) => {
+          setGuestRooms(rec.rooms);
+          if (rec.nickname && updateNickname) updateNickname(rec.nickname);
+        }}
+      />
+
       {inviteServerName && (
         <ServerInviteModal
           key={inviteServerName}
