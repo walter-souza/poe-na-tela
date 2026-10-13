@@ -1,5 +1,6 @@
-import React, { useState, useEffect } from 'react';
-import { Monitor, Zap, X, ShieldCheck, Sparkles, RefreshCw, Layers } from 'lucide-react';
+import React, { useEffect, useState } from 'react';
+import { ChevronDown, Monitor, RefreshCw, ScreenShare } from 'lucide-react';
+import { Button, Modal, Segmented, Switch } from './ui';
 import { getRecommendedQuality, getTargetBitrateKbps } from '../utils/streamPresets';
 import type { StreamQualityConfig, VideoResolution, VideoFrameRate, QualityMode, DesktopSource } from '../types';
 
@@ -9,25 +10,33 @@ interface ScreenShareModalProps {
   onConfirm: (config: StreamQualityConfig) => void;
 }
 
-export const ScreenShareModal: React.FC<ScreenShareModalProps> = ({
-  isOpen,
-  onClose,
-  onConfirm,
-}) => {
+const RESOLUTIONS: { value: VideoResolution; label: string }[] = [
+  { value: '720p', label: '720p' },
+  { value: '1080p', label: '1080p' },
+];
+const FRAME_RATES: { value: '30' | '60'; label: string }[] = [
+  { value: '30', label: '30 FPS' },
+  { value: '60', label: '60 FPS' },
+];
+
+/** Transmitir tela: qualidade sugerida para o computador, prioridade e áudio; opções avançadas recolhidas. */
+export const ScreenShareModal: React.FC<ScreenShareModalProps> = ({ isOpen, onClose, onConfirm }) => {
   const isDesktopApp = typeof window !== 'undefined' && !!window.desktopAPI?.isDesktop;
 
   const recommended = React.useMemo(() => getRecommendedQuality(), []);
   const [resolution, setResolution] = useState<VideoResolution>(recommended.resolution);
   const [frameRate, setFrameRate] = useState<VideoFrameRate>(recommended.frameRate);
-  const [isolateRoomAudio, setIsolateRoomAudio] = useState<boolean>(true);
   const [qualityMode, setQualityMode] = useState<QualityMode>('stable');
-  const [simulcast, setSimulcast] = useState<boolean>(false);
+  const [includeAudio, setIncludeAudio] = useState(true);
+  const [isolateRoomAudio, setIsolateRoomAudio] = useState(true);
+  const [simulcast, setSimulcast] = useState(false);
+  const [showAdvanced, setShowAdvanced] = useState(false);
 
-  // Desktop native source selection
+  // App desktop: escolha nativa de janela ou tela
   const [sources, setSources] = useState<DesktopSource[]>([]);
   const [selectedSourceId, setSelectedSourceId] = useState<string | null>(null);
-  const [activeTab, setActiveTab] = useState<'screens' | 'windows'>('windows');
-  const [isLoadingSources, setIsLoadingSources] = useState<boolean>(false);
+  const [sourceKind, setSourceKind] = useState<'windows' | 'screens'>('windows');
+  const [isLoadingSources, setIsLoadingSources] = useState(false);
 
   const fetchDesktopSources = async () => {
     if (!window.desktopAPI?.getSources) return;
@@ -36,34 +45,28 @@ export const ScreenShareModal: React.FC<ScreenShareModalProps> = ({
       const available = await window.desktopAPI.getSources();
       setSources(available);
       if (available.length > 0 && !selectedSourceId) {
-        // Prefer first game/window or first screen
         const firstWindow = available.find((s) => s.id.startsWith('window:'));
         setSelectedSourceId(firstWindow ? firstWindow.id : available[0].id);
       }
     } catch (e) {
-      console.error('Failed to load desktop sources:', e);
+      console.error('Falha ao listar janelas e telas:', e);
     } finally {
       setIsLoadingSources(false);
     }
   };
 
   useEffect(() => {
-    if (isOpen && isDesktopApp) {
-      fetchDesktopSources();
-    }
+    if (isOpen && isDesktopApp) fetchDesktopSources();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isOpen, isDesktopApp]);
 
-  if (!isOpen) return null;
-
   const handleStart = () => {
-    const finalBitrate = getTargetBitrateKbps(resolution, frameRate, qualityMode);
-
     onConfirm({
       resolution,
       frameRate,
-      bitrateKbps: finalBitrate,
+      bitrateKbps: getTargetBitrateKbps(resolution, frameRate, qualityMode),
       codec: 'h264',
-      includeAudio: true,
+      includeAudio,
       contentHint: 'motion',
       isolateRoomAudio,
       sourceId: selectedSourceId || undefined,
@@ -73,322 +76,137 @@ export const ScreenShareModal: React.FC<ScreenShareModalProps> = ({
     onClose();
   };
 
-  const screenSources = sources.filter((s) => s.id.startsWith('screen:'));
-  const windowSources = sources.filter((s) => s.id.startsWith('window:'));
-  const displayedSources = activeTab === 'screens' ? screenSources : windowSources;
+  const displayedSources = sources.filter((s) => s.id.startsWith(sourceKind === 'screens' ? 'screen:' : 'window:'));
+  const modeOptions: { value: QualityMode; label: string }[] = [
+    { value: 'stable', label: `Estável · ${(getTargetBitrateKbps(resolution, frameRate, 'stable') / 1000).toFixed(1)} Mbps` },
+    { value: 'high', label: `Alta qualidade · ${(getTargetBitrateKbps(resolution, frameRate, 'high') / 1000).toFixed(1)} Mbps` },
+  ];
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/80 backdrop-blur-sm animate-fadeIn">
-      <div className="bg-surface border border-white/10 rounded-2xl w-full max-w-xl shadow-2xl overflow-hidden text-gray-200">
-        {/* Header */}
-        <div className="flex items-center justify-between px-4 sm:px-6 py-3.5 sm:py-4 border-b border-white/10 bg-white/5">
-          <div className="flex items-center gap-2.5 sm:gap-3">
-            <div className="p-2 bg-indigo-500/20 text-indigo-400 rounded-xl shrink-0">
-              <Monitor className="w-5 h-5" />
+    <Modal open={isOpen} onClose={onClose} title="Transmitir tela" className="max-w-lg">
+      <div className="space-y-5 max-h-[70vh] overflow-y-auto pr-1">
+        {isDesktopApp && (
+          <div className="space-y-2">
+            <div className="flex items-center justify-between">
+              <Segmented
+                ariaLabel="O que transmitir"
+                options={[
+                  { value: 'windows', label: 'Janelas' },
+                  { value: 'screens', label: 'Telas' },
+                ]}
+                value={sourceKind}
+                onChange={setSourceKind}
+              />
+              <Button variant="ghost" onClick={fetchDesktopSources} disabled={isLoadingSources}>
+                <RefreshCw className={`w-4 h-4 ${isLoadingSources ? 'animate-spin' : ''}`} />
+                Atualizar
+              </Button>
             </div>
-            <div>
-              <div className="flex items-center gap-2">
-                <h3 className="font-bold text-white text-sm sm:text-base">Configurações de Transmissão</h3>
-                {isDesktopApp && (
-                  <span className="text-[10px] bg-purple-500/20 text-purple-300 font-bold px-2 py-0.5 rounded-full border border-purple-500/30 flex items-center gap-1">
-                    <Sparkles className="w-3 h-3" /> APP DESKTOP (60 FPS)
-                  </span>
-                )}
-              </div>
-              <p className="text-[11px] sm:text-xs text-gray-400">
-                {isDesktopApp
-                  ? 'Captura nativa de jogos com aceleração por GPU e taxa fluida'
-                  : 'Qualidade de vídeo e isolamento de som para seus amigos'}
-              </p>
-            </div>
-          </div>
-          <button
-            onClick={onClose}
-            className="text-gray-400 hover:text-white p-1 rounded-lg hover:bg-white/10 transition shrink-0"
-          >
-            <X className="w-5 h-5" />
-          </button>
-        </div>
-
-        <div className="p-4 sm:p-6 space-y-4 sm:space-y-5 text-sm max-h-[80vh] sm:max-h-[75vh] overflow-y-auto">
-          {/* Desktop Source Picker (Screens / Windows) */}
-          {isDesktopApp && (
-            <div className="space-y-3">
-              <div className="flex items-center justify-between">
-                <label className="block font-medium text-xs text-gray-400 uppercase tracking-wider">
-                  Selecione o que transmitir
-                </label>
+            <div className="grid grid-cols-2 gap-2 max-h-48 overflow-y-auto">
+              {displayedSources.map((source) => (
                 <button
-                  onClick={fetchDesktopSources}
-                  disabled={isLoadingSources}
-                  className="flex items-center gap-1 text-xs text-indigo-400 hover:text-indigo-300 transition"
-                >
-                  <RefreshCw className={`w-3.5 h-3.5 ${isLoadingSources ? 'animate-spin' : ''}`} />
-                  Atualizar Janelas
-                </button>
-              </div>
-
-              {/* Tabs: Janelas / Telas */}
-              <div className="flex gap-2 p-1 bg-white/5 rounded-xl border border-white/5">
-                <button
+                  key={source.id}
                   type="button"
-                  onClick={() => setActiveTab('windows')}
-                  className={`flex-1 py-1.5 px-3 rounded-lg text-xs font-semibold transition flex items-center justify-center gap-1.5 ${
-                    activeTab === 'windows'
-                      ? 'bg-indigo-600 text-on-accent shadow'
-                      : 'text-gray-400 hover:text-white'
+                  onClick={() => setSelectedSourceId(source.id)}
+                  aria-pressed={selectedSourceId === source.id}
+                  className={`p-2 rounded-xl border text-left transition cursor-pointer ${
+                    selectedSourceId === source.id ? 'border-accent-text bg-accent/10' : 'border-line hover:border-gray-600'
                   }`}
                 >
-                  <Layers className="w-3.5 h-3.5" />
-                  Janelas de Jogos ({windowSources.length})
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setActiveTab('screens')}
-                  className={`flex-1 py-1.5 px-3 rounded-lg text-xs font-semibold transition flex items-center justify-center gap-1.5 ${
-                    activeTab === 'screens'
-                      ? 'bg-indigo-600 text-on-accent shadow'
-                      : 'text-gray-400 hover:text-white'
-                  }`}
-                >
-                  <Monitor className="w-3.5 h-3.5" />
-                  Telas Inteiras ({screenSources.length})
-                </button>
-              </div>
-
-              {/* Source Grid */}
-              <div className="grid grid-cols-2 gap-3 max-h-48 overflow-y-auto p-1 bg-app rounded-xl border border-white/5">
-                {displayedSources.map((source) => (
-                  <button
-                    key={source.id}
-                    type="button"
-                    onClick={() => setSelectedSourceId(source.id)}
-                    className={`p-2 rounded-xl border text-left transition flex flex-col gap-1.5 relative overflow-hidden group ${
-                      selectedSourceId === source.id
-                        ? 'bg-indigo-600/20 border-indigo-500 shadow-md ring-1 ring-indigo-500'
-                        : 'bg-white/5 border-white/5 hover:bg-white/10 text-gray-300'
-                    }`}
-                  >
-                    <div className="w-full h-24 rounded-lg bg-black/60 overflow-hidden flex items-center justify-center border border-white/5">
-                      {source.thumbnail ? (
-                        <img
-                          src={source.thumbnail}
-                          alt={source.name}
-                          className="w-full h-full object-contain"
-                        />
-                      ) : (
-                        <Monitor className="w-8 h-8 text-gray-600" />
-                      )}
-                    </div>
-                    <div className="flex items-center gap-1.5 truncate w-full">
-                      {source.appIcon && (
-                        <img src={source.appIcon} alt="" className="w-4 h-4 rounded shrink-0" />
-                      )}
-                      <span className="text-xs font-medium truncate text-white">
-                        {source.name || 'Janela'}
-                      </span>
-                    </div>
-                  </button>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {/* Frame Rate Selection (Unlocked 60 FPS / 30 FPS) */}
-          <div>
-            <label className="block font-medium text-xs text-gray-400 uppercase tracking-wider mb-2">
-              Taxa de Quadros (FPS)
-            </label>
-            <div className="grid grid-cols-2 gap-3">
-              {[
-                {
-                  fps: 60 as VideoFrameRate,
-                  label: '60 FPS',
-                  desc: 'Máxima fluidez para jogos e movimento rápido',
-                  badge: recommended.frameRate === 60 ? 'Recomendado' : 'Fluido',
-                },
-                {
-                  fps: 30 as VideoFrameRate,
-                  label: '30 FPS',
-                  desc: 'Menor consumo de banda e CPU',
-                  badge: recommended.frameRate === 30 ? 'Recomendado' : 'Econômico',
-                },
-              ].map(({ fps, label, desc, badge }) => (
-                <button
-                  key={fps}
-                  type="button"
-                  onClick={() => setFrameRate(fps)}
-                  className={`py-2.5 px-3 rounded-xl border text-left transition flex flex-col justify-between ${
-                    frameRate === fps
-                      ? 'bg-indigo-600/30 border-indigo-500 text-white shadow-md'
-                      : 'bg-white/5 border-white/5 hover:bg-white/10 text-gray-300'
-                  }`}
-                >
-                  <div className="flex items-center justify-between mb-1">
-                    <span className="font-bold text-sm text-white">{label}</span>
-                    <span
-                      className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full border ${
-                        fps === 60
-                          ? 'bg-purple-500/20 text-purple-300 border-purple-500/30'
-                          : 'bg-emerald-500/20 text-emerald-300 border-emerald-500/30'
-                      }`}
-                    >
-                      {badge}
-                    </span>
+                  <div className="h-20 rounded-lg bg-black overflow-hidden flex items-center justify-center">
+                    {source.thumbnail ? (
+                      <img src={source.thumbnail} alt="" className="w-full h-full object-contain" />
+                    ) : (
+                      <Monitor className="w-7 h-7 text-gray-600" />
+                    )}
                   </div>
-                  <span className="text-[11px] text-gray-400 leading-tight">{desc}</span>
-                </button>
-              ))}
-            </div>
-          </div>
-
-          {/* Resolution Selection */}
-          <div>
-            <label className="block font-medium text-xs text-gray-400 uppercase tracking-wider mb-2">
-              Resolução de Saída
-            </label>
-            <div className="grid grid-cols-2 gap-3">
-              {[
-                { res: '720p' as VideoResolution, label: '720p (HD)' },
-                { res: '1080p' as VideoResolution, label: '1080p (Full HD)' },
-              ].map(({ res, label }) => (
-                <button
-                  key={res}
-                  type="button"
-                  onClick={() => setResolution(res)}
-                  className={`py-2.5 px-3 rounded-xl font-semibold border text-center transition ${
-                    resolution === res
-                      ? 'bg-indigo-600/30 border-indigo-500 text-white shadow-md'
-                      : 'bg-white/5 border-white/5 text-gray-400 hover:bg-white/10 hover:text-white'
-                  }`}
-                >
-                  {label}
-                  {recommended.resolution === res && (
-                    <span className="block text-[10px] font-bold text-emerald-300 mt-0.5">Recomendado</span>
-                  )}
-                </button>
-              ))}
-            </div>
-            <p className="text-[11px] text-gray-500 mt-2 leading-relaxed">
-              Sugestão para o seu computador: {recommended.resolution} a {recommended.frameRate} FPS ({recommended.reason}).
-              Se o processador não acompanhar durante a transmissão, a qualidade é reduzida automaticamente.
-            </p>
-          </div>
-
-          {/* Quality Mode */}
-          <div>
-            <label className="block font-medium text-xs text-gray-400 uppercase tracking-wider mb-2">
-              Prioridade
-            </label>
-            <div className="grid grid-cols-2 gap-3">
-              {[
-                { mode: 'stable' as QualityMode, label: 'Estável', desc: 'Menos banda: ideal para internet instável ou muitos espectadores' },
-                { mode: 'high' as QualityMode, label: 'Alta qualidade', desc: 'Mais nitidez, exige upload estável' },
-              ].map(({ mode, label, desc }) => (
-                <button
-                  key={mode}
-                  type="button"
-                  onClick={() => setQualityMode(mode)}
-                  className={`py-2.5 px-3 rounded-xl border text-left transition ${
-                    qualityMode === mode
-                      ? 'bg-indigo-600/30 border-indigo-500 text-white shadow-md'
-                      : 'bg-white/5 border-white/5 hover:bg-white/10 text-gray-300'
-                  }`}
-                >
-                  <span className="block font-bold text-sm text-white">{label}</span>
-                  <span className="block text-[11px] text-gray-400 leading-tight mt-0.5">
-                    {desc} ({(getTargetBitrateKbps(resolution, frameRate, mode) / 1000).toFixed(1)} Mbps)
+                  <span className="mt-1.5 flex items-center gap-1.5 text-xs truncate">
+                    {source.appIcon && <img src={source.appIcon} alt="" className="w-4 h-4 rounded shrink-0" />}
+                    <span className="truncate">{source.name || 'Janela'}</span>
                   </span>
                 </button>
               ))}
             </div>
           </div>
+        )}
 
-          {/* Simulcast (camada leve para espectadores com banda fraca) */}
-          {resolution === '1080p' && (
-            <div
-              onClick={() => setSimulcast(!simulcast)}
-              className={`flex items-center justify-between p-3.5 border rounded-xl cursor-pointer transition select-none ${
-                simulcast ? 'bg-indigo-950/30 border-indigo-500/40' : 'bg-white/5 hover:bg-white/10 border-white/5'
-              }`}
-            >
-              <div>
-                <div className="font-medium text-white">Camada leve para quem tem internet fraca</div>
-                <div className="text-xs text-gray-400">
-                  Envia também uma versão 720p a 30 FPS, para os espectadores com banda baixa não travarem. Usa mais processador e upload;
-                  desative se o seu computador for simples.
-                </div>
-              </div>
-              <input type="checkbox" checked={simulcast} onChange={() => {}} className="w-4 h-4 accent-indigo-500 rounded cursor-pointer" />
-            </div>
-          )}
-
-          {/* Anti-Echo / Isolate Room Voice chat toggle */}
-          <div
-            onClick={() => setIsolateRoomAudio(!isolateRoomAudio)}
-            className={`flex items-center justify-between p-3.5 border rounded-xl cursor-pointer transition select-none ${
-              isolateRoomAudio
-                ? 'bg-emerald-950/20 hover:bg-emerald-950/30 border-emerald-500/30 shadow-sm'
-                : 'bg-white/5 hover:bg-white/10 border-white/5'
-            }`}
-          >
-            <div className="flex items-center gap-3">
-              <div
-                className={`p-2 rounded-lg ${
-                  isolateRoomAudio ? 'bg-emerald-500/20 text-emerald-400' : 'bg-white/5 text-gray-500'
-                }`}
-              >
-                <ShieldCheck className="w-5 h-5" />
-              </div>
-              <div>
-                <div className="font-medium text-white flex items-center gap-2">
-                  <span>Anti-Eco: Isolar Voz dos Amigos da Transmissão</span>
-                  <span className="text-[10px] bg-emerald-500/20 text-emerald-300 font-bold px-1.5 py-0.2 rounded border border-emerald-500/30">
-                    RECOMENDADO
-                  </span>
-                </div>
-                <div className="text-xs text-gray-400">
-                  Filtra o áudio do chat de voz para que seus amigos não ouçam o próprio retorno na transmissão
-                </div>
-              </div>
-            </div>
-            <input
-              type="checkbox"
-              checked={isolateRoomAudio}
-              onChange={() => {}}
-              className="w-4 h-4 accent-emerald-500 rounded cursor-pointer"
+        <div className="space-y-2">
+          <p className="text-xs font-medium text-gray-400">Qualidade</p>
+          <div className="flex flex-wrap gap-2">
+            <Segmented ariaLabel="Resolução" options={RESOLUTIONS} value={resolution} onChange={setResolution} />
+            <Segmented
+              ariaLabel="Quadros por segundo"
+              options={FRAME_RATES}
+              value={String(frameRate) as '30' | '60'}
+              onChange={(v) => setFrameRate(Number(v) as VideoFrameRate)}
             />
           </div>
-
-          {/* Unified Quality Indicator */}
-          <div className="p-3.5 bg-indigo-950/20 border border-indigo-500/20 rounded-xl space-y-1.5 text-xs text-gray-300">
-            <div className="flex items-center gap-2 text-indigo-300 font-semibold">
-              <Sparkles className="w-4 h-4 text-indigo-400 shrink-0" />
-              <span>Qualidade Unificada Inteligente</span>
-            </div>
-            <p className="text-[11px] text-gray-400 leading-relaxed">
-              {resolution} a {frameRate} FPS, com bitrate de {(getTargetBitrateKbps(resolution, frameRate, qualityMode) / 1000).toFixed(1)} Mbps. Em caso de sobrecarga, ou de rede lenta, a qualidade é reduzida automaticamente (primeiro o bitrate, depois a resolução e os quadros).
-            </p>
-          </div>
+          <p className="text-xs text-gray-500">
+            Sugerido para seu computador: {recommended.resolution} a {recommended.frameRate} FPS ({recommended.reason}).
+          </p>
         </div>
 
-        {/* Footer */}
-        <div className="flex items-center justify-end gap-2.5 sm:gap-3 px-4 sm:px-6 py-3 sm:py-4 border-t border-white/10 bg-white/5">
+        <div className="space-y-2">
+          <p className="text-xs font-medium text-gray-400">Prioridade</p>
+          <Segmented ariaLabel="Prioridade" options={modeOptions} value={qualityMode} onChange={setQualityMode} />
+          <p className="text-xs text-gray-500">
+            {qualityMode === 'stable'
+              ? 'Menos banda: melhor para internet instável ou muitos espectadores.'
+              : 'Mais nitidez. Exige upload estável.'}
+          </p>
+        </div>
+
+        <div className="border-t border-line pt-1">
+          <Switch
+            checked={includeAudio}
+            onChange={setIncludeAudio}
+            label="Incluir o som da tela"
+            description="Som do jogo ou do vídeo."
+          />
+          <Switch
+            checked={isolateRoomAudio}
+            onChange={setIsolateRoomAudio}
+            disabled={!includeAudio}
+            label="Isolar a voz da sala"
+            description="Evita que seus amigos ouçam a própria voz na transmissão."
+          />
+        </div>
+
+        <div>
           <button
-            onClick={onClose}
-            className="px-3 sm:px-4 py-2 rounded-xl text-gray-400 hover:text-white hover:bg-white/5 font-medium text-xs sm:text-sm transition"
+            type="button"
+            onClick={() => setShowAdvanced((v) => !v)}
+            aria-expanded={showAdvanced}
+            className="flex items-center gap-1 text-xs text-accent-text hover:underline cursor-pointer"
           >
-            Cancelar
+            <ChevronDown className={`w-3.5 h-3.5 transition-transform ${showAdvanced ? 'rotate-180' : ''}`} />
+            Avançado
           </button>
-          <button
-            onClick={handleStart}
-            className="px-4 sm:px-6 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-on-accent font-semibold text-xs sm:text-sm shadow-lg shadow-indigo-600/30 transition flex items-center gap-1.5 sm:gap-2"
-          >
-            <Zap className="w-4 h-4" />
-            <span>Iniciar Transmissão ({frameRate} FPS)</span>
-          </button>
+          {showAdvanced && (
+            <Switch
+              checked={simulcast && resolution === '1080p'}
+              onChange={setSimulcast}
+              disabled={resolution !== '1080p'}
+              label="Camada leve para internet fraca"
+              description={
+                resolution === '1080p'
+                  ? 'Envia também 720p a 30 FPS para quem tem banda baixa. Usa mais processador e upload.'
+                  : 'Disponível só em 1080p.'
+              }
+            />
+          )}
         </div>
       </div>
-    </div>
+
+      <div className="flex justify-end gap-2 pt-4 mt-1 border-t border-line">
+        <Button variant="ghost" onClick={onClose}>
+          Cancelar
+        </Button>
+        <Button variant="primary" onClick={handleStart} disabled={isDesktopApp && !selectedSourceId}>
+          <ScreenShare className="w-4 h-4" />
+          {isDesktopApp ? 'Transmitir' : 'Escolher tela'}
+        </Button>
+      </div>
+    </Modal>
   );
 };
