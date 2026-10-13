@@ -14,6 +14,7 @@ import {
   Check,
 } from 'lucide-react';
 import { OBS_ENABLED, getObsSrtUrl } from '../utils/api';
+import { ThemeToggle } from './ThemeToggle';
 
 interface ControlsBarProps {
   isMicEnabled: boolean;
@@ -62,7 +63,7 @@ export const ControlsBar: React.FC<ControlsBarProps> = ({
   };
 
   return (
-    <div className="flex items-center gap-1.5 sm:gap-2 px-2.5 sm:px-3.5 py-1.5 sm:py-2 rounded-2xl bg-[#11131c]/90 border border-white/15 text-white shadow-2xl backdrop-blur-xl select-none">
+    <div className="flex items-center gap-1.5 sm:gap-2 px-2.5 sm:px-3.5 py-1.5 sm:py-2 rounded-2xl bg-surface/90 border border-white/15 text-white shadow-2xl backdrop-blur-xl select-none">
       {/* Microfone */}
       <button
         onClick={onToggleMic}
@@ -123,7 +124,7 @@ export const ControlsBar: React.FC<ControlsBarProps> = ({
           className={`flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 rounded-lg font-semibold text-xs transition cursor-pointer ${
             isScreenSharing
               ? 'bg-rose-600 hover:bg-rose-500 text-white shadow-sm shadow-rose-600/30'
-              : 'bg-indigo-600 hover:bg-indigo-500 text-white shadow-sm shadow-indigo-600/30'
+              : 'bg-indigo-600 hover:bg-indigo-500 text-on-accent shadow-sm shadow-indigo-600/30'
           }`}
         >
           {isScreenSharing ? <StopCircle className="w-4 h-4" /> : <ScreenShare className="w-4 h-4" />}
@@ -168,13 +169,15 @@ export const ControlsBar: React.FC<ControlsBarProps> = ({
       {/* Divisor */}
       <div className="h-5 w-[1px] bg-white/10 mx-0.5" />
 
+      <ThemeToggle />
+
       {/* Toggle HUD Estatísticas */}
       <button
         onClick={onToggleHUD}
         title="Painel de Estatísticas Técnicas"
         className={`p-2 rounded-xl border transition cursor-pointer ${
           isHUDOpen
-            ? 'bg-indigo-600 border-indigo-500 text-white'
+            ? 'bg-indigo-600 border-indigo-500 text-on-accent'
             : 'bg-white/5 hover:bg-white/10 border-white/10 text-gray-300 hover:text-white'
         }`}
       >
@@ -187,7 +190,7 @@ export const ControlsBar: React.FC<ControlsBarProps> = ({
         title={isChatOpen ? 'Ocultar Chat' : 'Exibir Chat'}
         className={`flex items-center gap-1.5 px-2.5 sm:px-3 py-2 rounded-xl border text-xs font-semibold transition cursor-pointer relative ${
           isChatOpen
-            ? 'bg-indigo-600 border-indigo-500 text-white shadow-sm shadow-indigo-600/30'
+            ? 'bg-indigo-600 border-indigo-500 text-on-accent shadow-sm shadow-indigo-600/30'
             : 'bg-white/5 hover:bg-white/10 border-white/10 text-gray-300 hover:text-white'
         }`}
       >

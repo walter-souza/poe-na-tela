@@ -79,7 +79,7 @@ export const ScreenShareModal: React.FC<ScreenShareModalProps> = ({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/80 backdrop-blur-sm animate-fadeIn">
-      <div className="bg-[#13151f] border border-white/10 rounded-2xl w-full max-w-xl shadow-2xl overflow-hidden text-gray-200">
+      <div className="bg-surface border border-white/10 rounded-2xl w-full max-w-xl shadow-2xl overflow-hidden text-gray-200">
         {/* Header */}
         <div className="flex items-center justify-between px-4 sm:px-6 py-3.5 sm:py-4 border-b border-white/10 bg-white/5">
           <div className="flex items-center gap-2.5 sm:gap-3">
@@ -135,7 +135,7 @@ export const ScreenShareModal: React.FC<ScreenShareModalProps> = ({
                   onClick={() => setActiveTab('windows')}
                   className={`flex-1 py-1.5 px-3 rounded-lg text-xs font-semibold transition flex items-center justify-center gap-1.5 ${
                     activeTab === 'windows'
-                      ? 'bg-indigo-600 text-white shadow'
+                      ? 'bg-indigo-600 text-on-accent shadow'
                       : 'text-gray-400 hover:text-white'
                   }`}
                 >
@@ -147,7 +147,7 @@ export const ScreenShareModal: React.FC<ScreenShareModalProps> = ({
                   onClick={() => setActiveTab('screens')}
                   className={`flex-1 py-1.5 px-3 rounded-lg text-xs font-semibold transition flex items-center justify-center gap-1.5 ${
                     activeTab === 'screens'
-                      ? 'bg-indigo-600 text-white shadow'
+                      ? 'bg-indigo-600 text-on-accent shadow'
                       : 'text-gray-400 hover:text-white'
                   }`}
                 >
@@ -157,7 +157,7 @@ export const ScreenShareModal: React.FC<ScreenShareModalProps> = ({
               </div>
 
               {/* Source Grid */}
-              <div className="grid grid-cols-2 gap-3 max-h-48 overflow-y-auto p-1 bg-black/30 rounded-xl border border-white/5">
+              <div className="grid grid-cols-2 gap-3 max-h-48 overflow-y-auto p-1 bg-app rounded-xl border border-white/5">
                 {displayedSources.map((source) => (
                   <button
                     key={source.id}
@@ -382,7 +382,7 @@ export const ScreenShareModal: React.FC<ScreenShareModalProps> = ({
           </button>
           <button
             onClick={handleStart}
-            className="px-4 sm:px-6 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-semibold text-xs sm:text-sm shadow-lg shadow-indigo-600/30 transition flex items-center gap-1.5 sm:gap-2"
+            className="px-4 sm:px-6 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-on-accent font-semibold text-xs sm:text-sm shadow-lg shadow-indigo-600/30 transition flex items-center gap-1.5 sm:gap-2"
           >
             <Zap className="w-4 h-4" />
             <span>Iniciar Transmissão ({frameRate} FPS)</span>

@@ -276,7 +276,7 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
           {onOpenScreenShareConfig && (
             <button
               onClick={onOpenScreenShareConfig}
-              className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-500 hover:to-violet-500 text-white font-semibold text-xs shadow-lg shadow-indigo-600/30 transition transform hover:scale-[1.02] active:scale-[0.98] mb-6 cursor-pointer"
+              className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-500 hover:to-violet-500 text-on-accent font-semibold text-xs shadow-lg shadow-indigo-600/30 transition transform hover:scale-[1.02] active:scale-[0.98] mb-6 cursor-pointer"
             >
               <Sparkles className="w-4 h-4" />
               <span>Começar a Transmitir</span>
@@ -293,6 +293,7 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
         <div className="absolute bottom-6 right-6 z-30 pointer-events-none flex flex-col items-end gap-2">
           {activeReactions.map((r) => (
             <div
+              data-theme="dark"
               key={r.id}
               className="flex items-center gap-2 bg-black/80 backdrop-blur-md border border-white/15 px-3 py-1.5 rounded-full text-white text-sm shadow-2xl animate-float-up"
             >
@@ -310,11 +311,11 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
 
   // 2. ACTIVE STREAMS VIEW (Híbrido: WebRTC + OBS em conjunto)
   return (
-    <div className="relative flex-1 bg-black/40 rounded-2xl overflow-hidden flex flex-col min-h-0">
+    <div className="relative flex-1 bg-surface-2 rounded-2xl overflow-hidden flex flex-col min-h-0">
       {/* Top Multi-Stream Header Bar */}
       <div className="absolute top-2 inset-x-2 sm:top-3 sm:inset-x-3 z-30 flex items-center justify-between pointer-events-none">
         {/* Left: Stream Count & Breakdown */}
-        <div className="pointer-events-auto flex items-center gap-1.5 sm:gap-2 bg-black/60 backdrop-blur-md border border-white/15 px-2.5 sm:px-3 py-1 sm:py-1.5 rounded-2xl text-[11px] sm:text-xs text-white shadow-lg">
+        <div data-theme="dark" className="pointer-events-auto flex items-center gap-1.5 sm:gap-2 bg-black/60 backdrop-blur-md border border-white/15 px-2.5 sm:px-3 py-1 sm:py-1.5 rounded-2xl text-[11px] sm:text-xs text-white shadow-lg">
           <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
           <span className="font-bold">{unifiedStreams.length}</span>
           <span className="text-gray-300 hidden sm:inline">
@@ -330,7 +331,7 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
         </div>
 
         {/* Right: Layout Switcher & HUD Toggle */}
-        <div className="pointer-events-auto flex items-center gap-1.5 sm:gap-2 bg-black/60 backdrop-blur-md border border-white/15 p-1 rounded-2xl shadow-lg">
+        <div data-theme="dark" className="pointer-events-auto flex items-center gap-1.5 sm:gap-2 bg-black/60 backdrop-blur-md border border-white/15 p-1 rounded-2xl shadow-lg">
           {unifiedStreams.length > 1 && (
             <div className="flex items-center gap-1 border-r border-white/10 pr-1.5 mr-0.5">
               <button
@@ -338,7 +339,7 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
                 title="Modo Grade (Grid)"
                 className={`p-1.5 rounded-xl text-xs font-medium flex items-center gap-1.5 transition cursor-pointer ${
                   layoutMode === 'grid'
-                    ? 'bg-indigo-600 text-white shadow'
+                    ? 'bg-indigo-600 text-on-accent shadow'
                     : 'text-gray-400 hover:text-white hover:bg-white/10'
                 }`}
               >
@@ -351,7 +352,7 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
                 title="Modo Destaque (Spotlight)"
                 className={`p-1.5 rounded-xl text-xs font-medium flex items-center gap-1.5 transition cursor-pointer ${
                   layoutMode === 'spotlight'
-                    ? 'bg-indigo-600 text-white shadow'
+                    ? 'bg-indigo-600 text-on-accent shadow'
                     : 'text-gray-400 hover:text-white hover:bg-white/10'
                 }`}
               >
@@ -366,7 +367,7 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
             title="Estatísticas Técnicas (HUD)"
             className={`p-1.5 rounded-xl transition cursor-pointer ${
               isHUDOpen
-                ? 'bg-indigo-600 text-white shadow'
+                ? 'bg-indigo-600 text-on-accent shadow'
                 : 'text-gray-400 hover:text-white hover:bg-white/10'
             }`}
           >
@@ -463,6 +464,7 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
       <div className="absolute bottom-6 right-6 z-30 pointer-events-none flex flex-col items-end gap-2">
         {activeReactions.map((r) => (
           <div
+            data-theme="dark"
             key={r.id}
             className="flex items-center gap-2 bg-black/80 backdrop-blur-md border border-white/15 px-3 py-1.5 rounded-full text-white text-sm shadow-2xl animate-float-up"
           >

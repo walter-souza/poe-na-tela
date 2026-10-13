@@ -126,9 +126,9 @@ export const TextChannelView: React.FC<TextChannelViewProps> = ({
   };
 
   return (
-    <div className="flex-1 flex flex-col h-full bg-[#0d0f17] min-w-0 select-text relative">
+    <div className="flex-1 flex flex-col h-full bg-app min-w-0 select-text relative">
       {/* Channel Header (Discord-like minimalist) */}
-      <div className="h-13 border-b border-white/[0.08] px-4 sm:px-6 flex items-center justify-between bg-[#0e1017]/80 backdrop-blur-md shrink-0 select-none z-10">
+      <div className="h-13 border-b border-white/[0.08] px-4 sm:px-6 flex items-center justify-between bg-app/80 backdrop-blur-md shrink-0 select-none z-10">
         <div className="flex items-center gap-2.5 min-w-0">
           <Hash className="w-5 h-5 text-zinc-400 shrink-0" />
           <span className="font-bold text-zinc-100 text-sm sm:text-base tracking-tight truncate">
@@ -211,7 +211,7 @@ export const TextChannelView: React.FC<TextChannelViewProps> = ({
                 {showDateDivider && (
                   <div className="relative flex items-center justify-center my-4.5 select-none">
                     <div className="flex-1 border-t border-white/[0.07]" />
-                    <span className="mx-3.5 px-3 py-0.5 text-[11px] font-semibold text-zinc-400 bg-[#141624] rounded-full border border-white/[0.08] shadow-sm tracking-wide">
+                    <span className="mx-3.5 px-3 py-0.5 text-[11px] font-semibold text-zinc-400 bg-surface rounded-full border border-white/[0.08] shadow-sm tracking-wide">
                       {formatDayDivider(msg.timestamp)}
                     </span>
                     <div className="flex-1 border-t border-white/[0.07]" />
@@ -274,9 +274,9 @@ export const TextChannelView: React.FC<TextChannelViewProps> = ({
       </div>
 
       {/* Input Box (Minimalist Floating Dock) */}
-      <div className="px-4 pb-4 pt-2 bg-[#0d0f17] shrink-0 select-none">
+      <div className="px-4 pb-4 pt-2 bg-app shrink-0 select-none">
         <form onSubmit={handleSend} className="relative flex items-center">
-          <div className="relative w-full flex items-center bg-[#151724] border border-white/[0.08] focus-within:border-indigo-500/50 focus-within:ring-1 focus-within:ring-indigo-500/30 rounded-xl px-4 py-2.5 shadow-inner transition-all">
+          <div className="relative w-full flex items-center bg-surface-2 border border-white/[0.08] focus-within:border-indigo-500/50 focus-within:ring-1 focus-within:ring-indigo-500/30 rounded-xl px-4 py-2.5 shadow-inner transition-all">
             <input
               type="text"
               value={inputText}
@@ -299,7 +299,7 @@ export const TextChannelView: React.FC<TextChannelViewProps> = ({
                 </button>
 
                 {showEmojiPicker && (
-                  <div className="absolute bottom-11 right-0 p-2.5 bg-[#1a1d2d] border border-white/10 rounded-2xl shadow-2xl z-50 grid grid-cols-5 gap-1.5 w-52 backdrop-blur-xl animate-in fade-in zoom-in-95 duration-100">
+                  <div className="absolute bottom-11 right-0 p-2.5 bg-surface-2 border border-white/10 rounded-2xl shadow-2xl z-50 grid grid-cols-5 gap-1.5 w-52 backdrop-blur-xl animate-in fade-in zoom-in-95 duration-100">
                     {EMOJI_LIST.map((emoji) => (
                       <button
                         key={emoji}
@@ -322,7 +322,7 @@ export const TextChannelView: React.FC<TextChannelViewProps> = ({
               <button
                 type="submit"
                 disabled={!inputText.trim()}
-                className="p-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 disabled:opacity-30 disabled:hover:bg-indigo-600 text-white transition cursor-pointer shadow-sm active:scale-95"
+                className="p-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 disabled:opacity-30 disabled:hover:bg-indigo-600 text-on-accent transition cursor-pointer shadow-sm active:scale-95"
                 title="Enviar mensagem"
               >
                 <Send className="w-4 h-4" />

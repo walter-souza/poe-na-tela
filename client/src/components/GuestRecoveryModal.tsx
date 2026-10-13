@@ -119,7 +119,7 @@ export const GuestRecoveryModal: React.FC<GuestRecoveryModalProps> = ({
       onClick={onClose}
     >
       <div
-        className="w-full max-w-md bg-[#0f111a] border border-white/10 rounded-3xl p-6 sm:p-7 shadow-2xl relative overflow-hidden flex flex-col"
+        className="w-full max-w-md bg-app border border-white/10 rounded-3xl p-6 sm:p-7 shadow-2xl relative overflow-hidden flex flex-col"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Glow de Fundo */}
@@ -159,7 +159,7 @@ export const GuestRecoveryModal: React.FC<GuestRecoveryModalProps> = ({
             }}
             className={`flex-1 py-1.5 text-xs font-semibold rounded-xl transition cursor-pointer ${
               activeTab === 'my_id'
-                ? 'bg-indigo-600 text-white shadow-md'
+                ? 'bg-indigo-600 text-on-accent shadow-md'
                 : 'text-gray-400 hover:text-white'
             }`}
           >
@@ -172,7 +172,7 @@ export const GuestRecoveryModal: React.FC<GuestRecoveryModalProps> = ({
             }}
             className={`flex-1 py-1.5 text-xs font-semibold rounded-xl transition cursor-pointer ${
               activeTab === 'restore'
-                ? 'bg-indigo-600 text-white shadow-md'
+                ? 'bg-indigo-600 text-on-accent shadow-md'
                 : 'text-gray-400 hover:text-white'
             }`}
           >
@@ -188,7 +188,7 @@ export const GuestRecoveryModal: React.FC<GuestRecoveryModalProps> = ({
                 Seu Código de Recuperação
               </label>
 
-              <div className="flex items-center justify-between bg-black/40 border border-indigo-500/30 rounded-2xl px-4 py-3 group hover:border-indigo-500/50 transition">
+              <div className="flex items-center justify-between bg-app border border-indigo-500/30 rounded-2xl px-4 py-3 group hover:border-indigo-500/50 transition">
                 <span className="font-mono text-base font-bold tracking-widest text-indigo-300 select-all">
                   {recoveryCode}
                 </span>
@@ -279,7 +279,7 @@ export const GuestRecoveryModal: React.FC<GuestRecoveryModalProps> = ({
                 value={inputCode}
                 onChange={(e) => setInputCode(e.target.value.toUpperCase())}
                 autoFocus
-                className="w-full bg-black/40 border border-white/15 rounded-2xl px-4 py-3 text-sm font-mono tracking-wider text-white placeholder-gray-600 focus:outline-none focus:border-indigo-500 transition uppercase"
+                className="w-full bg-app border border-white/15 rounded-2xl px-4 py-3 text-sm font-mono tracking-wider text-white placeholder-gray-600 focus:outline-none focus:border-indigo-500 transition uppercase"
               />
             </div>
 
@@ -305,7 +305,7 @@ export const GuestRecoveryModal: React.FC<GuestRecoveryModalProps> = ({
             <button
               type="submit"
               disabled={isRestoring || !inputCode.trim()}
-              className="w-full flex items-center justify-center gap-2 bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-500 hover:to-violet-500 disabled:opacity-40 text-white font-semibold py-3 rounded-2xl text-xs sm:text-sm shadow-lg shadow-indigo-600/30 transition cursor-pointer"
+              className="w-full flex items-center justify-center gap-2 bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-500 hover:to-violet-500 disabled:opacity-40 text-on-accent font-semibold py-3 rounded-2xl text-xs sm:text-sm shadow-lg shadow-indigo-600/30 transition cursor-pointer"
             >
               {isRestoring ? (
                 <>

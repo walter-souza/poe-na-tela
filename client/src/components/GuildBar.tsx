@@ -73,7 +73,7 @@ export const GuildBar: React.FC<GuildBarProps> = ({
   return (
     <nav
       aria-label="Servidores"
-      className="w-16 sm:w-[72px] bg-[#07080d] border-r border-white/10 flex flex-col items-center py-3 space-y-2 select-none shrink-0 z-30 relative"
+      className="w-16 sm:w-[72px] bg-app border-r border-white/10 flex flex-col items-center py-3 space-y-2 select-none shrink-0 z-30 relative"
     >
       {/* Home / Lobby Icon */}
       <div className="relative group flex items-center justify-center w-full">
@@ -91,15 +91,15 @@ export const GuildBar: React.FC<GuildBarProps> = ({
           title="Início / Explorar Salas"
           className={`w-12 h-12 flex items-center justify-center transition-all duration-200 cursor-pointer ${
             activeRoomSlug === null
-              ? 'rounded-[16px] bg-gradient-to-tr from-indigo-600 to-violet-500 text-white shadow-lg shadow-indigo-500/25'
-              : 'rounded-[24px] hover:rounded-[16px] bg-[#131520] hover:bg-gradient-to-tr hover:from-indigo-600 hover:to-violet-500 text-indigo-300 hover:text-white'
+              ? 'rounded-[16px] bg-gradient-to-tr from-indigo-600 to-violet-500 text-on-accent shadow-lg shadow-indigo-500/25'
+              : 'rounded-[24px] hover:rounded-[16px] bg-surface hover:bg-gradient-to-tr hover:from-indigo-600 hover:to-violet-500 text-indigo-300 hover:text-white'
           }`}
         >
           <Sparkles className="w-6 h-6" />
         </button>
 
         {/* Discord Tooltip */}
-        <div className="absolute left-[80px] z-50 hidden group-hover:flex items-center px-3 py-1.5 rounded-md bg-[#11131c] text-white text-xs font-semibold shadow-xl border border-white/10 whitespace-nowrap pointer-events-none">
+        <div className="absolute left-[80px] z-50 hidden group-hover:flex items-center px-3 py-1.5 rounded-md bg-surface text-white text-xs font-semibold shadow-xl border border-white/10 whitespace-nowrap pointer-events-none">
           Início / Explorar
         </div>
       </div>
@@ -134,15 +134,15 @@ export const GuildBar: React.FC<GuildBarProps> = ({
                 title={room.name}
                 className={`w-12 h-12 flex items-center justify-center font-bold text-sm transition-all duration-200 cursor-pointer ${
                   isActive
-                    ? 'rounded-[16px] bg-indigo-600 text-white shadow-lg shadow-indigo-600/30'
-                    : 'rounded-[24px] hover:rounded-[16px] bg-[#131520] hover:bg-indigo-600 text-gray-300 hover:text-white'
+                    ? 'rounded-[16px] bg-indigo-600 text-on-accent shadow-lg shadow-indigo-600/30'
+                    : 'rounded-[24px] hover:rounded-[16px] bg-surface hover:bg-indigo-600 text-gray-300 hover:text-white'
                 }`}
               >
                 {initials}
               </button>
 
               {/* Discord Tooltip */}
-              <div className="absolute left-[80px] z-50 hidden group-hover:flex flex-col items-start px-3 py-1.5 rounded-md bg-[#11131c] text-white text-xs font-semibold shadow-xl border border-white/10 whitespace-nowrap pointer-events-none">
+              <div className="absolute left-[80px] z-50 hidden group-hover:flex flex-col items-start px-3 py-1.5 rounded-md bg-surface text-white text-xs font-semibold shadow-xl border border-white/10 whitespace-nowrap pointer-events-none">
                 <div className="flex items-center gap-1.5">
                   <span>{room.name}</span>
                   {room.hasPasscode && <span className="text-amber-400 text-[10px]">🔒</span>}
@@ -158,13 +158,13 @@ export const GuildBar: React.FC<GuildBarProps> = ({
           <button
             onClick={onOpenCreateRoom}
             title="Criar Sala"
-            className="w-12 h-12 rounded-[24px] hover:rounded-[16px] bg-[#131520] hover:bg-emerald-600 text-emerald-400 hover:text-white flex items-center justify-center transition-all duration-200 cursor-pointer shadow-sm"
+            className="w-12 h-12 rounded-[24px] hover:rounded-[16px] bg-surface hover:bg-emerald-600 text-emerald-400 hover:text-white flex items-center justify-center transition-all duration-200 cursor-pointer shadow-sm"
           >
             <Plus className="w-5 h-5" />
           </button>
 
           {/* Discord Tooltip */}
-          <div className="absolute left-[80px] z-50 hidden group-hover:flex items-center px-3 py-1.5 rounded-md bg-[#11131c] text-white text-xs font-semibold shadow-xl border border-white/10 whitespace-nowrap pointer-events-none">
+          <div className="absolute left-[80px] z-50 hidden group-hover:flex items-center px-3 py-1.5 rounded-md bg-surface text-white text-xs font-semibold shadow-xl border border-white/10 whitespace-nowrap pointer-events-none">
             Adicionar uma Sala
           </div>
         </div>
@@ -174,7 +174,7 @@ export const GuildBar: React.FC<GuildBarProps> = ({
       {contextMenu && (
         <div
           style={{ top: `${contextMenu.y}px`, left: `${contextMenu.x}px` }}
-          className="fixed z-50 bg-[#12141f] border border-white/10 rounded-xl p-1.5 shadow-2xl backdrop-blur-md min-w-[190px] animate-in fade-in zoom-in-95 duration-100"
+          className="fixed z-50 bg-surface border border-white/10 rounded-xl p-1.5 shadow-2xl backdrop-blur-md min-w-[190px] animate-in fade-in zoom-in-95 duration-100"
           onClick={(e) => e.stopPropagation()}
         >
           <div className="px-3 py-1.5 font-bold text-xs text-gray-200 border-b border-white/10 truncate max-w-[220px]">

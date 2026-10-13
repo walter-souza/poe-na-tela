@@ -440,7 +440,7 @@ export function App() {
   }
 
   return (
-    <div className="h-screen h-[100dvh] w-screen flex bg-[#07080d] text-gray-100 overflow-hidden select-none">
+    <div className="h-screen h-[100dvh] w-screen flex bg-app text-gray-100 overflow-hidden select-none">
       {/* 1. Discord Guild Bar (Servidores / Salas) */}
       <GuildBar
         userRooms={displayedRooms}
@@ -525,7 +525,7 @@ export function App() {
 
       {/* Notificação Toast de Migração de Servidores */}
       {migrationNotification && (
-        <div className="fixed top-5 right-5 z-50 flex items-center gap-3 bg-[#131520] border border-emerald-500/40 text-white px-4 py-3 rounded-2xl shadow-2xl shadow-emerald-950/40 backdrop-blur-md animate-in slide-in-from-top-4 duration-300">
+        <div className="fixed top-5 right-5 z-50 flex items-center gap-3 bg-surface border border-emerald-500/40 text-white px-4 py-3 rounded-2xl shadow-2xl shadow-emerald-950/40 backdrop-blur-md animate-in slide-in-from-top-4 duration-300">
           <div className="p-2 bg-emerald-500/20 text-emerald-400 rounded-xl shrink-0">
             <Check className="w-4 h-4" />
           </div>
@@ -952,7 +952,7 @@ function StreamRoom({
   };
 
   return (
-    <div className="h-screen h-[100dvh] w-full flex bg-[#090a0f] text-gray-100 overflow-hidden select-none">
+    <div className="h-screen h-[100dvh] w-full flex bg-app text-gray-100 overflow-hidden select-none">
       {/* Channel Sidebar (Discord-like) */}
       <ChannelSidebar
         roomName={session.roomName}
@@ -1020,7 +1020,7 @@ function StreamRoom({
 
             {/* Centered Room Name at top */}
             <div className="absolute top-2 sm:top-6 inset-x-0 mx-auto w-fit z-20 pointer-events-none flex items-center justify-center px-2">
-              <div className="pointer-events-auto flex items-center gap-1.5 sm:gap-2 px-2.5 sm:px-3.5 py-1.5 sm:py-2 rounded-2xl bg-[#11131c]/90 border border-white/15 text-white text-[11px] sm:text-xs font-semibold shadow-2xl backdrop-blur-md select-none">
+              <div className="pointer-events-auto flex items-center gap-1.5 sm:gap-2 px-2.5 sm:px-3.5 py-1.5 sm:py-2 rounded-2xl bg-surface/90 border border-white/15 text-white text-[11px] sm:text-xs font-semibold shadow-2xl backdrop-blur-md select-none">
                 <Tv className="w-3.5 h-3.5 text-indigo-400 shrink-0" />
                 <span className="text-gray-400 font-medium hidden sm:inline">Sala:</span>
                 <span className="font-bold text-white tracking-wide max-w-[100px] xs:max-w-[140px] sm:max-w-xs md:max-w-md truncate">

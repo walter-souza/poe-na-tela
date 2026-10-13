@@ -101,14 +101,14 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-50 w-full h-[100dvh] flex flex-col bg-[#11131a] md:relative md:inset-auto md:w-80 lg:w-96 md:h-full md:border-l border-white/10 shadow-2xl">
+    <div className="fixed inset-0 z-50 w-full h-[100dvh] flex flex-col bg-surface md:relative md:inset-auto md:w-80 lg:w-96 md:h-full md:border-l border-white/10 shadow-2xl">
       <div className="flex items-center justify-between p-3 border-b border-white/10 bg-white/5 safe-area-top">
-        <div className="flex bg-black/40 p-1 rounded-xl border border-white/5">
+        <div className="flex bg-app p-1 rounded-xl border border-white/5">
           <button
             onClick={() => setActiveTab('chat')}
             className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-semibold transition ${
               activeTab === 'chat'
-                ? 'bg-indigo-600 text-white shadow'
+                ? 'bg-indigo-600 text-on-accent shadow'
                 : 'text-gray-400 hover:text-white'
             }`}
           >
@@ -125,7 +125,7 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({
             onClick={() => setActiveTab('participants')}
             className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-semibold transition ${
               activeTab === 'participants'
-                ? 'bg-indigo-600 text-white shadow'
+                ? 'bg-indigo-600 text-on-accent shadow'
                 : 'text-gray-400 hover:text-white'
             }`}
           >
@@ -254,7 +254,7 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({
                   {showDateDivider && (
                     <div className="relative flex items-center justify-center my-3 select-none">
                       <div className="flex-1 border-t border-white/[0.08]" />
-                      <span className="mx-2 px-2.5 py-0.5 text-[10px] font-semibold text-zinc-400 bg-[#161824] rounded-full border border-white/[0.06] shadow-sm tracking-wide">
+                      <span className="mx-2 px-2.5 py-0.5 text-[10px] font-semibold text-zinc-400 bg-surface-2 rounded-full border border-white/[0.06] shadow-sm tracking-wide">
                         {formatDay(m.timestamp)}
                       </span>
                       <div className="flex-1 border-t border-white/[0.08]" />
@@ -292,11 +292,11 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-2.5 min-w-0">
                       <div className="relative shrink-0">
-                        <div className="w-8 h-8 rounded-full bg-gradient-to-tr from-indigo-600 to-purple-600 flex items-center justify-center font-bold text-xs text-white uppercase shadow">
+                        <div className="w-8 h-8 rounded-full bg-gradient-to-tr from-indigo-600 to-purple-600 flex items-center justify-center font-bold text-xs text-on-accent uppercase shadow">
                           {p.name.slice(0, 2)}
                         </div>
                         {p.isSpeaking && (
-                          <span className="absolute -bottom-0.5 -right-0.5 w-3 h-3 bg-emerald-400 border-2 border-[#11131a] rounded-full animate-ping" />
+                          <span className="absolute -bottom-0.5 -right-0.5 w-3 h-3 bg-emerald-400 border-2 border-surface rounded-full animate-ping" />
                         )}
                       </div>
                       <div className="min-w-0">
@@ -330,7 +330,7 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({
 
                   {/* Individual Voice Volume Slider for Remote Participants */}
                   {!isMe && onUserVolumeChange && (
-                    <div className="flex items-center justify-between gap-2 pt-1.5 border-t border-white/5 bg-black/20 px-2 py-1 rounded-lg">
+                    <div className="flex items-center justify-between gap-2 pt-1.5 border-t border-white/5 bg-app px-2 py-1 rounded-lg">
                       <button
                         type="button"
                         onClick={() => onUserVolumeChange(p.identity, isUserMuted ? 1 : 0)}
@@ -388,13 +388,13 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({
             placeholder={channelName ? `Conversar em #${channelName}...` : 'Conversar com amigos...'}
             value={inputText}
             onChange={(e) => setInputText(e.target.value)}
-            className="flex-1 bg-black/50 border border-white/10 rounded-xl px-3 py-2 text-sm text-white placeholder-gray-500 focus:outline-none focus:border-indigo-500 transition"
+            className="flex-1 bg-app border border-white/10 rounded-xl px-3 py-2 text-sm text-white placeholder-gray-500 focus:outline-none focus:border-indigo-500 transition"
           />
 
           {/* Emoji Reaction Popover */}
           <div className="relative" ref={emojiPickerRef}>
             {showEmojiPicker && (
-              <div className="absolute bottom-full right-0 mb-3 p-3 bg-[#151722] border border-white/15 rounded-2xl shadow-2xl backdrop-blur-xl z-50 w-64 max-w-[calc(100vw-2rem)] animate-fadeIn select-none">
+              <div className="absolute bottom-full right-0 mb-3 p-3 bg-surface-2 border border-white/15 rounded-2xl shadow-2xl backdrop-blur-xl z-50 w-64 max-w-[calc(100vw-2rem)] animate-fadeIn select-none">
                 <div className="text-[11px] font-semibold text-gray-400 mb-2 px-1 flex items-center justify-between border-b border-white/5 pb-1.5">
                   <span className="flex items-center gap-1.5">
                     <Sparkles className="w-3.5 h-3.5 text-indigo-400" />
@@ -426,7 +426,7 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({
               title="Reações e Emojis"
               className={`p-2 rounded-xl border transition cursor-pointer ${
                 showEmojiPicker
-                  ? 'bg-indigo-600 border-indigo-500 text-white'
+                  ? 'bg-indigo-600 border-indigo-500 text-on-accent'
                   : 'bg-white/5 hover:bg-white/10 border-white/10 text-gray-300 hover:text-white'
               }`}
             >
@@ -437,7 +437,7 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({
           <button
             type="submit"
             disabled={!inputText.trim()}
-            className="p-2 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-40 disabled:hover:bg-indigo-600 rounded-xl text-white transition shadow cursor-pointer disabled:cursor-not-allowed"
+            className="p-2 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-40 disabled:hover:bg-indigo-600 rounded-xl text-on-accent transition shadow cursor-pointer disabled:cursor-not-allowed"
             title="Enviar mensagem"
           >
             <Send className="w-4 h-4" />

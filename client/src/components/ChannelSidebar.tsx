@@ -74,9 +74,9 @@ export const ChannelSidebar: React.FC<ChannelSidebarProps> = ({
   const voiceChannels = channels.filter((c) => c.type === 'voice');
 
   return (
-    <aside className="w-56 sm:w-64 bg-[#0d0e15] border-r border-white/10 flex flex-col h-full select-none shrink-0 z-20">
+    <aside className="w-56 sm:w-64 bg-app border-r border-white/10 flex flex-col h-full select-none shrink-0 z-20">
       {/* Room Header */}
-      <div className="h-14 border-b border-white/10 px-3 sm:px-4 flex items-center justify-between bg-[#11131c]/60 backdrop-blur-md">
+      <div className="h-14 border-b border-white/10 px-3 sm:px-4 flex items-center justify-between bg-surface/60 backdrop-blur-md">
         <div className="flex items-center gap-2 min-w-0">
           <div className="w-7 h-7 rounded-lg bg-indigo-600/20 text-indigo-400 flex items-center justify-center font-bold text-xs shrink-0">
             {roomName.charAt(0).toUpperCase()}
@@ -326,7 +326,7 @@ export const ChannelSidebar: React.FC<ChannelSidebarProps> = ({
       )}
 
       {/* User Footer Panel (Discord-like) */}
-      <div className="h-14 border-t border-white/10 px-2 sm:px-3 bg-[#11131c] flex items-center justify-between">
+      <div className="h-14 border-t border-white/10 px-2 sm:px-3 bg-surface flex items-center justify-between">
         <div className="flex items-center gap-2 min-w-0 mr-1">
           {profile?.avatar_url ? (
             <img

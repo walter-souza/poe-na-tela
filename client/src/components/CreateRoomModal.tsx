@@ -82,7 +82,7 @@ export const CreateRoomModal: React.FC<CreateRoomModalProps> = ({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-sm animate-fade-in">
-      <div className="bg-[#12141c] border border-gray-800 rounded-2xl w-full max-w-md p-6 shadow-2xl relative">
+      <div className="bg-surface border border-gray-800 rounded-2xl w-full max-w-md p-6 shadow-2xl relative">
         <button
           onClick={onClose}
           className="absolute top-4 right-4 text-gray-400 hover:text-white p-1 rounded-lg hover:bg-gray-800/60 transition-colors"
@@ -135,7 +135,7 @@ export const CreateRoomModal: React.FC<CreateRoomModalProps> = ({
                 onChange={(e) => handleNameChange(e.target.value)}
                 placeholder="Ex: Jogatina dos Amigos"
                 maxLength={48}
-                className="w-full bg-[#181b26] border border-gray-800 rounded-xl px-3.5 py-2.5 text-sm text-white placeholder-gray-500 focus:outline-none focus:border-indigo-500 transition-colors"
+                className="w-full bg-surface-2 border border-gray-800 rounded-xl px-3.5 py-2.5 text-sm text-white placeholder-gray-500 focus:outline-none focus:border-indigo-500 transition-colors"
                 required
               />
             </div>
@@ -150,7 +150,7 @@ export const CreateRoomModal: React.FC<CreateRoomModalProps> = ({
                 onChange={(e) => setSlug(e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, ''))}
                 placeholder="ex: jogatina-dos-amigos"
                 maxLength={32}
-                className="w-full bg-[#181b26] border border-gray-800 rounded-xl px-3.5 py-2.5 text-sm text-white placeholder-gray-500 focus:outline-none focus:border-indigo-500 transition-colors font-mono text-xs"
+                className="w-full bg-surface-2 border border-gray-800 rounded-xl px-3.5 py-2.5 text-sm text-white placeholder-gray-500 focus:outline-none focus:border-indigo-500 transition-colors font-mono text-xs"
                 required
               />
               <p className="text-[11px] text-gray-500 mt-1">Usado no link de convite da sala</p>
@@ -173,7 +173,7 @@ export const CreateRoomModal: React.FC<CreateRoomModalProps> = ({
                   value={passcode}
                   onChange={(e) => setPasscode(e.target.value)}
                   placeholder="Defina uma senha para a sala"
-                  className="w-full bg-[#181b26] border border-gray-800 rounded-xl px-3.5 py-2.5 text-sm text-white placeholder-gray-500 focus:outline-none focus:border-amber-500 transition-colors"
+                  className="w-full bg-surface-2 border border-gray-800 rounded-xl px-3.5 py-2.5 text-sm text-white placeholder-gray-500 focus:outline-none focus:border-amber-500 transition-colors"
                   required={hasPasscode}
                 />
               )}
@@ -190,7 +190,7 @@ export const CreateRoomModal: React.FC<CreateRoomModalProps> = ({
               <button
                 type="submit"
                 disabled={isLoading}
-                className="flex-1 py-2.5 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white font-medium rounded-xl text-sm transition-colors shadow-lg shadow-indigo-600/25 flex items-center justify-center gap-2"
+                className="flex-1 py-2.5 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-on-accent font-medium rounded-xl text-sm transition-colors shadow-lg shadow-indigo-600/25 flex items-center justify-center gap-2"
               >
                 {isLoading ? 'Criando...' : 'Criar Sala'}
               </button>

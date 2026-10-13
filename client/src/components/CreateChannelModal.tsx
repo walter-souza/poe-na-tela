@@ -67,7 +67,7 @@ export const CreateChannelModal: React.FC<CreateChannelModalProps> = ({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-sm animate-fade-in">
-      <div className="bg-[#12141c] border border-gray-800 rounded-2xl w-full max-w-sm p-5 shadow-2xl relative">
+      <div className="bg-surface border border-gray-800 rounded-2xl w-full max-w-sm p-5 shadow-2xl relative">
         <button
           onClick={onClose}
           className="absolute top-4 right-4 text-gray-400 hover:text-white p-1 rounded-lg hover:bg-gray-800/60 transition-colors"
@@ -154,7 +154,7 @@ export const CreateChannelModal: React.FC<CreateChannelModalProps> = ({
                 }
                 placeholder={channelType === 'text' ? 'ex: bate-papo' : 'ex: squad-alfa'}
                 maxLength={32}
-                className="w-full bg-[#181b26] border border-gray-800 rounded-xl pl-9 pr-3.5 py-2 text-sm text-white placeholder-gray-500 focus:outline-none focus:border-indigo-500 font-mono text-xs transition"
+                className="w-full bg-surface-2 border border-gray-800 rounded-xl pl-9 pr-3.5 py-2 text-sm text-white placeholder-gray-500 focus:outline-none focus:border-indigo-500 font-mono text-xs transition"
                 required
               />
             </div>
@@ -171,7 +171,7 @@ export const CreateChannelModal: React.FC<CreateChannelModalProps> = ({
             <button
               type="submit"
               disabled={isLoading || !channelName.trim()}
-              className="flex-1 py-2 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white font-medium rounded-xl text-xs transition shadow-lg shadow-indigo-600/25 cursor-pointer"
+              className="flex-1 py-2 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-on-accent font-medium rounded-xl text-xs transition shadow-lg shadow-indigo-600/25 cursor-pointer"
             >
               {isLoading ? 'Criando...' : 'Criar Canal'}
             </button>

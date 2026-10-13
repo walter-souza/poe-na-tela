@@ -133,7 +133,7 @@ export const InviteModal: React.FC<InviteModalProps> = ({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/85 backdrop-blur-md animate-fadeIn select-none">
-      <div className="bg-[#11131c] border border-indigo-500/20 rounded-3xl w-full max-w-lg shadow-2xl overflow-hidden text-gray-200">
+      <div className="bg-surface border border-indigo-500/20 rounded-3xl w-full max-w-lg shadow-2xl overflow-hidden text-gray-200">
         {/* Header */}
         <div className="px-4 sm:px-6 py-4 sm:py-5 border-b border-white/10 bg-gradient-to-r from-indigo-950/40 to-violet-950/20 flex items-center justify-between">
           <div className="flex items-center gap-2.5 sm:gap-3">
@@ -216,7 +216,7 @@ export const InviteModal: React.FC<InviteModalProps> = ({
                 value={userName}
                 onChange={(e) => setUserName(e.target.value)}
                 disabled={isSubmitting}
-                className="w-full bg-black/40 border border-white/10 rounded-2xl pl-10 pr-4 py-3 text-sm text-white placeholder-gray-500 focus:outline-none focus:border-indigo-500 transition"
+                className="w-full bg-app border border-white/10 rounded-2xl pl-10 pr-4 py-3 text-sm text-white placeholder-gray-500 focus:outline-none focus:border-indigo-500 transition"
               />
               <User className="w-4 h-4 text-gray-500 absolute left-3.5 top-3.5" />
             </div>
@@ -243,7 +243,7 @@ export const InviteModal: React.FC<InviteModalProps> = ({
                   value={passcode}
                   onChange={(e) => setPasscode(e.target.value)}
                   disabled={isSubmitting}
-                  className="w-full bg-black/40 border border-white/10 rounded-2xl pl-10 pr-10 py-3 text-sm text-white placeholder-gray-500 focus:outline-none focus:border-indigo-500 transition"
+                  className="w-full bg-app border border-white/10 rounded-2xl pl-10 pr-10 py-3 text-sm text-white placeholder-gray-500 focus:outline-none focus:border-indigo-500 transition"
                 />
                 <Lock className="w-4 h-4 text-gray-500 absolute left-3.5 top-3.5" />
                 <button
@@ -273,7 +273,7 @@ export const InviteModal: React.FC<InviteModalProps> = ({
             <button
               type="submit"
               disabled={isSubmitting || isCheckingRoom || !userName.trim()}
-              className="flex items-center gap-1.5 sm:gap-2 px-4 sm:px-6 py-2.5 bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-500 hover:to-violet-500 disabled:opacity-40 text-white font-bold text-xs rounded-2xl shadow-lg shadow-indigo-600/30 transition cursor-pointer"
+              className="flex items-center gap-1.5 sm:gap-2 px-4 sm:px-6 py-2.5 bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-500 hover:to-violet-500 disabled:opacity-40 text-on-accent font-bold text-xs rounded-2xl shadow-lg shadow-indigo-600/30 transition cursor-pointer"
             >
               {isSubmitting ? (
                 <>

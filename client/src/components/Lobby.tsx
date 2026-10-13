@@ -19,6 +19,7 @@ import {
 import { PasswordModal } from './PasswordModal';
 import { CreateRoomModal } from './CreateRoomModal';
 import { GoogleLoginButton } from './GoogleLoginButton';
+import { ThemeToggle } from './ThemeToggle';
 import { GuestRecoveryModal } from './GuestRecoveryModal';
 import { getGuestRooms } from '../utils/guestStorage';
 import { useAuth } from '../context/AuthContext';
@@ -330,7 +331,7 @@ export const Lobby: React.FC<LobbyProps> = ({ onJoin, isLoading, error, onGuestR
     : false;
 
   return (
-    <div className="min-h-screen min-h-[100dvh] bg-[#090a0f] text-gray-100 flex flex-col justify-start lg:justify-center items-center p-3.5 sm:p-6 py-6 sm:py-8 lg:py-6 relative overflow-x-hidden overflow-y-auto lg:overflow-hidden">
+    <div className="min-h-screen min-h-[100dvh] bg-app text-gray-100 flex flex-col justify-start lg:justify-center items-center p-3.5 sm:p-6 py-6 sm:py-8 lg:py-6 relative overflow-x-hidden overflow-y-auto lg:overflow-hidden">
       {/* Background Glows */}
       <div className="absolute top-1/4 left-1/4 w-96 h-96 bg-indigo-600/10 rounded-full blur-3xl pointer-events-none" />
       <div className="absolute bottom-1/4 right-1/4 w-96 h-96 bg-purple-600/10 rounded-full blur-3xl pointer-events-none" />
@@ -381,10 +382,11 @@ export const Lobby: React.FC<LobbyProps> = ({ onJoin, isLoading, error, onGuestR
           )}
         </div>
 
-        <div>
+        <div className="flex items-center gap-2">
+          <ThemeToggle />
           <button
             onClick={() => setIsCreateRoomOpen(true)}
-            className="flex items-center gap-2 bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-500 hover:to-violet-500 text-white font-semibold px-4 py-2 rounded-2xl text-xs sm:text-sm shadow-lg shadow-indigo-600/25 hover:shadow-indigo-600/40 transition-all cursor-pointer"
+            className="flex items-center gap-2 bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-500 hover:to-violet-500 text-on-accent font-semibold px-4 py-2 rounded-2xl text-xs sm:text-sm shadow-lg shadow-indigo-600/25 hover:shadow-indigo-600/40 transition-all cursor-pointer"
           >
             <Plus className="w-4 h-4" />
             <span>Criar Nova Sala</span>
@@ -405,7 +407,7 @@ export const Lobby: React.FC<LobbyProps> = ({ onJoin, isLoading, error, onGuestR
 
       {/* Banner de Incentivo de Migração para Usuários Convidados */}
       {!isAuthenticated && getGuestRooms().length > 0 && (
-        <div className="w-full max-w-5xl mb-5 bg-gradient-to-r from-indigo-950/40 via-violet-950/30 to-black/40 border border-indigo-500/30 rounded-2xl p-3.5 sm:p-4 flex flex-col sm:flex-row items-center justify-between gap-3 shadow-lg shadow-indigo-950/20 backdrop-blur-md z-10 animate-in fade-in slide-in-from-top-2 duration-300">
+        <div className="w-full max-w-5xl mb-5 bg-gradient-to-r from-indigo-950/40 via-violet-950/30 to-app border border-indigo-500/30 rounded-2xl p-3.5 sm:p-4 flex flex-col sm:flex-row items-center justify-between gap-3 shadow-lg shadow-indigo-950/20 backdrop-blur-md z-10 animate-in fade-in slide-in-from-top-2 duration-300">
           <div className="flex items-center gap-3 text-left">
             <div className="p-2.5 rounded-xl bg-indigo-500/20 text-indigo-400 shrink-0">
               <Sparkles className="w-5 h-5 text-indigo-400" />
@@ -429,7 +431,7 @@ export const Lobby: React.FC<LobbyProps> = ({ onJoin, isLoading, error, onGuestR
       {/* Main Container Grid (Standardized Fixed Height Layout) */}
       <div className="w-full max-w-5xl relative z-10 grid grid-cols-1 lg:grid-cols-12 gap-5 sm:gap-6 items-start pb-8 lg:pb-0">
         {/* Left Side: Room Entry Form (7 cols - Standard Fixed Height) */}
-        <div className="lg:col-span-7 bg-[#11131a]/90 backdrop-blur-xl border border-white/10 rounded-3xl p-5 sm:p-7 shadow-2xl flex flex-col justify-between lg:h-[510px]">
+        <div className="lg:col-span-7 bg-surface/90 backdrop-blur-xl border border-white/10 rounded-3xl p-5 sm:p-7 shadow-2xl flex flex-col justify-between lg:h-[510px]">
           {error && (
             <div className="p-3 bg-rose-500/10 border border-rose-500/30 rounded-xl text-xs text-rose-300 flex items-center gap-2 mb-2">
               <span className="font-bold">Erro:</span>
@@ -450,7 +452,7 @@ export const Lobby: React.FC<LobbyProps> = ({ onJoin, isLoading, error, onGuestR
                   placeholder="ex: jogatina-da-noite"
                   value={roomName}
                   onChange={(e) => setRoomName(e.target.value)}
-                  className="w-full bg-black/40 border border-white/10 rounded-xl pl-4 pr-20 py-2.5 text-sm text-white placeholder-gray-500 focus:outline-none focus:border-indigo-500 transition"
+                  className="w-full bg-app border border-white/10 rounded-xl pl-4 pr-20 py-2.5 text-sm text-white placeholder-gray-500 focus:outline-none focus:border-indigo-500 transition"
                 />
                 <div className="absolute right-2 flex items-center gap-1">
                   {roomName.trim() && (
@@ -486,7 +488,7 @@ export const Lobby: React.FC<LobbyProps> = ({ onJoin, isLoading, error, onGuestR
                   placeholder="Seu nome ou nick"
                   value={userName}
                   onChange={(e) => handleUserNameChange(e.target.value)}
-                  className="w-full bg-black/40 border border-white/10 rounded-xl px-4 py-2.5 text-sm text-white placeholder-gray-500 focus:outline-none focus:border-indigo-500 transition"
+                  className="w-full bg-app border border-white/10 rounded-xl px-4 py-2.5 text-sm text-white placeholder-gray-500 focus:outline-none focus:border-indigo-500 transition"
                 />
                 <User className="w-4 h-4 text-gray-500 absolute right-3.5 top-3" />
               </div>
@@ -503,7 +505,7 @@ export const Lobby: React.FC<LobbyProps> = ({ onJoin, isLoading, error, onGuestR
                   placeholder="Deixe em branco para sala aberta"
                   value={passcode}
                   onChange={(e) => setPasscode(e.target.value)}
-                  className="w-full bg-black/40 border border-white/10 rounded-xl px-4 py-2.5 text-sm text-white placeholder-gray-500 focus:outline-none focus:border-indigo-500 transition"
+                  className="w-full bg-app border border-white/10 rounded-xl px-4 py-2.5 text-sm text-white placeholder-gray-500 focus:outline-none focus:border-indigo-500 transition"
                 />
                 <Lock className="w-4 h-4 text-gray-500 absolute right-3.5 top-3" />
               </div>
@@ -526,7 +528,7 @@ export const Lobby: React.FC<LobbyProps> = ({ onJoin, isLoading, error, onGuestR
               </div>
 
               {isMicTesting && (
-                <div className="w-full bg-black/50 h-1.5 rounded-full overflow-hidden">
+                <div className="w-full bg-app h-1.5 rounded-full overflow-hidden">
                   <div
                     className="h-full bg-emerald-500 transition-all duration-75"
                     style={{ width: `${micLevel}%` }}
@@ -560,7 +562,7 @@ export const Lobby: React.FC<LobbyProps> = ({ onJoin, isLoading, error, onGuestR
             <button
               type="submit"
               disabled={isLoading || !roomName.trim() || !userName.trim()}
-              className="w-full py-3 px-4 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white font-bold rounded-xl shadow-lg shadow-indigo-600/30 transition flex items-center justify-center gap-2 group cursor-pointer"
+              className="w-full py-3 px-4 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-on-accent font-bold rounded-xl shadow-lg shadow-indigo-600/30 transition flex items-center justify-center gap-2 group cursor-pointer"
             >
               {isLoading ? (
                 <span>Conectando à sala...</span>
@@ -591,7 +593,7 @@ export const Lobby: React.FC<LobbyProps> = ({ onJoin, isLoading, error, onGuestR
         </div>
 
         {/* Right Side: Favorites List (5 cols - Standard Fixed Height Matching Left) */}
-        <div className="lg:col-span-5 bg-[#11131a]/90 backdrop-blur-xl border border-white/10 rounded-3xl p-5 sm:p-6 shadow-2xl flex flex-col lg:h-[510px] space-y-4">
+        <div className="lg:col-span-5 bg-surface/90 backdrop-blur-xl border border-white/10 rounded-3xl p-5 sm:p-6 shadow-2xl flex flex-col lg:h-[510px] space-y-4">
           {/* Header */}
           <div className="flex items-center justify-between pb-3 border-b border-white/10 flex-shrink-0">
             <div className="flex items-center gap-2">
@@ -615,12 +617,12 @@ export const Lobby: React.FC<LobbyProps> = ({ onJoin, isLoading, error, onGuestR
               placeholder="Adicionar sala favorita..."
               value={newFavoriteInput}
               onChange={(e) => setNewFavoriteInput(e.target.value)}
-              className="flex-1 bg-black/40 border border-white/10 rounded-xl px-3 py-2 text-xs text-white placeholder-gray-500 focus:outline-none focus:border-indigo-500 transition"
+              className="flex-1 bg-app border border-white/10 rounded-xl px-3 py-2 text-xs text-white placeholder-gray-500 focus:outline-none focus:border-indigo-500 transition"
             />
             <button
               type="submit"
               disabled={!newFavoriteInput.trim()}
-              className="p-2 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-40 text-white rounded-xl transition shadow cursor-pointer"
+              className="p-2 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-40 text-on-accent rounded-xl transition shadow cursor-pointer"
               title="Salvar sala favorita"
             >
               <Plus className="w-4 h-4" />
@@ -648,7 +650,7 @@ export const Lobby: React.FC<LobbyProps> = ({ onJoin, isLoading, error, onGuestR
                     key={fav.name}
                     className={`p-3 rounded-2xl border transition-all flex items-center justify-between group ${
                       isLive
-                        ? 'bg-gradient-to-r from-emerald-950/20 to-black/40 border-emerald-500/40 hover:border-emerald-500 shadow-sm'
+                        ? 'bg-gradient-to-r from-emerald-950/20 to-app border-emerald-500/40 hover:border-emerald-500 shadow-sm'
                         : 'bg-white/5 border-white/5 hover:border-white/15'
                     }`}
                   >

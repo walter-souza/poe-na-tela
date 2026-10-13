@@ -159,6 +159,7 @@ export const StreamTile: React.FC<StreamTileProps> = ({
   if (isThumbnail) {
     return (
       <div
+        data-theme="dark"
         onClick={onSelectThumbnail}
         className={`relative aspect-video w-36 sm:w-44 rounded-xl overflow-hidden cursor-pointer border-2 transition-all duration-200 group bg-black/60 shadow-lg shrink-0 ${
           isSpotlighted
@@ -191,6 +192,7 @@ export const StreamTile: React.FC<StreamTileProps> = ({
 
   return (
     <div
+      data-theme="dark"
       ref={containerRef}
       onClick={handleToggleControls}
       onMouseMove={handleMouseMove}
@@ -200,7 +202,7 @@ export const StreamTile: React.FC<StreamTileProps> = ({
       }`}
     >
       {stream.isLocal && isPreviewPaused ? (
-        <div className="w-full h-full flex flex-col items-center justify-center bg-[#0d1017] text-center p-6 select-none animate-fadeIn">
+        <div className="w-full h-full flex flex-col items-center justify-center bg-app text-center p-6 select-none animate-fadeIn">
           <div className="w-16 h-16 rounded-2xl bg-indigo-500/10 border border-indigo-500/20 flex items-center justify-center text-indigo-400 mb-3 shadow-lg shadow-indigo-500/10">
             <Radio className="w-8 h-8 animate-pulse text-indigo-400" />
           </div>
@@ -213,7 +215,7 @@ export const StreamTile: React.FC<StreamTileProps> = ({
               e.stopPropagation();
               setIsPreviewPaused(false);
             }}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold shadow transition"
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-on-accent text-xs font-semibold shadow transition"
           >
             <Eye className="w-3.5 h-3.5" />
             <span>Reativar Prévia</span>
@@ -260,7 +262,7 @@ export const StreamTile: React.FC<StreamTileProps> = ({
             title={isSpotlighted ? 'Remover destaque' : 'Destacar esta transmissão'}
             className={`p-1.5 sm:p-2 rounded-xl backdrop-blur-md border transition ${
               isSpotlighted
-                ? 'bg-indigo-600 border-indigo-400 text-white shadow-lg shadow-indigo-600/30'
+                ? 'bg-indigo-600 border-indigo-400 text-on-accent shadow-lg shadow-indigo-600/30'
                 : 'bg-black/60 hover:bg-black/80 border-white/15 text-gray-300 hover:text-white'
             }`}
           >

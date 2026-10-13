@@ -4,10 +4,19 @@
     <meta charset="UTF-8" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
-    <meta name="theme-color" content="#090a0f" />
+    <meta name="theme-color" content="#0d0e10" />
     <meta name="mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <script>
+      /* Evita o flash de tema: aplica a escolha salva antes da primeira pintura. */
+      try {
+        var p = localStorage.getItem('poe-na-tela-theme');
+        if (p === 'light' || p === 'dark') document.documentElement.setAttribute('data-theme', p);
+        var light = p === 'light' || (p !== 'dark' && window.matchMedia('(prefers-color-scheme: light)').matches);
+        document.querySelector('meta[name="theme-color"]').setAttribute('content', light ? '#fbf6f2' : '#0d0e10');
+      } catch (e) {}
+    </script>
     <title>Põe na Tela — Stream para Amigos</title>
     <script src="https://accounts.google.com/gsi/client" async defer></script>
   </head>

@@ -150,11 +150,11 @@ export const ServerInviteModal: React.FC<ServerInviteModalProps> = ({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/85 backdrop-blur-md animate-fadeIn select-none">
-      <div className="bg-[#11131c] border border-indigo-500/20 rounded-3xl w-full max-w-md shadow-2xl overflow-hidden text-gray-200">
+      <div className="bg-surface border border-indigo-500/20 rounded-3xl w-full max-w-md shadow-2xl overflow-hidden text-gray-200">
         {/* Discord-like Server Header */}
-        <div className="pt-8 pb-6 px-6 bg-gradient-to-b from-[#181a29] to-[#11131c] border-b border-white/5 flex flex-col items-center text-center">
+        <div className="pt-8 pb-6 px-6 bg-gradient-to-b from-surface-2 to-surface border-b border-white/5 flex flex-col items-center text-center">
           {/* Server Icon */}
-          <div className="w-20 h-20 rounded-[24px] bg-gradient-to-tr from-indigo-600 via-indigo-500 to-violet-500 flex items-center justify-center text-white font-extrabold text-2xl shadow-xl shadow-indigo-600/30 mb-4 ring-4 ring-[#11131c]">
+          <div className="w-20 h-20 rounded-[24px] bg-gradient-to-tr from-indigo-600 via-indigo-500 to-violet-500 flex items-center justify-center text-on-accent font-extrabold text-2xl shadow-xl shadow-indigo-600/30 mb-4 ring-4 ring-surface">
             {initials}
           </div>
 
@@ -200,7 +200,7 @@ export const ServerInviteModal: React.FC<ServerInviteModalProps> = ({
                   value={passcode}
                   onChange={(e) => setPasscode(e.target.value)}
                   placeholder="Insira a senha do servidor..."
-                  className="w-full bg-[#181a26] text-white text-xs sm:text-sm rounded-xl px-3.5 py-2.5 pr-10 focus:outline-none focus:ring-2 focus:ring-amber-500 border border-amber-500/30 placeholder-gray-500"
+                  className="w-full bg-surface-2 text-white text-xs sm:text-sm rounded-xl px-3.5 py-2.5 pr-10 focus:outline-none focus:ring-2 focus:ring-amber-500 border border-amber-500/30 placeholder-gray-500"
                 />
                 <button
                   type="button"
@@ -247,7 +247,7 @@ export const ServerInviteModal: React.FC<ServerInviteModalProps> = ({
                   onChange={(e) => setUserName(e.target.value)}
                   placeholder="Como quer ser chamado?"
                   maxLength={32}
-                  className="w-full bg-[#181a26] text-white text-xs sm:text-sm rounded-xl px-3.5 py-2.5 focus:outline-none focus:ring-2 focus:ring-indigo-500 border border-white/5 placeholder-gray-500"
+                  className="w-full bg-surface-2 text-white text-xs sm:text-sm rounded-xl px-3.5 py-2.5 focus:outline-none focus:ring-2 focus:ring-indigo-500 border border-white/5 placeholder-gray-500"
                 />
               </div>
 
@@ -276,7 +276,7 @@ export const ServerInviteModal: React.FC<ServerInviteModalProps> = ({
             <button
               type="submit"
               disabled={isSubmitting || isCheckingServer}
-              className="w-full py-3 px-4 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white font-bold text-sm rounded-xl shadow-lg shadow-indigo-600/30 transition flex items-center justify-center gap-2 cursor-pointer"
+              className="w-full py-3 px-4 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-on-accent font-bold text-sm rounded-xl shadow-lg shadow-indigo-600/30 transition flex items-center justify-center gap-2 cursor-pointer"
             >
               {isSubmitting ? (
                 <>

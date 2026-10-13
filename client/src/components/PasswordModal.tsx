@@ -29,7 +29,7 @@ export const PasswordModal: React.FC<PasswordModalProps> = ({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/80 backdrop-blur-md animate-fadeIn">
-      <div className="bg-[#13151f] border border-white/10 rounded-3xl w-full max-w-md shadow-2xl overflow-hidden text-gray-200">
+      <div className="bg-surface border border-white/10 rounded-3xl w-full max-w-md shadow-2xl overflow-hidden text-gray-200">
         {/* Header */}
         <div className="flex items-center justify-between px-4 sm:px-6 py-3.5 sm:py-4 border-b border-white/10 bg-white/5">
           <div className="flex items-center gap-2.5 sm:gap-3">
@@ -72,7 +72,7 @@ export const PasswordModal: React.FC<PasswordModalProps> = ({
                 placeholder="Senha de acesso..."
                 value={passcode}
                 onChange={(e) => setPasscode(e.target.value)}
-                className="w-full bg-black/40 border border-white/10 rounded-xl px-4 py-3 text-sm text-white placeholder-gray-500 focus:outline-none focus:border-indigo-500 transition pr-10"
+                className="w-full bg-app border border-white/10 rounded-xl px-4 py-3 text-sm text-white placeholder-gray-500 focus:outline-none focus:border-indigo-500 transition pr-10"
               />
               <button
                 type="button"
@@ -95,7 +95,7 @@ export const PasswordModal: React.FC<PasswordModalProps> = ({
             <button
               type="submit"
               disabled={!passcode.trim()}
-              className="px-5 py-2.5 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-40 text-white font-bold text-xs rounded-xl shadow-lg shadow-indigo-600/30 transition flex items-center gap-1.5 cursor-pointer"
+              className="px-5 py-2.5 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-40 text-on-accent font-bold text-xs rounded-xl shadow-lg shadow-indigo-600/30 transition flex items-center gap-1.5 cursor-pointer"
             >
               <span>Entrar na Sala</span>
               <ArrowRight className="w-3.5 h-3.5" />

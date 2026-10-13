@@ -25,7 +25,7 @@ export const MaintenanceScreen: React.FC<MaintenanceScreenProps> = ({
   };
 
   return (
-    <div className="min-h-screen min-h-[100dvh] w-screen bg-[#07080d] flex flex-col items-center justify-between p-4 sm:p-8 text-gray-100 relative overflow-x-hidden overflow-y-auto select-none">
+    <div className="min-h-screen min-h-[100dvh] w-screen bg-app flex flex-col items-center justify-between p-4 sm:p-8 text-gray-100 relative overflow-x-hidden overflow-y-auto select-none">
       {/* Background ambient lighting */}
       <div className="absolute top-1/4 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[550px] h-[550px] bg-indigo-600/10 rounded-full blur-[140px] pointer-events-none" />
       <div className="absolute bottom-10 right-10 w-[350px] h-[350px] bg-violet-600/10 rounded-full blur-[120px] pointer-events-none" />
@@ -33,7 +33,7 @@ export const MaintenanceScreen: React.FC<MaintenanceScreenProps> = ({
       {/* Top Bar Header */}
       <header className="w-full max-w-5xl flex items-center justify-between z-10 gap-2">
         <div className="flex items-center gap-2.5 sm:gap-3">
-          <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-2xl bg-gradient-to-tr from-indigo-600 to-violet-500 flex items-center justify-center text-white shadow-xl shadow-indigo-600/20 shrink-0">
+          <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-2xl bg-gradient-to-tr from-indigo-600 to-violet-500 flex items-center justify-center text-on-accent shadow-xl shadow-indigo-600/20 shrink-0">
             <Sparkles className="w-5 h-5" />
           </div>
           <div>
@@ -60,7 +60,7 @@ export const MaintenanceScreen: React.FC<MaintenanceScreenProps> = ({
         {/* Animated Icon Container */}
         <div className="relative mx-auto w-24 h-24 mb-6 flex items-center justify-center">
           <div className="absolute inset-0 rounded-3xl bg-gradient-to-tr from-indigo-600/30 to-violet-600/30 blur-xl animate-pulse" />
-          <div className="w-24 h-24 rounded-3xl bg-[#11131c] border border-white/15 flex items-center justify-center shadow-2xl relative">
+          <div className="w-24 h-24 rounded-3xl bg-surface border border-white/15 flex items-center justify-center shadow-2xl relative">
             <Wrench className="w-11 h-11 text-indigo-400 animate-bounce" />
           </div>
         </div>
@@ -76,7 +76,7 @@ export const MaintenanceScreen: React.FC<MaintenanceScreenProps> = ({
         </p>
 
         {/* Features list in progress */}
-        <div className="bg-[#11131c]/90 border border-white/10 rounded-2xl p-4 mb-8 text-left space-y-2.5 backdrop-blur-md shadow-xl text-xs text-gray-300">
+        <div className="bg-surface/90 border border-white/10 rounded-2xl p-4 mb-8 text-left space-y-2.5 backdrop-blur-md shadow-xl text-xs text-gray-300">
           <div className="flex items-center gap-2.5 text-gray-200 font-semibold border-b border-white/10 pb-2">
             <span className="w-2 h-2 rounded-full bg-emerald-400" />
             <span>O que estamos aprimorando:</span>
@@ -96,7 +96,7 @@ export const MaintenanceScreen: React.FC<MaintenanceScreenProps> = ({
           <button
             onClick={onRetry}
             disabled={isChecking}
-            className="w-full sm:w-auto px-6 py-3.5 rounded-2xl font-bold text-xs bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-500 hover:to-violet-500 text-white shadow-xl shadow-indigo-600/30 transition-all flex items-center justify-center gap-2 hover:scale-[1.02] active:scale-[0.98] cursor-pointer disabled:opacity-50"
+            className="w-full sm:w-auto px-6 py-3.5 rounded-2xl font-bold text-xs bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-500 hover:to-violet-500 text-on-accent shadow-xl shadow-indigo-600/30 transition-all flex items-center justify-center gap-2 hover:scale-[1.02] active:scale-[0.98] cursor-pointer disabled:opacity-50"
           >
             <RefreshCw className={`w-4 h-4 ${isChecking ? 'animate-spin' : ''}`} />
             <span>{isChecking ? 'Verificando Status...' : 'Verificar Novamente'}</span>
@@ -125,7 +125,7 @@ export const MaintenanceScreen: React.FC<MaintenanceScreenProps> = ({
               />
               <button
                 type="submit"
-                className="p-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white shadow transition cursor-pointer"
+                className="p-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-on-accent shadow transition cursor-pointer"
                 title="Acessar"
               >
                 <ArrowRight className="w-4 h-4" />
