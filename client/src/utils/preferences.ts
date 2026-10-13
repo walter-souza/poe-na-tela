@@ -68,6 +68,6 @@ export const userNamePref = createPreference<string>('poe-na-tela-username', '',
 export type RoomLayout = 'palco' | 'classico';
 
 /** Layout da sala: Palco (vídeo em destaque, canais no seletor do topo) ou Clássico (lateral de canais). */
-export const roomLayoutPref = createPreference<RoomLayout>('poe-na-tela-room-layout', 'palco', (raw) =>
+export const roomLayoutPref = createPreference<RoomLayout>('poe-na-tela-room-layout', 'classico', (raw) =>
   raw === 'palco' || raw === 'classico' ? raw : undefined
 );
