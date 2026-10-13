@@ -1,20 +1,13 @@
 import type { TrackProcessor, AudioProcessorOptions } from 'livekit-client';
 import { Track } from 'livekit-client';
 import { loadRnnoise, RnnoiseWorkletNode } from '@sapphi-red/web-noise-suppressor';
+import rnnoiseWorkletUrl from '@sapphi-red/web-noise-suppressor/rnnoiseWorklet.js?url';
+import rnnoiseWasmUrl from '@sapphi-red/web-noise-suppressor/rnnoise.wasm?url';
+import rnnoiseSimdWasmUrl from '@sapphi-red/web-noise-suppressor/rnnoise_simd.wasm?url';
 
+// Assets do RNNoise vêm do próprio pacote (?url): o Vite os emite com hash, na mesma versão da biblioteca.
 let wasmBinaryCache: Promise<ArrayBuffer> | null = null;
 const registeredAudioContexts = new WeakSet<AudioContext>();
-
-function getAssetUrl(path: string): string {
-  try {
-    const base = import.meta.env.BASE_URL || '/';
-    const cleanBase = base.endsWith('/') ? base : `${base}/`;
-    const cleanPath = path.startsWith('/') ? path.slice(1) : path;
-    return new URL(`${cleanBase}${cleanPath}`, window.location.href).href;
-  } catch {
-    return path;
-  }
-}
 
 export function isNoiseSuppressionSupported(): boolean {
   if (typeof window === 'undefined') return false;
@@ -37,7 +30,8 @@ export class NoiseSuppressionProcessor implements TrackProcessor<Track.Kind.Audi
   async init(opts: AudioProcessorOptions): Promise<void> {
     const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
     if (!opts.audioContext || opts.audioContext.state === 'closed' || opts.audioContext.sampleRate !== 48000) {
-      this.audioContext = new AudioCtx({ sampleRate: 48000 });
+      // RNNoise processa quadros de 10 ms (480 amostras) a 48 kHz mono; 'interactive' minimiza a latência.
+      this.audioContext = new AudioCtx({ sampleRate: 48000, latencyHint: 'interactive' });
     } else {
       this.audioContext = opts.audioContext;
     }
@@ -51,10 +45,9 @@ export class NoiseSuppressionProcessor implements TrackProcessor<Track.Kind.Audi
       }
     }
 
-    const workletUrl = getAssetUrl('rnnoise/rnnoiseWorklet.js');
     if (!registeredAudioContexts.has(this.audioContext)) {
       try {
-        await this.audioContext.audioWorklet.addModule(workletUrl);
+        await this.audioContext.audioWorklet.addModule(rnnoiseWorkletUrl);
         registeredAudioContexts.add(this.audioContext);
       } catch (err: any) {
         // Ignore if already registered
@@ -68,11 +61,13 @@ export class NoiseSuppressionProcessor implements TrackProcessor<Track.Kind.Audi
     }
 
     if (!wasmBinaryCache) {
-      const wasmUrl = getAssetUrl('rnnoise/rnnoise.wasm');
-      const wasmSimdUrl = getAssetUrl('rnnoise/rnnoise_simd.wasm');
+      // loadRnnoise escolhe o binário com SIMD quando o navegador suporta.
       wasmBinaryCache = loadRnnoise({
-        url: wasmUrl,
-        simdUrl: wasmSimdUrl,
+        url: rnnoiseWasmUrl,
+        simdUrl: rnnoiseSimdWasmUrl,
+      }).catch((err) => {
+        wasmBinaryCache = null; // permite nova tentativa se o download falhar
+        throw err;
       });
     }
 
@@ -96,6 +91,8 @@ export class NoiseSuppressionProcessor implements TrackProcessor<Track.Kind.Audi
       throw new Error('Failed to get processed audio track from MediaStreamDestination');
     }
     this.processedTrack = tracks[0];
+    // Dica ao codec/navegador: o conteúdo é voz.
+    this.processedTrack.contentHint = 'speech';
   }
 
   async restart(opts: AudioProcessorOptions): Promise<void> {

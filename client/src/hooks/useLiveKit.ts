@@ -242,7 +242,7 @@ export function useLiveKit({ url, token, onDisconnected, onConnected }: UseLiveK
         if (AudioCtx) {
           const currentCtx = (track as any).audioContext;
           if (!currentCtx || currentCtx.state === 'closed') {
-            const newCtx = new AudioCtx({ sampleRate: 48000 });
+            const newCtx = new AudioCtx({ sampleRate: 48000, latencyHint: 'interactive' });
             if (newCtx.state === 'suspended') {
               await newCtx.resume().catch(() => {});
             }

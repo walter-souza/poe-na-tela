@@ -47,7 +47,7 @@ Dev local precisa de um LiveKit rodando em `ws://127.0.0.1:7880` (chaves `devkey
 - `utils/api.ts` resolve a base da API (`VITE_API_URL`; em Electron/`file://` usa `http://127.0.0.1:3001`) — construa URLs por aí, não hardcode.
 - `utils/cryptoService.ts`: mensagens são cifradas no navegador (AES-GCM) antes de ir ao banco, com a chave da sala vinda do KMS do backend.
 - `context/AuthContext.tsx` + `utils/supabase.ts`: login Google (Supabase Auth / Google Identity Services); `utils/guestStorage.ts` guarda a identidade guest.
-- Ruído: RNNoise WASM em `client/public/rnnoise/` + `utils/noiseSuppression.ts`.
+- Ruído: RNNoise (`@sapphi-red/web-noise-suppressor`) em `utils/noiseSuppression.ts`; worklet e WASM são importados do pacote com `?url` (o Vite emite com hash), nunca copiados para `public/`. Com RNNoise ativo, a supressão nativa do navegador fica desligada para não processar duas vezes.
 
 ## Infra da VPS
 
