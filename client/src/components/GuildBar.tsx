@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Sparkles, Plus, Share2, LogOut, Check, Settings } from 'lucide-react';
+import { MonitorPlay, Plus, Share2, LogOut, Check, Settings } from 'lucide-react';
 import type { UserRoom } from '../types';
 
 interface GuildBarProps {
@@ -97,7 +97,7 @@ export const GuildBar: React.FC<GuildBarProps> = ({
               : 'rounded-[24px] hover:rounded-[16px] bg-surface hover:bg-gradient-to-tr hover:from-indigo-600 hover:to-violet-500 text-indigo-300 hover:text-white'
           }`}
         >
-          <Sparkles className="w-6 h-6" />
+          <MonitorPlay className="w-6 h-6" />
         </button>
 
         {/* Discord Tooltip */}

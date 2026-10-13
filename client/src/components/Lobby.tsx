@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
-import { ArrowRight, KeyRound, Link2, Lock, LogOut, Plus, Radio, Users } from 'lucide-react';
+import { ArrowRight, KeyRound, Link2, Lock, LogOut, Plus, Users } from 'lucide-react';
+import { BrandMark } from './BrandMark';
 import { GoogleLoginButton } from './GoogleLoginButton';
 import { GuestRecoveryModal } from './GuestRecoveryModal';
 import { Button, inputClass } from './ui';
@@ -113,9 +114,7 @@ export const Lobby: React.FC<LobbyProps> = ({ rooms, onOpenRoom, onOpenInvite, o
       {/* Barra superior */}
       <header className="flex items-center gap-3 px-4 sm:px-8 py-3 border-b border-line">
         <span className="flex items-center gap-2 font-semibold">
-          <span className="w-7 h-7 rounded-lg bg-accent text-on-accent flex items-center justify-center">
-            <Radio className="w-4 h-4" />
-          </span>
+          <BrandMark size={28} />
           Põe na Tela
         </span>
         <div className="ml-auto flex items-center gap-2">
@@ -305,9 +304,7 @@ const WelcomeCard: React.FC<{ onContinue: (name: string) => void; onRecover: () 
     <div className="min-h-full bg-app text-gray-100 flex items-center justify-center p-4">
       <div className="w-full max-w-sm bg-surface border border-line rounded-2xl p-6 sm:p-7">
         <div className="flex items-center gap-2 font-semibold mb-5">
-          <span className="w-8 h-8 rounded-lg bg-accent text-on-accent flex items-center justify-center">
-            <Radio className="w-4 h-4" />
-          </span>
+          <BrandMark size={32} />
           Põe na Tela
         </div>
         <h1 className="text-xl font-semibold tracking-tight">Assista e transmita com seus amigos</h1>
