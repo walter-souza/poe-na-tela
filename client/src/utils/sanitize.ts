@@ -23,3 +23,27 @@ export function sanitizeUserName(name: string): string {
     .replace(/\s+/g, ' ')
     .slice(0, 32);
 }
+
+const INVITE_PARAMS = ['server', 's', 'invite', 'room', 'r'];
+
+/**
+ * Aceita um link de convite (?room=, ?invite=, ?server=...) ou só o nome/código do servidor
+ * e devolve o nome do servidor já sanitizado ('' se não houver).
+ */
+export function parseRoomInput(input: string): string {
+  const raw = input.trim();
+  if (!raw) return '';
+  const looksLikeUrl = /^[a-z][a-z0-9+.-]*:\/\//i.test(raw) || /^[\w-]+(\.[\w-]+)+([/?#]|$)/.test(raw);
+  if (!looksLikeUrl) return sanitizeRoomName(raw);
+  try {
+    const url = new URL(raw.includes('://') ? raw : `https://${raw}`);
+    for (const key of INVITE_PARAMS) {
+      const value = url.searchParams.get(key);
+      if (value) return sanitizeRoomName(value);
+    }
+    const lastSegment = url.pathname.split('/').filter(Boolean).pop();
+    return lastSegment ? sanitizeRoomName(decodeURIComponent(lastSegment)) : '';
+  } catch {
+    return '';
+  }
+}

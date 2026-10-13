@@ -248,3 +248,26 @@ export async function migrateGuestToAccount(accessToken: string): Promise<{
     return { success: false, migratedCount: 0, error: err?.message };
   }
 }
+
+const LEGACY_FAVORITES_KEY = 'poe-na-tela-favorites';
+
+/**
+ * A tela inicial antiga guardava "salas favoritas" à parte. Agora os servidores salvos são a única lista:
+ * converte os favoritos em salas salvas e remove a chave antiga. Idempotente.
+ */
+export function migrateLegacyFavorites(): void {
+  try {
+    const raw = localStorage.getItem(LEGACY_FAVORITES_KEY);
+    if (!raw) return;
+    const parsed = JSON.parse(raw);
+    if (Array.isArray(parsed)) {
+      for (const fav of parsed) {
+        const name = typeof fav?.name === 'string' ? fav.name.trim() : '';
+        if (name) saveGuestRoom({ name, slug: name });
+      }
+    }
+    localStorage.removeItem(LEGACY_FAVORITES_KEY);
+  } catch (err) {
+    console.warn('Não foi possível migrar os favoritos antigos:', err);
+  }
+}

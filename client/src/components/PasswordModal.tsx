@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
-import { Lock, Eye, EyeOff, ArrowRight, X, ShieldAlert } from 'lucide-react';
+import { Eye, EyeOff } from 'lucide-react';
+import { Button, ErrorText, Field, Modal, inputClass } from './ui';
 
 interface PasswordModalProps {
   isOpen: boolean;
@@ -9,17 +10,10 @@ interface PasswordModalProps {
   error?: string | null;
 }
 
-export const PasswordModal: React.FC<PasswordModalProps> = ({
-  isOpen,
-  roomName,
-  onClose,
-  onConfirm,
-  error,
-}) => {
+/** Pede a senha só quando o servidor exige. */
+export const PasswordModal: React.FC<PasswordModalProps> = ({ isOpen, roomName, onClose, onConfirm, error }) => {
   const [passcode, setPasscode] = useState('');
   const [showPassword, setShowPassword] = useState(false);
-
-  if (!isOpen) return null;
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -28,81 +22,42 @@ export const PasswordModal: React.FC<PasswordModalProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/80 backdrop-blur-md animate-fadeIn">
-      <div className="bg-surface border border-white/10 rounded-3xl w-full max-w-md shadow-2xl overflow-hidden text-gray-200">
-        {/* Header */}
-        <div className="flex items-center justify-between px-4 sm:px-6 py-3.5 sm:py-4 border-b border-white/10 bg-white/5">
-          <div className="flex items-center gap-2.5 sm:gap-3">
-            <div className="p-2 sm:p-2.5 bg-amber-500/20 text-amber-400 rounded-2xl shrink-0">
-              <Lock className="w-5 h-5" />
-            </div>
-            <div>
-              <h3 className="font-bold text-white text-sm sm:text-base">Sala Protegida por Senha</h3>
-              <p className="text-[11px] sm:text-xs text-gray-400">
-                A sala <span className="text-indigo-400 font-semibold">{roomName}</span> requer senha
-              </p>
-            </div>
-          </div>
-          <button
-            onClick={onClose}
-            className="text-gray-400 hover:text-white p-1 rounded-xl hover:bg-white/10 transition shrink-0"
-          >
-            <X className="w-5 h-5" />
-          </button>
-        </div>
-
-        {/* Content */}
-        <form onSubmit={handleSubmit} className="p-4 sm:p-6 space-y-4">
-          {error && (
-            <div className="p-3 bg-rose-500/10 border border-rose-500/30 rounded-xl text-xs text-rose-300 flex items-center gap-2">
-              <ShieldAlert className="w-4 h-4 flex-shrink-0" />
-              <span>{error}</span>
-            </div>
-          )}
-
-          <div>
-            <label className="block text-xs font-semibold uppercase tracking-wider text-gray-400 mb-2">
-              Digite a Senha da Sala
-            </label>
-            <div className="relative">
-              <input
-                type={showPassword ? 'text' : 'password'}
-                autoFocus
-                required
-                placeholder="Senha de acesso..."
-                value={passcode}
-                onChange={(e) => setPasscode(e.target.value)}
-                className="w-full bg-app border border-white/10 rounded-xl px-4 py-3 text-sm text-white placeholder-gray-500 focus:outline-none focus:border-indigo-500 transition pr-10"
-              />
-              <button
-                type="button"
-                onClick={() => setShowPassword(!showPassword)}
-                className="absolute right-3 top-3 text-gray-400 hover:text-white transition"
-              >
-                {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-              </button>
-            </div>
-          </div>
-
-          <div className="flex items-center justify-end gap-3 pt-2">
+    <Modal open={isOpen} onClose={onClose} title="Servidor protegido" className="max-w-sm">
+      <form onSubmit={handleSubmit} className="space-y-4">
+        <p className="text-sm text-gray-400">
+          Digite a senha para entrar em <span className="text-gray-100 font-medium">{roomName}</span>.
+        </p>
+        <Field label="Senha" htmlFor="room-passcode">
+          <div className="relative">
+            <input
+              id="room-passcode"
+              autoFocus
+              type={showPassword ? 'text' : 'password'}
+              value={passcode}
+              onChange={(e) => setPasscode(e.target.value)}
+              placeholder="Senha do servidor"
+              className={`${inputClass} pr-10`}
+            />
             <button
               type="button"
-              onClick={onClose}
-              className="px-4 py-2.5 rounded-xl text-xs font-medium text-gray-400 hover:text-white hover:bg-white/5 transition"
+              onClick={() => setShowPassword((v) => !v)}
+              aria-label={showPassword ? 'Ocultar senha' : 'Mostrar senha'}
+              className="absolute right-2.5 top-1/2 -translate-y-1/2 p-1 text-gray-400 hover:text-gray-100 cursor-pointer"
             >
-              Cancelar
-            </button>
-            <button
-              type="submit"
-              disabled={!passcode.trim()}
-              className="px-5 py-2.5 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-40 text-on-accent font-bold text-xs rounded-xl shadow-lg shadow-indigo-600/30 transition flex items-center gap-1.5 cursor-pointer"
-            >
-              <span>Entrar na Sala</span>
-              <ArrowRight className="w-3.5 h-3.5" />
+              {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
             </button>
           </div>
-        </form>
-      </div>
-    </div>
+        </Field>
+        {error && <ErrorText>{error}</ErrorText>}
+        <div className="flex justify-end gap-2 pt-1">
+          <Button variant="ghost" onClick={onClose}>
+            Cancelar
+          </Button>
+          <Button type="submit" variant="primary" disabled={!passcode.trim()}>
+            Entrar
+          </Button>
+        </div>
+      </form>
+    </Modal>
   );
 };

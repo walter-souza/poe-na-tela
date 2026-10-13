@@ -23,6 +23,7 @@ import { PasswordModal } from './components/PasswordModal';
 import { playJoinSound, playLeaveSound } from './utils/soundEffects';
 import {
   getGuestRooms,
+  migrateLegacyFavorites,
   saveGuestRoom,
   removeGuestRoom,
   syncGuestAccount,
@@ -45,8 +46,6 @@ export function App() {
   const { profile, isAuthenticated, session: authSession, updateNickname } = useAuth();
   const [session, setSession] = useState<AppSession | null>(null);
 
-  const [isLoading, setIsLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
   const [isChatOpen, setIsChatOpen] = useState(() => {
     if (typeof window !== 'undefined') {
       return window.innerWidth >= 768;
@@ -68,7 +67,11 @@ export function App() {
 
   // Discord Guilds (Salas do Usuário Autenticado e Convidados)
   const [userRooms, setUserRooms] = useState<UserRoom[]>([]);
-  const [guestRooms, setGuestRooms] = useState<UserRoom[]>(() => getGuestRooms());
+  const [guestRooms, setGuestRooms] = useState<UserRoom[]>(() => {
+    // Favoritos da tela inicial antiga viram servidores salvos (uma vez).
+    migrateLegacyFavorites();
+    return getGuestRooms();
+  });
   const [activeRoomSlug, setActiveRoomSlug] = useState<string | null>(null);
   const [isCreateRoomOpen, setIsCreateRoomOpen] = useState(false);
   const [passwordPromptRoom, setPasswordPromptRoom] = useState<UserRoom | null>(null);
@@ -187,77 +190,6 @@ export function App() {
     );
   });
 
-  // Connect to room via token (Lobby Join)
-  const handleJoin = async (
-    roomName: string,
-    userName: string,
-    isPublisher: boolean,
-    passcode?: string
-  ) => {
-    setIsLoading(true);
-    setError(null);
-
-    try {
-      const res = await fetch(getTokenUrl(), {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          roomName,
-          participantName: userName,
-          isPublisher,
-          passcode,
-          bypassToken: adminBypassToken,
-          createIfMissing: true,
-        }),
-      });
-
-      const data = await res.json();
-
-      if (!res.ok) {
-        if (data.maintenance) {
-          setIsMaintenance(true);
-          if (data.error) setMaintenanceMessage(data.error);
-        }
-        throw new Error(data.error || 'Falha ao entrar na sala');
-      }
-
-      setSession({
-        token: data.token,
-        livekitUrl: data.livekitUrl,
-        roomName: data.roomName,
-        userName: data.identity,
-        isPublisher: data.isPublisher,
-        passcode,
-        voiceChannelId: data.voiceChannelId,
-        initialVoiceConnected: true,
-      });
-
-      setActiveRoomSlug(data.roomName);
-      if (passcode) {
-        setRoomPasscodes((prev) => ({ ...prev, [data.roomName]: passcode }));
-      }
-
-      // Persistir sala no histórico de convidados
-      saveGuestRoom({
-        name: data.roomName,
-        slug: data.roomName,
-        hasPasscode: Boolean(passcode),
-      });
-      setGuestRooms(getGuestRooms());
-      syncGuestAccount(effectiveUserName).catch(() => {});
-
-      window.history.replaceState({}, '', window.location.pathname);
-      setInviteServerName(null);
-      fetchUserRooms();
-    } catch (err: any) {
-      const msg = err.message || 'Erro ao conectar ao servidor de streaming';
-      setError(msg);
-      throw err;
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
   const handleSelectRoom = (slug: string) => {
     const room = displayedRooms.find((r) => r.slug === slug);
     if (room && room.hasPasscode && !room.isOwner && !roomPasscodes[slug]) {
@@ -326,63 +258,54 @@ export function App() {
     guestUserName: string,
     passcode?: string
   ) => {
-    setIsLoading(true);
-    setError(null);
-    try {
-      if (authSession?.access_token) {
-        try {
-          const joinRes = await fetch(`${getApiBaseUrl()}/api/rooms/${targetRoomSlug}/join`, {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-              Authorization: `Bearer ${authSession.access_token}`,
-            },
-            body: JSON.stringify({ passcode }),
-          });
-          if (!joinRes.ok) {
-            const errData = await joinRes.json().catch(() => ({}));
-            if (errData.error) {
-              throw new Error(errData.error);
-            }
+    // Erros sobem para o modal de convite, que os exibe.
+    if (authSession?.access_token) {
+      try {
+        const joinRes = await fetch(`${getApiBaseUrl()}/api/rooms/${targetRoomSlug}/join`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${authSession.access_token}`,
+          },
+          body: JSON.stringify({ passcode }),
+        });
+        if (!joinRes.ok) {
+          const errData = await joinRes.json().catch(() => ({}));
+          if (errData.error) {
+            throw new Error(errData.error);
           }
-        } catch (err: any) {
-          console.warn('Erro ao registrar membro na sala:', err);
-          throw err;
         }
+      } catch (err: any) {
+        console.warn('Erro ao registrar membro na sala:', err);
+        throw err;
       }
-
-      if (passcode) {
-        setRoomPasscodes((prev) => ({ ...prev, [targetRoomSlug]: passcode }));
-      }
-
-      if (guestUserName) {
-        localStorage.setItem('poe-na-tela-username', guestUserName);
-      }
-
-      // Persistir sala no histórico de convidados
-      saveGuestRoom({
-        name: targetRoomSlug,
-        slug: targetRoomSlug,
-        hasPasscode: Boolean(passcode),
-      });
-      setGuestRooms(getGuestRooms());
-      syncGuestAccount(effectiveUserName).catch(() => {});
-
-      window.history.replaceState({}, '', window.location.pathname);
-      setInviteServerName(null);
-
-      if (authSession?.access_token) {
-        await fetchUserRooms();
-      }
-
-      setActiveRoomSlug(targetRoomSlug);
-    } catch (err: any) {
-      const msg = err.message || 'Falha ao aceitar convite do servidor';
-      setError(msg);
-      throw err;
-    } finally {
-      setIsLoading(false);
     }
+
+    if (passcode) {
+      setRoomPasscodes((prev) => ({ ...prev, [targetRoomSlug]: passcode }));
+    }
+
+    if (guestUserName) {
+      localStorage.setItem('poe-na-tela-username', guestUserName);
+    }
+
+    // Persistir sala no histórico de convidados
+    saveGuestRoom({
+      name: targetRoomSlug,
+      slug: targetRoomSlug,
+      hasPasscode: Boolean(passcode),
+    });
+    setGuestRooms(getGuestRooms());
+    syncGuestAccount(effectiveUserName).catch(() => {});
+
+    window.history.replaceState({}, '', window.location.pathname);
+    setInviteServerName(null);
+
+    if (authSession?.access_token) {
+      await fetchUserRooms();
+    }
+
+    setActiveRoomSlug(targetRoomSlug);
   };
 
   const handleLeave = () => {
@@ -469,9 +392,10 @@ export function App() {
         ) : (
           <div className="flex-1 overflow-y-auto">
             <Lobby
-              onJoin={handleJoin}
-              isLoading={isLoading}
-              error={error}
+              rooms={displayedRooms}
+              onOpenRoom={handleSelectRoom}
+              onOpenInvite={(slug) => setInviteServerName(slug)}
+              onOpenCreateRoom={() => setIsCreateRoomOpen(true)}
               onGuestRecovered={(rec) => {
                 setGuestRooms(rec.rooms);
                 if (rec.nickname && updateNickname) {
@@ -486,6 +410,7 @@ export function App() {
       {/* Modais Globais */}
       {inviteServerName && (
         <ServerInviteModal
+          key={inviteServerName}
           isOpen={Boolean(inviteServerName)}
           roomName={inviteServerName}
           onAccept={handleAcceptServerInvite}
