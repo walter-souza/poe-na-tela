@@ -64,3 +64,10 @@ export const micDevicePref = createPreference<string>('poe-na-tela-mic-device', 
 
 /** Apelido de quem não tem conta (com conta, vale o nome do perfil). */
 export const userNamePref = createPreference<string>('poe-na-tela-username', '', (raw) => raw.trim() || undefined);
+
+export type RoomLayout = 'palco' | 'classico';
+
+/** Layout da sala: Palco (vídeo em destaque, canais no seletor do topo) ou Clássico (lateral de canais). */
+export const roomLayoutPref = createPreference<RoomLayout>('poe-na-tela-room-layout', 'palco', (raw) =>
+  raw === 'palco' || raw === 'classico' ? raw : undefined
+);

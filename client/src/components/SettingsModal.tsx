@@ -5,7 +5,14 @@ import { GuestRecoveryModal } from './GuestRecoveryModal';
 import { Button, Field, Modal, Segmented, Switch, inputClass } from './ui';
 import { useAuth } from '../context/AuthContext';
 import { useTheme, type ThemePreference } from '../hooks/useTheme';
-import { micDevicePref, noiseSuppressionPref, usePreference, userNamePref } from '../utils/preferences';
+import {
+  micDevicePref,
+  noiseSuppressionPref,
+  roomLayoutPref,
+  usePreference,
+  userNamePref,
+  type RoomLayout,
+} from '../utils/preferences';
 import { isNoiseSuppressionSupported, NoiseSuppressionProcessor } from '../utils/noiseSuppression';
 import { sanitizeUserName } from '../utils/sanitize';
 import type { UserRoom } from '../types';
@@ -224,13 +231,30 @@ const THEME_OPTIONS: { value: ThemePreference; label: string }[] = [
   { value: 'dark', label: 'Escuro' },
 ];
 
+const LAYOUT_OPTIONS: { value: RoomLayout; label: string }[] = [
+  { value: 'palco', label: 'Palco' },
+  { value: 'classico', label: 'Clássico' },
+];
+
 const AppearanceSection: React.FC = () => {
   const { preference, setPreference } = useTheme();
+  const layout = usePreference(roomLayoutPref);
   return (
-    <div className="space-y-2">
-      <p className="text-xs font-medium text-gray-400">Tema</p>
-      <Segmented ariaLabel="Tema" options={THEME_OPTIONS} value={preference} onChange={setPreference} />
-      <p className="text-xs text-gray-500">"Sistema" acompanha o modo claro ou escuro do seu computador.</p>
+    <div className="space-y-6">
+      <div className="space-y-2">
+        <p className="text-xs font-medium text-gray-400">Tema</p>
+        <Segmented ariaLabel="Tema" options={THEME_OPTIONS} value={preference} onChange={setPreference} />
+        <p className="text-xs text-gray-500">"Sistema" acompanha o modo claro ou escuro do seu computador.</p>
+      </div>
+      <div className="space-y-2">
+        <p className="text-xs font-medium text-gray-400">Layout da sala</p>
+        <Segmented ariaLabel="Layout da sala" options={LAYOUT_OPTIONS} value={layout} onChange={roomLayoutPref.set} />
+        <p className="text-xs text-gray-500">
+          {layout === 'palco'
+            ? 'Vídeo em destaque; os canais ficam no seletor do topo.'
+            : 'Lista de canais sempre visível à esquerda.'}
+        </p>
+      </div>
     </div>
   );
 };

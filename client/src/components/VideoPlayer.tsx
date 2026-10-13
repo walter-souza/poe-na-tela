@@ -1,12 +1,10 @@
 import React, { useEffect, useState, useMemo } from 'react';
 import {
-  Tv,
-  Radio,
   Volume2,
   LayoutGrid,
   Square,
   Layers,
-  Sparkles,
+  ScreenShare,
 } from 'lucide-react';
 import type { ScreenShareItem, ReactionEvent, StreamLayoutMode } from '../types';
 import { StreamTile } from './StreamTile';
@@ -263,30 +261,26 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
   // 1. EMPTY STATE (Nenhum stream WebRTC e nenhum stream OBS ativo)
   if (unifiedStreams.length === 0) {
     return (
-      <div className="relative flex-1 bg-black rounded-2xl overflow-hidden flex items-center justify-center border border-white/5 shadow-2xl group select-none min-h-[400px]">
-        <div className="flex flex-col items-center justify-center text-center p-8 max-w-md z-0">
-          <div className="w-20 h-20 rounded-2xl bg-indigo-500/10 border border-indigo-500/20 flex items-center justify-center mb-6 text-indigo-400 glow-active">
-            <Tv className="w-10 h-10 animate-pulse" />
-          </div>
-          <h3 className="text-xl font-bold text-white mb-2">Aguardando Transmissão</h3>
+      <div className="relative flex-1 bg-surface rounded-2xl overflow-hidden flex items-center justify-center border border-line group select-none min-h-[400px]">
+        <div className="flex flex-col items-center justify-center text-center p-8 max-w-sm z-0">
+          <span className="w-14 h-14 rounded-2xl bg-surface-2 border border-line flex items-center justify-center mb-5 text-accent-text">
+            <ScreenShare className="w-6 h-6" />
+          </span>
+          <h3 className="text-lg font-semibold text-gray-100 mb-1.5">Ninguém está transmitindo</h3>
           <p className="text-sm text-gray-400 mb-6 leading-relaxed">
-            Ninguém está transmitindo no momento. Compartilhe sua tela pelo navegador/desktop ou conecte via <strong>OBS Studio (SRT 60 FPS)</strong>!
+            Compartilhe sua tela ou espere alguém começar{OBS_ENABLED ? '. Também dá para transmitir pelo OBS.' : '.'}
           </p>
 
           {onOpenScreenShareConfig && (
             <button
+              type="button"
               onClick={onOpenScreenShareConfig}
-              className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-500 hover:to-violet-500 text-on-accent font-semibold text-xs shadow-lg shadow-indigo-600/30 transition transform hover:scale-[1.02] active:scale-[0.98] mb-6 cursor-pointer"
+              className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-accent text-on-accent font-semibold text-sm hover:brightness-105 transition cursor-pointer"
             >
-              <Sparkles className="w-4 h-4" />
-              <span>Começar a Transmitir</span>
+              <ScreenShare className="w-4 h-4" />
+              <span>Transmitir tela</span>
             </button>
           )}
-
-          <div className="flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-indigo-500/10 border border-indigo-500/20 text-xs text-indigo-300">
-            <Radio className="w-3.5 h-3.5 text-emerald-400 animate-pulse" />
-            <span>Detecção automática de transmissões ativa</span>
-          </div>
         </div>
 
         {/* Floating Reaction Overlay */}

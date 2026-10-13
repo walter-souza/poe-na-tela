@@ -13,6 +13,8 @@ interface TextChannelViewProps {
   isVoiceConnected?: boolean;
   activeVoiceChannelName?: string;
   onSwitchToStage?: () => void;
+  /** Substitui o título do canal no cabeçalho (layout Palco usa o seletor de canais). */
+  headerStart?: React.ReactNode;
 }
 
 const EMOJI_LIST = [
@@ -83,6 +85,7 @@ export const TextChannelView: React.FC<TextChannelViewProps> = ({
   isVoiceConnected = false,
   activeVoiceChannelName,
   onSwitchToStage,
+  headerStart,
 }) => {
   const [inputText, setInputText] = useState('');
   const [showEmojiPicker, setShowEmojiPicker] = useState(false);
@@ -130,16 +133,23 @@ export const TextChannelView: React.FC<TextChannelViewProps> = ({
       {/* Channel Header (Discord-like minimalist) */}
       <div className="h-13 border-b border-white/[0.08] px-4 sm:px-6 flex items-center justify-between bg-app/80 backdrop-blur-md shrink-0 select-none z-10">
         <div className="flex items-center gap-2.5 min-w-0">
-          <Hash className="w-5 h-5 text-zinc-400 shrink-0" />
-          <span className="font-bold text-zinc-100 text-sm sm:text-base tracking-tight truncate">
-            {channelName}
-          </span>
+          {headerStart ?? (
+            <>
+              <Hash className="w-5 h-5 text-zinc-400 shrink-0" />
+              <span className="font-bold text-zinc-100 text-sm sm:text-base tracking-tight truncate">
+                {channelName}
+              </span>
+            </>
+          )}
 
           <div className="h-4 w-[1px] bg-white/10 mx-1 hidden sm:block" />
 
           {isEncrypted ? (
-            <span className="hidden sm:inline-flex items-center gap-1.5 text-[11px] text-emerald-400 bg-emerald-500/10 px-2.5 py-0.5 rounded-full border border-emerald-500/20 font-medium tracking-wide">
-              <Lock className="w-3 h-3" /> Criptografado (KMS)
+            <span
+              title="As mensagens ficam criptografadas no banco de dados"
+              className="hidden sm:inline-flex items-center gap-1.5 text-xs text-gray-400"
+            >
+              <Lock className="w-3 h-3" /> Criptografado
             </span>
           ) : (
             <span className="hidden sm:inline text-xs text-zinc-400 truncate">
@@ -152,11 +162,11 @@ export const TextChannelView: React.FC<TextChannelViewProps> = ({
         {isVoiceConnected && onSwitchToStage && (
           <button
             onClick={onSwitchToStage}
-            className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-300 border border-emerald-500/30 text-xs font-semibold transition cursor-pointer shrink-0 animate-pulse"
+            className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-accent/15 hover:bg-accent/25 text-accent-text text-xs font-semibold transition cursor-pointer shrink-0"
           >
             <Tv className="w-3.5 h-3.5" />
-            <span className="hidden md:inline">Voltar ao Palco</span>
-            <span className="text-[10px] bg-emerald-500/30 px-1.5 py-0.5 rounded text-emerald-200">
+            <span className="hidden md:inline">Voltar à chamada</span>
+            <span className="text-[10px] bg-accent/20 px-1.5 py-0.5 rounded">
               {activeVoiceChannelName || 'Voz'}
             </span>
           </button>

@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo, useRef, type Dispatch, type SetStateAction } from 'react';
 import { ConnectionState } from 'livekit-client';
-import { Tv, Check, X } from 'lucide-react';
+import { Check, X } from 'lucide-react';
 import { useLiveKit } from './hooks/useLiveKit';
 import { useVoicePresence } from './hooks/useVoicePresence';
 import { VideoPlayer } from './components/VideoPlayer';
@@ -11,7 +11,8 @@ import { ScreenShareModal } from './components/ScreenShareModal';
 import { MaintenanceScreen } from './components/MaintenanceScreen';
 import { Lobby } from './components/Lobby';
 import { SettingsModal } from './components/SettingsModal';
-import { usePreference, userNamePref } from './utils/preferences';
+import { roomLayoutPref, usePreference, userNamePref } from './utils/preferences';
+import { RoomSwitcher } from './components/RoomSwitcher';
 import { ServerInviteModal } from './components/ServerInviteModal';
 import { ChannelSidebar } from './components/ChannelSidebar';
 import { CreateChannelModal } from './components/CreateChannelModal';
@@ -525,6 +526,7 @@ function StreamRoom({
   const [isCreateChannelOpen, setIsCreateChannelOpen] = useState<boolean>(false);
 
   // Modo de visualização central: 'chat' para canais de texto, 'stage' para palco de transmissão
+  const roomLayout = usePreference(roomLayoutPref);
   const [activeView, setActiveView] = useState<'chat' | 'stage'>(() => {
     return session.initialVoiceConnected ? 'stage' : 'chat';
   });
@@ -884,14 +886,43 @@ function StreamRoom({
     }
   };
 
+  const [seenMessageCount, setSeenMessageCount] = useState<number | null>(null);
+  useEffect(() => {
+    if (isChatOpen || (seenMessageCount === null && persistentMessages.length > 0)) {
+      setSeenMessageCount(persistentMessages.length);
+    }
+  }, [isChatOpen, persistentMessages.length, seenMessageCount]);
+
   const handleExitRoom = () => {
     disconnect();
     onLeave();
   };
 
+  const isPalco = roomLayout === 'palco';
+  const unreadCount =
+    isChatOpen || seenMessageCount === null ? 0 : Math.max(0, persistentMessages.length - seenMessageCount);
+
+  const roomSwitcher = (
+    <RoomSwitcher
+      roomName={session.roomName}
+      channels={channels}
+      activeView={activeView}
+      activeTextChannelId={activeTextChannelId}
+      activeVoiceChannelId={activeVoiceChannelId}
+      isVoiceConnected={isVoiceFullyConnected}
+      voiceParticipants={mergedVoiceParticipants}
+      isOwner={isOwner}
+      onSelectTextChannel={handleSelectTextChannel}
+      onSelectVoiceChannel={handleSelectVoiceChannel}
+      onOpenCreateChannel={() => setIsCreateChannelOpen(true)}
+      onLeaveRoom={handleExitRoom}
+    />
+  );
+
   return (
     <div className="h-screen h-[100dvh] w-full flex bg-app text-gray-100 overflow-hidden select-none">
-      {/* Channel Sidebar (Discord-like) */}
+      {/* Lateral de canais: só no layout Clássico (no Palco, os canais ficam no seletor do topo) */}
+      {!isPalco && (
       <ChannelSidebar
         roomName={session.roomName}
         channels={channels}
@@ -912,6 +943,7 @@ function StreamRoom({
         onDeleteChannel={handleDeleteChannel}
         onLeaveRoom={handleExitRoom}
       />
+      )}
 
       {/* Central View: Text Chat OU Video Stage */}
       <div className="flex-1 flex overflow-hidden relative">
@@ -931,6 +963,7 @@ function StreamRoom({
                 : undefined
             }
             onSwitchToStage={() => setActiveView('stage')}
+            headerStart={isPalco ? roomSwitcher : undefined}
           />
         ) : (
           <div className="flex-1 flex flex-col p-1 sm:p-2 min-w-0 relative">
@@ -956,20 +989,20 @@ function StreamRoom({
               roomName={session.roomName}
             />
 
-            {/* Centered Room Name at top */}
-            <div className="absolute top-2 sm:top-6 inset-x-0 mx-auto w-fit z-20 pointer-events-none flex items-center justify-center px-2">
-              <div className="pointer-events-auto flex items-center gap-1.5 sm:gap-2 px-2.5 sm:px-3.5 py-1.5 sm:py-2 rounded-2xl bg-surface/90 border border-white/15 text-white text-[11px] sm:text-xs font-semibold shadow-2xl backdrop-blur-md select-none">
-                <Tv className="w-3.5 h-3.5 text-indigo-400 shrink-0" />
-                <span className="text-gray-400 font-medium hidden sm:inline">Sala:</span>
-                <span className="font-bold text-white tracking-wide max-w-[100px] xs:max-w-[140px] sm:max-w-xs md:max-w-md truncate">
-                  {session.roomName}
-                </span>
-                <span className="text-gray-500">|</span>
-                <span className="text-emerald-400 font-semibold truncate">
-                  {channels.find((c) => c.id === activeVoiceChannelId)?.name || 'Voz'}
-                </span>
+            {/* Topo do palco: seletor de canais (Palco) ou nome da sala e do canal de voz (Clássico) */}
+            {isPalco ? (
+              <div className="absolute top-3 left-3 z-30">{roomSwitcher}</div>
+            ) : (
+              <div className="absolute top-3 inset-x-0 mx-auto w-fit z-20 pointer-events-none px-2">
+                <div className="pointer-events-auto flex items-center gap-1.5 px-3.5 py-1.5 rounded-full bg-surface border border-line text-sm shadow-lg">
+                  <span className="font-semibold truncate max-w-[160px] sm:max-w-xs">{session.roomName}</span>
+                  <span className="text-gray-500">/</span>
+                  <span className="text-gray-400 truncate">
+                    {channels.find((c) => c.id === activeVoiceChannelId)?.name || 'Voz'}
+                  </span>
+                </div>
               </div>
-            </div>
+            )}
 
             {/* Floating Stage Controls Bar */}
             <div className="absolute bottom-3 sm:bottom-4 inset-x-0 mx-auto w-fit z-30 pointer-events-none flex items-center justify-center px-2">
@@ -983,7 +1016,7 @@ function StreamRoom({
                   isHUDOpen={isHUDOpen}
                   roomName={session.roomName}
                   userName={session.userName}
-                  unreadCount={persistentMessages.length}
+                  unreadCount={unreadCount}
                   onToggleMic={handleToggleMic}
                   onToggleDeafen={toggleDeafen}
                   onToggleNoiseSuppression={toggleNoiseSuppression}
@@ -991,6 +1024,7 @@ function StreamRoom({
                   onOpenScreenShareConfig={() => setIsScreenShareModalOpen(true)}
                   onToggleChat={() => setIsChatOpen(!isChatOpen)}
                   onToggleHUD={() => setIsHUDOpen(!isHUDOpen)}
+                  onLeaveVoice={isPalco && isVoiceFullyConnected ? handleDisconnectVoice : undefined}
                 />
               </div>
             </div>

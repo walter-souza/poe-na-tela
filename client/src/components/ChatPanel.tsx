@@ -108,25 +108,20 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({
             onClick={() => setActiveTab('chat')}
             className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-semibold transition ${
               activeTab === 'chat'
-                ? 'bg-indigo-600 text-on-accent shadow'
-                : 'text-gray-400 hover:text-white'
+                ? 'bg-surface-2 text-gray-100 shadow-sm'
+                : 'text-gray-400 hover:text-gray-100'
             }`}
           >
             <MessageSquare className="w-3.5 h-3.5" />
             <span>Chat</span>
-            {messages.length > 0 && (
-              <span className="bg-white/20 text-[10px] px-1.5 py-0.2 rounded-full">
-                {messages.length}
-              </span>
-            )}
           </button>
 
           <button
             onClick={() => setActiveTab('participants')}
             className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-semibold transition ${
               activeTab === 'participants'
-                ? 'bg-indigo-600 text-on-accent shadow'
-                : 'text-gray-400 hover:text-white'
+                ? 'bg-surface-2 text-gray-100 shadow-sm'
+                : 'text-gray-400 hover:text-gray-100'
             }`}
           >
             <Users className="w-3.5 h-3.5" />
@@ -162,10 +157,10 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({
 
       <div className="flex-1 overflow-y-auto p-2.5 space-y-0.5">
         {activeTab === 'chat' && isEncrypted && (
-          <div className="mx-1 mb-2 px-2.5 py-1.5 bg-emerald-500/10 border border-emerald-500/20 rounded-xl text-[10px] text-emerald-400 flex items-center justify-center gap-1.5 font-medium shadow-sm">
+          <p className="mx-1 mb-2 text-[11px] text-gray-500 flex items-center justify-center gap-1.5">
             <Lock className="w-3 h-3 shrink-0" />
-            <span>Chat Criptografado de Ponta a Ponta (AES-256)</span>
-          </div>
+            Mensagens criptografadas
+          </p>
         )}
 
         {activeTab === 'chat' ? (

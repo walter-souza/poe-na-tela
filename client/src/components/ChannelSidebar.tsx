@@ -18,6 +18,7 @@ import {
 } from 'lucide-react';
 import type { Channel, VoiceParticipant } from '../types';
 import { useAuth } from '../context/AuthContext';
+import { usePreference, userNamePref } from '../utils/preferences';
 
 interface ChannelSidebarProps {
   roomName: string;
@@ -61,6 +62,8 @@ export const ChannelSidebar: React.FC<ChannelSidebarProps> = ({
   onLeaveRoom,
 }) => {
   const { profile } = useAuth();
+  const guestName = usePreference(userNamePref);
+  const displayName = profile?.username || guestName || 'Convidado';
   const [copiedInvite, setCopiedInvite] = useState(false);
 
   const handleCopyInvite = () => {
@@ -336,12 +339,12 @@ export const ChannelSidebar: React.FC<ChannelSidebarProps> = ({
             />
           ) : (
             <div className="w-8 h-8 rounded-full bg-indigo-600/30 text-indigo-300 font-bold text-xs flex items-center justify-center shrink-0">
-              {profile?.username?.charAt(0).toUpperCase() || 'U'}
+              {displayName.charAt(0).toUpperCase()}
             </div>
           )}
           <div className="flex flex-col min-w-0">
             <span className="text-xs font-bold text-white truncate max-w-[70px] sm:max-w-[85px]">
-              {profile?.username || 'Convidado'}
+              {displayName}
             </span>
             <span className="text-[10px] text-gray-500 flex items-center gap-1">
               {isOwner ? (

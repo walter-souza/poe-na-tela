@@ -1,17 +1,19 @@
-import React, { useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
-  Mic,
-  MicOff,
+  Activity,
+  Check,
   Headphones,
   HeadphoneOff,
-  ScreenShare,
-  StopCircle,
   MessageSquare,
-  Sliders,
-  Layers,
-  Wand2,
+  Mic,
+  MicOff,
+  MoreHorizontal,
+  PhoneOff,
+  ScreenShare,
+  SlidersHorizontal,
+  StopCircle,
   Tv,
-  Check,
+  Wand2,
 } from 'lucide-react';
 import { OBS_ENABLED, getObsSrtUrl } from '../utils/api';
 
@@ -32,8 +34,16 @@ interface ControlsBarProps {
   onOpenScreenShareConfig: () => void;
   onToggleChat: () => void;
   onToggleHUD: () => void;
+  /** Mostrado no layout Palco, onde não há a lateral com o botão de sair da voz. */
+  onLeaveVoice?: () => void;
 }
 
+const iconButton =
+  'w-10 h-10 rounded-xl flex items-center justify-center transition cursor-pointer border border-transparent';
+const neutral = 'bg-surface-2 text-gray-100 hover:border-line';
+const muted = 'bg-rose-500/15 text-rose-400 hover:bg-rose-500/25';
+
+/** Barra flutuante da chamada: voz, transmissão, mais opções e chat. */
 export const ControlsBar: React.FC<ControlsBarProps> = ({
   isMicEnabled,
   isDeafened,
@@ -51,154 +61,158 @@ export const ControlsBar: React.FC<ControlsBarProps> = ({
   onOpenScreenShareConfig,
   onToggleChat,
   onToggleHUD,
+  onLeaveVoice,
 }) => {
+  const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [copiedObs, setCopiedObs] = useState(false);
+  const menuRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!isMenuOpen) return;
+    const onDown = (e: MouseEvent) => {
+      if (menuRef.current && !menuRef.current.contains(e.target as Node)) setIsMenuOpen(false);
+    };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setIsMenuOpen(false);
+    };
+    document.addEventListener('mousedown', onDown);
+    document.addEventListener('keydown', onKey);
+    return () => {
+      document.removeEventListener('mousedown', onDown);
+      document.removeEventListener('keydown', onKey);
+    };
+  }, [isMenuOpen]);
 
   const handleCopyObsLink = () => {
-    const obsUrl = getObsSrtUrl(roomName, userName);
-    navigator.clipboard.writeText(obsUrl);
+    navigator.clipboard.writeText(getObsSrtUrl(roomName, userName));
     setCopiedObs(true);
     setTimeout(() => setCopiedObs(false), 2000);
   };
 
+  const menuItem = 'w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm text-left hover:bg-white/5 transition cursor-pointer';
+
   return (
-    <div className="flex items-center gap-1.5 sm:gap-2 px-2.5 sm:px-3.5 py-1.5 sm:py-2 rounded-2xl bg-surface/90 border border-white/15 text-white shadow-2xl backdrop-blur-xl select-none">
-      {/* Microfone */}
+    <div className="flex items-center gap-1.5 p-1.5 rounded-2xl bg-surface border border-line shadow-xl select-none">
       <button
+        type="button"
         onClick={onToggleMic}
-        title={isMicEnabled ? 'Microfone Ativo (Silenciar)' : 'Microfone Mudo (Ativar)'}
-        className={`flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 sm:py-2 rounded-xl font-medium text-xs transition cursor-pointer ${
-          isMicEnabled
-            ? 'bg-emerald-600 hover:bg-emerald-500 text-white shadow-sm shadow-emerald-600/30'
-            : 'bg-rose-600/20 hover:bg-rose-600/30 border border-rose-500/30 text-rose-300'
-        }`}
+        title={isMicEnabled ? 'Silenciar microfone' : 'Ativar microfone'}
+        aria-label={isMicEnabled ? 'Silenciar microfone' : 'Ativar microfone'}
+        aria-pressed={!isMicEnabled}
+        className={`${iconButton} ${isMicEnabled ? neutral : muted}`}
       >
-        {isMicEnabled ? <Mic className="w-4 h-4" /> : <MicOff className="w-4 h-4" />}
-        <span className="hidden md:inline">{isMicEnabled ? 'Mic' : 'Mudo'}</span>
+        {isMicEnabled ? <Mic className="w-[18px] h-[18px]" /> : <MicOff className="w-[18px] h-[18px]" />}
       </button>
 
-      {/* Ensordecer (Áudio) */}
       <button
+        type="button"
         onClick={onToggleDeafen}
-        title={isDeafened ? 'Áudio Desativado (Ensordecido)' : 'Áudio Ativo'}
-        className={`p-2 rounded-xl border transition cursor-pointer ${
-          isDeafened
-            ? 'bg-rose-600/20 border-rose-500/30 text-rose-300'
-            : 'bg-white/5 hover:bg-white/10 border-white/10 text-gray-300 hover:text-white'
-        }`}
+        title={isDeafened ? 'Voltar a ouvir' : 'Parar de ouvir'}
+        aria-label={isDeafened ? 'Voltar a ouvir' : 'Parar de ouvir'}
+        aria-pressed={isDeafened}
+        className={`${iconButton} ${isDeafened ? muted : neutral}`}
       >
-        {isDeafened ? <HeadphoneOff className="w-4 h-4" /> : <Headphones className="w-4 h-4" />}
+        {isDeafened ? <HeadphoneOff className="w-[18px] h-[18px]" /> : <Headphones className="w-[18px] h-[18px]" />}
       </button>
 
-      {/* Supressão de Ruído por IA */}
-      {onToggleNoiseSuppression && (
+      <button
+        type="button"
+        onClick={isScreenSharing ? onToggleScreenShare : onOpenScreenShareConfig}
+        title={isScreenSharing ? 'Parar transmissão' : 'Transmitir tela'}
+        className={`h-10 px-3.5 rounded-xl flex items-center gap-2 text-sm font-semibold transition cursor-pointer ${
+          isScreenSharing ? 'bg-rose-500 text-white hover:bg-rose-600' : 'bg-accent text-on-accent hover:brightness-105'
+        }`}
+      >
+        {isScreenSharing ? <StopCircle className="w-[18px] h-[18px]" /> : <ScreenShare className="w-[18px] h-[18px]" />}
+        <span className="hidden sm:inline">{isScreenSharing ? 'Parar' : 'Transmitir'}</span>
+      </button>
+
+      <div className="relative" ref={menuRef}>
         <button
-          onClick={onToggleNoiseSuppression}
-          title={
-            isNoiseSuppressionEnabled
-              ? 'Supressão de Ruído por IA Ativa'
-              : 'Supressão de Ruído Desativada'
-          }
-          className={`flex items-center gap-1.5 p-2 sm:px-2.5 sm:py-2 rounded-xl border transition cursor-pointer ${
-            isNoiseSuppressionEnabled
-              ? 'bg-violet-600/30 border-violet-500/50 text-violet-300 hover:bg-violet-600/40'
-              : 'bg-white/5 hover:bg-white/10 border-white/10 text-gray-400 hover:text-gray-200'
-          }`}
+          type="button"
+          onClick={() => setIsMenuOpen((open) => !open)}
+          title="Mais opções"
+          aria-label="Mais opções"
+          aria-expanded={isMenuOpen}
+          className={`${iconButton} ${neutral}`}
         >
-          <Wand2 className="w-4 h-4" />
-          <span className="hidden lg:inline text-[11px] font-medium">
-            {isNoiseSuppressionEnabled ? 'IA Ruído' : 'Sem IA'}
-          </span>
+          <MoreHorizontal className="w-[18px] h-[18px]" />
         </button>
-      )}
-
-      {/* Divisor */}
-      <div className="h-5 w-[1px] bg-white/10 mx-0.5 hidden xs:block" />
-
-      {/* Compartilhar / Parar Tela */}
-      <div className="flex items-center bg-indigo-600/20 border border-indigo-500/30 rounded-xl p-0.5">
-        <button
-          onClick={isScreenSharing ? onToggleScreenShare : onOpenScreenShareConfig}
-          title={isScreenSharing ? 'Parar Transmissão' : 'Transmitir Tela'}
-          className={`flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 rounded-lg font-semibold text-xs transition cursor-pointer ${
-            isScreenSharing
-              ? 'bg-rose-600 hover:bg-rose-500 text-white shadow-sm shadow-rose-600/30'
-              : 'bg-indigo-600 hover:bg-indigo-500 text-on-accent shadow-sm shadow-indigo-600/30'
-          }`}
-        >
-          {isScreenSharing ? <StopCircle className="w-4 h-4" /> : <ScreenShare className="w-4 h-4" />}
-          <span className="hidden sm:inline">
-            {isScreenSharing ? 'Parar Tela' : 'Transmitir Tela'}
-          </span>
-        </button>
-
-        {!isScreenSharing && (
-          <button
-            onClick={onOpenScreenShareConfig}
-            title="Configurar Qualidade (FPS, Bitrate, Resolução)"
-            className="p-1.5 hover:bg-white/10 rounded-lg text-indigo-300 hover:text-white transition cursor-pointer"
-          >
-            <Sliders className="w-3.5 h-3.5" />
-          </button>
+        {isMenuOpen && (
+          <div className="absolute bottom-12 left-1/2 -translate-x-1/2 w-60 p-1.5 rounded-xl bg-surface border border-line shadow-2xl text-gray-100">
+            {onToggleNoiseSuppression && (
+              <button type="button" onClick={onToggleNoiseSuppression} className={menuItem}>
+                <Wand2 className="w-4 h-4 text-gray-400" />
+                <span className="flex-1">Supressão de ruído</span>
+                <span className={`text-xs ${isNoiseSuppressionEnabled ? 'text-accent-text' : 'text-gray-500'}`}>
+                  {isNoiseSuppressionEnabled ? 'Ligada' : 'Desligada'}
+                </span>
+              </button>
+            )}
+            <button
+              type="button"
+              onClick={() => {
+                onToggleHUD();
+                setIsMenuOpen(false);
+              }}
+              className={menuItem}
+            >
+              <Activity className="w-4 h-4 text-gray-400" />
+              <span className="flex-1">Estatísticas da transmissão</span>
+              {isHUDOpen && <Check className="w-4 h-4 text-accent-text" />}
+            </button>
+            {!isScreenSharing && (
+              <button
+                type="button"
+                onClick={() => {
+                  onOpenScreenShareConfig();
+                  setIsMenuOpen(false);
+                }}
+                className={menuItem}
+              >
+                <SlidersHorizontal className="w-4 h-4 text-gray-400" />
+                <span className="flex-1">Qualidade da transmissão</span>
+              </button>
+            )}
+            {OBS_ENABLED && (
+              <button type="button" onClick={handleCopyObsLink} className={menuItem}>
+                {copiedObs ? <Check className="w-4 h-4 text-emerald-400" /> : <Tv className="w-4 h-4 text-gray-400" />}
+                <span className="flex-1">{copiedObs ? 'Link copiado' : 'Copiar link do OBS'}</span>
+              </button>
+            )}
+          </div>
         )}
       </div>
 
-      {/* Link OBS Studio (SRT) — desligado por padrão (VITE_ENABLE_OBS) */}
-      {OBS_ENABLED && (
-        <button
-          onClick={handleCopyObsLink}
-          title="Copiar Link de Transmissão para OBS Studio (SRT 60 FPS)"
-          className={`flex items-center gap-1.5 px-2.5 py-2 rounded-xl border text-xs font-semibold transition cursor-pointer ${
-            copiedObs
-              ? 'bg-emerald-600/30 border-emerald-500/50 text-emerald-300'
-              : 'bg-white/5 hover:bg-white/10 border-white/10 text-gray-300 hover:text-white'
-          }`}
-        >
-          {copiedObs ? (
-            <Check className="w-4 h-4 text-emerald-400" />
-          ) : (
-            <Tv className="w-4 h-4 text-purple-400" />
-          )}
-          <span className="hidden md:inline">
-            {copiedObs ? 'Link Copiado!' : 'Link OBS'}
-          </span>
-        </button>
-      )}
+      <span className="w-px h-6 bg-line mx-0.5" aria-hidden="true" />
 
-      {/* Divisor */}
-      <div className="h-5 w-[1px] bg-white/10 mx-0.5" />
-
-      {/* Toggle HUD Estatísticas */}
       <button
-        onClick={onToggleHUD}
-        title="Painel de Estatísticas Técnicas"
-        className={`p-2 rounded-xl border transition cursor-pointer ${
-          isHUDOpen
-            ? 'bg-indigo-600 border-indigo-500 text-on-accent'
-            : 'bg-white/5 hover:bg-white/10 border-white/10 text-gray-300 hover:text-white'
-        }`}
-      >
-        <Layers className="w-4 h-4" />
-      </button>
-
-      {/* Toggle Chat */}
-      <button
+        type="button"
         onClick={onToggleChat}
-        title={isChatOpen ? 'Ocultar Chat' : 'Exibir Chat'}
-        className={`flex items-center gap-1.5 px-2.5 sm:px-3 py-2 rounded-xl border text-xs font-semibold transition cursor-pointer relative ${
-          isChatOpen
-            ? 'bg-indigo-600 border-indigo-500 text-on-accent shadow-sm shadow-indigo-600/30'
-            : 'bg-white/5 hover:bg-white/10 border-white/10 text-gray-300 hover:text-white'
-        }`}
+        title={isChatOpen ? 'Fechar chat' : 'Abrir chat'}
+        aria-label={isChatOpen ? 'Fechar chat' : 'Abrir chat'}
+        aria-pressed={isChatOpen}
+        className={`${iconButton} relative ${isChatOpen ? 'bg-accent/15 text-accent-text' : neutral}`}
       >
-        <MessageSquare className="w-4 h-4" />
-        <span className="hidden sm:inline">{isChatOpen ? 'Ocultar Chat' : 'Chat'}</span>
+        <MessageSquare className="w-[18px] h-[18px]" />
         {!isChatOpen && unreadCount > 0 && (
-          <span className="bg-rose-500 text-white text-[9px] font-bold px-1.5 py-0.2 rounded-full">
-            {unreadCount}
+          <span className="absolute -top-1 -right-1 min-w-[18px] h-[18px] px-1 rounded-full bg-accent text-on-accent text-[10px] font-bold flex items-center justify-center">
+            {unreadCount > 99 ? '99+' : unreadCount}
           </span>
         )}
       </button>
+
+      {onLeaveVoice && (
+        <button
+          type="button"
+          onClick={onLeaveVoice}
+          title="Sair da voz"
+          aria-label="Sair da voz"
+          className={`${iconButton} bg-rose-500/15 text-rose-400 hover:bg-rose-500 hover:text-white`}
+        >
+          <PhoneOff className="w-[18px] h-[18px]" />
+        </button>
+      )}
     </div>
   );
 };
