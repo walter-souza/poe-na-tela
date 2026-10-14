@@ -561,6 +561,8 @@ export function useLiveKit({ url, token, onDisconnected }: UseLiveKitOptions) {
       let qualityLimitationReason: string | undefined;
       let encodeTimeMs: number | undefined;
       let captureFps: number | undefined;
+      let captureSize: string | undefined;
+      const layerList: string[] = [];
       let targetBitrateKbps: number | undefined;
       let totalNack = 0;
       let totalPli = 0;
@@ -634,8 +636,9 @@ export function useLiveKit({ url, token, onDisconnected }: UseLiveKitOptions) {
           }
 
           // 3b. Capture source (Host): real frame rate coming out of getDisplayMedia
-          if (report.type === 'media-source' && report.kind === 'video' && report.framesPerSecond) {
-            captureFps = Math.round(report.framesPerSecond);
+          if (report.type === 'media-source' && report.kind === 'video') {
+            if (report.framesPerSecond) captureFps = Math.round(report.framesPerSecond);
+            if (report.width && report.height) captureSize = `${report.width}x${report.height}`;
           }
 
           // 4. Outbound RTP (Host sending video)
@@ -649,6 +652,9 @@ export function useLiveKit({ url, token, onDisconnected }: UseLiveKitOptions) {
             if (report.bytesSent) {
               outboundBytes += report.bytesSent;
             }
+            layerList.push(
+              `${report.rid ?? 'f'}:${report.frameWidth ?? 0}x${report.frameHeight ?? 0}@${Math.round(report.framesPerSecond ?? 0)}${report.active === false ? ' pausada' : ''}`
+            );
             if (report.targetBitrate) {
               targetBitrateKbps = Math.round(report.targetBitrate / 1000);
             }
@@ -750,6 +756,8 @@ export function useLiveKit({ url, token, onDisconnected }: UseLiveKitOptions) {
         bytesReceivedOrSent: totalBytes,
         qualityLimitationReason,
         captureFps,
+        captureSize,
+        layers: layerList.length ? layerList.join(' | ') : undefined,
         targetBitrateKbps,
         nackCount: nackDelta,
         pliCount: pliDelta,

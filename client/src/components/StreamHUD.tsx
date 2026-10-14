@@ -138,6 +138,13 @@ export const StreamHUD: React.FC<StreamHUDProps> = ({
         </div>
       )}
 
+      {stats.layers && (
+        <div className="mt-2.5 bg-white/5 p-2 rounded-xl border border-white/5 text-[11px] text-gray-300 break-all">
+          Camadas enviadas: {stats.layers}
+          {stats.captureSize && <span className="text-gray-500"> · captura {stats.captureSize}</span>}
+        </div>
+      )}
+
       <div className="mt-2.5 pt-2 border-t border-white/10 flex items-center justify-between text-gray-400">
         <div className="flex items-center gap-1">
           <Film className="w-3.5 h-3.5 text-purple-400" />

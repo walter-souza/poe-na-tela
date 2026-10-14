@@ -28,6 +28,10 @@ export interface StreamStats {
   qualityLimitationReason?: string;
   /** Publisher only: frames per second delivered by the screen capture (before encoding). */
   captureFps?: number;
+  /** Publisher only: captured frame size before any simulcast downscale. */
+  captureSize?: string;
+  /** Publisher only: each simulcast layer actually encoded (rid:WxH@fps). */
+  layers?: string;
   /** Publisher only: bitrate the congestion controller is currently targeting (kbps). */
   targetBitrateKbps?: number;
   /** Retransmission requests / keyframe requests in the last sampling window (both directions). */
