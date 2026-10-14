@@ -26,6 +26,8 @@ export interface StreamStats {
   bytesReceivedOrSent: number;
   /** Publisher only: why the encoder is below target ('cpu' | 'bandwidth' | 'none'). */
   qualityLimitationReason?: string;
+  /** Publisher only: frames per second delivered by the screen capture (before encoding). */
+  captureFps?: number;
   /** Publisher only: average encode time per frame (ms). */
   encodeTimeMs?: number;
   /** Viewer only: video freezes in the last sampling window. */

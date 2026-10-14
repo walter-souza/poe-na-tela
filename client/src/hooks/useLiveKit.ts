@@ -554,6 +554,7 @@ export function useLiveKit({ url, token, onDisconnected }: UseLiveKitOptions) {
       let measuredBufferDelay: number | undefined;
       let qualityLimitationReason: string | undefined;
       let encodeTimeMs: number | undefined;
+      let captureFps: number | undefined;
       let totalFreezes = 0;
       let totalDropped = 0;
       const now = Date.now();
@@ -616,6 +617,11 @@ export function useLiveKit({ url, token, onDisconnected }: UseLiveKitOptions) {
                 codec = codecReport.mimeType.replace('video/', '').toUpperCase();
               }
             }
+          }
+
+          // 3b. Capture source (Host): real frame rate coming out of getDisplayMedia
+          if (report.type === 'media-source' && report.kind === 'video' && report.framesPerSecond) {
+            captureFps = Math.round(report.framesPerSecond);
           }
 
           // 4. Outbound RTP (Host sending video)
@@ -697,6 +703,7 @@ export function useLiveKit({ url, token, onDisconnected }: UseLiveKitOptions) {
         playoutBufferMs: playoutBufferMsRef.current,
         bytesReceivedOrSent: totalBytes,
         qualityLimitationReason,
+        captureFps,
         encodeTimeMs,
         freezeCount: freezeDelta,
         framesDropped: droppedDelta,

@@ -112,11 +112,12 @@ export const StreamHUD: React.FC<StreamHUDProps> = ({
         </div>
       </div>
 
-      {(stats.qualityLimitationReason !== undefined || stats.freezeCount || stats.framesDropped) && (
+      {(stats.qualityLimitationReason !== undefined || !!stats.freezeCount || !!stats.framesDropped) && (
         <div className="mt-2.5 bg-white/5 p-2 rounded-xl border border-white/5 flex items-center justify-between gap-3 text-[11px]">
           {stats.qualityLimitationReason !== undefined && (
             <span className={stats.qualityLimitationReason === 'none' ? 'text-emerald-400' : 'text-rose-400'}>
               Limite: {stats.qualityLimitationReason === 'cpu' ? 'CPU' : stats.qualityLimitationReason === 'bandwidth' ? 'banda' : 'nenhum'}
+              {stats.captureFps !== undefined && ` · captura ${stats.captureFps}fps`}
               {stats.encodeTimeMs !== undefined && ` · encode ${stats.encodeTimeMs}ms`}
             </span>
           )}
