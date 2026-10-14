@@ -6,7 +6,7 @@ export interface ScreenShareProfile {
   /** SVC mode so the SFU can drop temporal/spatial layers per viewer without a second encode. */
   scalabilityMode?: 'L1T3';
   maxBitrate: number;
-  /** H.264 has no SVC: publish one lower 720p30 layer so weak viewers get it instead of freezing. */
+  /** H.264 has no SVC: publish one lower 720p layer (same fps as the source) so weak viewers get it instead of freezing. */
   simulcastLayers?: VideoPreset[];
   degradationPreference: RTCDegradationPreference;
 }
@@ -118,7 +118,7 @@ export async function buildScreenShareProfile(
     scalabilityMode: codec === 'av1' || codec === 'vp9' ? 'L1T3' : undefined,
     maxBitrate,
     simulcastLayers:
-      codec === 'h264' && resolution !== '720p' ? [new VideoPreset(1280, 720, 1_500_000, 30, 'medium')] : undefined,
+      codec === 'h264' && resolution !== '720p' ? [new VideoPreset(1280, 720, fps === 60 ? 2_500_000 : 1_500_000, fps, 'medium')] : undefined,
     // Games: keep fps and let resolution give. Lower fps: let both adapt.
     degradationPreference: fps === 60 ? 'maintain-framerate' : 'balanced',
   };

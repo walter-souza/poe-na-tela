@@ -550,6 +550,7 @@ export function useLiveKit({ url, token, onDisconnected }: UseLiveKitOptions) {
       let height = 0;
       let codec = '';
       let totalBytes = 0;
+      let outboundBytes = 0; // sum across simulcast layers
       let totalFrames = 0;
       let jitter = 0;
       let measuredBufferDelay: number | undefined;
@@ -639,7 +640,7 @@ export function useLiveKit({ url, token, onDisconnected }: UseLiveKitOptions) {
               totalFrames = Math.max(totalFrames, report.framesSent || report.framesEncoded);
             }
             if (report.bytesSent) {
-              totalBytes = Math.max(totalBytes, report.bytesSent);
+              outboundBytes += report.bytesSent;
             }
             if (report.targetBitrate) {
               targetBitrateKbps = Math.round(report.targetBitrate / 1000);
@@ -661,6 +662,8 @@ export function useLiveKit({ url, token, onDisconnected }: UseLiveKitOptions) {
           }
         });
       });
+
+      totalBytes = Math.max(totalBytes, outboundBytes);
 
       // Calculate Bitrate and FPS from deltas if not directly reported
       let bitrate = 0;
@@ -691,11 +694,12 @@ export function useLiveKit({ url, token, onDisconnected }: UseLiveKitOptions) {
         dropped: totalDropped,
       };
 
-      // Adaptive playout buffer (viewer only): grow fast on freezes/high jitter, shrink slowly when calm.
+      // Adaptive playout buffer (viewer only): grow fast on retransmission bursts/high jitter, shrink slowly when calm.
       const isViewing = measuredBufferDelay !== undefined;
       if (isViewing) {
         const current = playoutBufferMsRef.current;
-        if (freezeDelta > 0 || jitter > current * 0.5) {
+        // Not freezeCount: screen capture is event-driven, so a static screen looks like a freeze.
+        if (nackDelta > 5 || jitter > current * 0.5) {
           calmSamplesRef.current = 0;
           if (current < MAX_STREAM_BUFFER_MS) setPlayoutBufferMs(current + 100);
         } else if (++calmSamplesRef.current >= 15 && current > DEFAULT_STREAM_BUFFER_MS) {
@@ -738,7 +742,7 @@ export function useLiveKit({ url, token, onDisconnected }: UseLiveKitOptions) {
     isExplicitDisconnectRef.current = false;
 
     const room = new Room({
-      adaptiveStream: true,
+      adaptiveStream: { pixelDensity: 'screen' },
       dynacast: true,
       audioCaptureDefaults: {
         autoGainControl: true,
