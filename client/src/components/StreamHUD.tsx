@@ -112,7 +112,7 @@ export const StreamHUD: React.FC<StreamHUDProps> = ({
         </div>
       </div>
 
-      {(stats.qualityLimitationReason !== undefined || !!stats.freezeCount || !!stats.framesDropped) && (
+      {(stats.qualityLimitationReason !== undefined || !!stats.freezeCount || !!stats.framesDropped || !!stats.nackCount || !!stats.pliCount) && (
         <div className="mt-2.5 bg-white/5 p-2 rounded-xl border border-white/5 flex items-center justify-between gap-3 text-[11px]">
           {stats.qualityLimitationReason !== undefined && (
             <span className={stats.qualityLimitationReason === 'none' ? 'text-emerald-400' : 'text-rose-400'}>
@@ -121,6 +121,14 @@ export const StreamHUD: React.FC<StreamHUDProps> = ({
               {stats.encodeTimeMs !== undefined && ` · encode ${stats.encodeTimeMs}ms`}
             </span>
           )}
+          {stats.targetBitrateKbps !== undefined && (
+            <span className="text-gray-400">alvo {(stats.targetBitrateKbps / 1000).toFixed(1)} Mbps</span>
+          )}
+          {stats.nackCount || stats.pliCount ? (
+            <span className="text-gray-400">
+              NACK {stats.nackCount ?? 0} · PLI {stats.pliCount ?? 0}
+            </span>
+          ) : null}
           {(stats.freezeCount || stats.framesDropped) ? (
             <span className="text-amber-400">
               {stats.freezeCount ? `${stats.freezeCount} freeze ` : ''}

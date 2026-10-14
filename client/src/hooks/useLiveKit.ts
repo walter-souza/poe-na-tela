@@ -176,6 +176,7 @@ export function useLiveKit({ url, token, onDisconnected }: UseLiveKitOptions) {
   const statsIntervalRef = useRef<number | null>(null);
   const prevStatsRef = useRef<{ bytes: number; frames: number; timestamp: number; freezes: number; dropped: number } | null>(null);
   const calmSamplesRef = useRef<number>(0);
+  const prevCountersRef = useRef<{ nack: number; pli: number }>({ nack: 0, pli: 0 });
   const currentVolumeRef = useRef<number>(1);
 
   const applyNoiseSuppression = useCallback(async (track: LocalAudioTrack, enable: boolean) => {
@@ -555,6 +556,9 @@ export function useLiveKit({ url, token, onDisconnected }: UseLiveKitOptions) {
       let qualityLimitationReason: string | undefined;
       let encodeTimeMs: number | undefined;
       let captureFps: number | undefined;
+      let targetBitrateKbps: number | undefined;
+      let totalNack = 0;
+      let totalPli = 0;
       let totalFreezes = 0;
       let totalDropped = 0;
       const now = Date.now();
@@ -598,6 +602,8 @@ export function useLiveKit({ url, token, onDisconnected }: UseLiveKitOptions) {
             if (report.jitter !== undefined) {
               jitter = Math.round(report.jitter * 1000);
             }
+            if (report.nackCount) totalNack += report.nackCount;
+            if (report.pliCount) totalPli += report.pliCount;
             if (report.freezeCount) totalFreezes += report.freezeCount;
             if (report.framesDropped) totalDropped += report.framesDropped;
             if (report.jitterBufferDelay !== undefined && report.jitterBufferEmittedCount) {
@@ -635,6 +641,11 @@ export function useLiveKit({ url, token, onDisconnected }: UseLiveKitOptions) {
             if (report.bytesSent) {
               totalBytes = Math.max(totalBytes, report.bytesSent);
             }
+            if (report.targetBitrate) {
+              targetBitrateKbps = Math.round(report.targetBitrate / 1000);
+            }
+            if (report.nackCount) totalNack += report.nackCount;
+            if (report.pliCount) totalPli += report.pliCount;
             if (report.qualityLimitationReason) {
               qualityLimitationReason = report.qualityLimitationReason;
             }
@@ -669,6 +680,9 @@ export function useLiveKit({ url, token, onDisconnected }: UseLiveKitOptions) {
 
       const freezeDelta = prevStatsRef.current ? Math.max(0, totalFreezes - prevStatsRef.current.freezes) : 0;
       const droppedDelta = prevStatsRef.current ? Math.max(0, totalDropped - prevStatsRef.current.dropped) : 0;
+      const nackDelta = Math.max(0, totalNack - prevCountersRef.current.nack);
+      const pliDelta = Math.max(0, totalPli - prevCountersRef.current.pli);
+      prevCountersRef.current = { nack: totalNack, pli: totalPli };
       prevStatsRef.current = {
         bytes: totalBytes,
         frames: totalFrames,
@@ -704,6 +718,9 @@ export function useLiveKit({ url, token, onDisconnected }: UseLiveKitOptions) {
         bytesReceivedOrSent: totalBytes,
         qualityLimitationReason,
         captureFps,
+        targetBitrateKbps,
+        nackCount: nackDelta,
+        pliCount: pliDelta,
         encodeTimeMs,
         freezeCount: freezeDelta,
         framesDropped: droppedDelta,
@@ -1206,7 +1223,8 @@ export function useLiveKit({ url, token, onDisconnected }: UseLiveKitOptions) {
           },
           dtx: false,
           red: true,
-          simulcast: false,
+          simulcast: !!profile.simulcastLayers,
+          screenShareSimulcastLayers: profile.simulcastLayers,
           videoCodec: profile.codec,
           scalabilityMode: profile.scalabilityMode,
           // Backup codec costs a second encode on the host; only AV1 has decoders missing in the wild.

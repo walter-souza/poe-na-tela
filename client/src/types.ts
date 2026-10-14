@@ -28,6 +28,11 @@ export interface StreamStats {
   qualityLimitationReason?: string;
   /** Publisher only: frames per second delivered by the screen capture (before encoding). */
   captureFps?: number;
+  /** Publisher only: bitrate the congestion controller is currently targeting (kbps). */
+  targetBitrateKbps?: number;
+  /** Retransmission requests / keyframe requests in the last sampling window (both directions). */
+  nackCount?: number;
+  pliCount?: number;
   /** Publisher only: average encode time per frame (ms). */
   encodeTimeMs?: number;
   /** Viewer only: video freezes in the last sampling window. */

@@ -1,3 +1,4 @@
+import { VideoPreset } from 'livekit-client';
 import type { VideoCodecPreference, VideoFrameRate, VideoResolution } from '../types';
 
 export interface ScreenShareProfile {
@@ -5,13 +6,15 @@ export interface ScreenShareProfile {
   /** SVC mode so the SFU can drop temporal/spatial layers per viewer without a second encode. */
   scalabilityMode?: 'L1T3';
   maxBitrate: number;
+  /** H.264 has no SVC: publish one lower 720p30 layer so weak viewers get it instead of freezing. */
+  simulcastLayers?: VideoPreset[];
   degradationPreference: RTCDegradationPreference;
 }
 
 // H.264 baseline bitrates (kbps). Other codecs scale from these by efficiency.
 const H264_BITRATE_KBPS: Record<VideoResolution, Record<VideoFrameRate, number>> = {
   '720p': { 30: 2000, 60: 3000 },
-  '1080p': { 30: 3500, 60: 6000 },
+  '1080p': { 30: 3000, 60: 5000 },
   '1440p': { 30: 5500, 60: 9000 },
   '4k': { 30: 9000, 60: 14000 },
 };
@@ -114,6 +117,8 @@ export async function buildScreenShareProfile(
     codec,
     scalabilityMode: codec === 'av1' || codec === 'vp9' ? 'L1T3' : undefined,
     maxBitrate,
+    simulcastLayers:
+      codec === 'h264' && resolution !== '720p' ? [new VideoPreset(1280, 720, 1_500_000, 30, 'medium')] : undefined,
     // Games: keep fps and let resolution give. Lower fps: let both adapt.
     degradationPreference: fps === 60 ? 'maintain-framerate' : 'balanced',
   };
