@@ -177,6 +177,7 @@ export function useLiveKit({ url, token, onDisconnected }: UseLiveKitOptions) {
   const prevStatsRef = useRef<{ bytes: number; frames: number; timestamp: number; freezes: number; dropped: number } | null>(null);
   const calmSamplesRef = useRef<number>(0);
   const prevCountersRef = useRef<{ nack: number; pli: number }>({ nack: 0, pli: 0 });
+  const prevBufferRef = useRef<{ delay: number; count: number } | null>(null);
   const currentVolumeRef = useRef<number>(1);
 
   const applyNoiseSuppression = useCallback(async (track: LocalAudioTrack, enable: boolean) => {
@@ -554,6 +555,8 @@ export function useLiveKit({ url, token, onDisconnected }: UseLiveKitOptions) {
       let totalFrames = 0;
       let jitter = 0;
       let measuredBufferDelay: number | undefined;
+      let bufferDelaySum = 0;
+      let bufferEmittedCount = 0;
       let qualityLimitationReason: string | undefined;
       let encodeTimeMs: number | undefined;
       let captureFps: number | undefined;
@@ -608,6 +611,9 @@ export function useLiveKit({ url, token, onDisconnected }: UseLiveKitOptions) {
             if (report.freezeCount) totalFreezes += report.freezeCount;
             if (report.framesDropped) totalDropped += report.framesDropped;
             if (report.jitterBufferDelay !== undefined && report.jitterBufferEmittedCount) {
+              // Cumulative counters: the per-window delta below gives the *current* delay.
+              bufferDelaySum += report.jitterBufferDelay;
+              bufferEmittedCount += report.jitterBufferEmittedCount;
               measuredBufferDelay = Math.round(
                 (report.jitterBufferDelay / report.jitterBufferEmittedCount) * 1000
               );
@@ -693,6 +699,17 @@ export function useLiveKit({ url, token, onDisconnected }: UseLiveKitOptions) {
         freezes: totalFreezes,
         dropped: totalDropped,
       };
+
+      // Current jitter-buffer delay: average over the last sampling window, not since stream start.
+      if (measuredBufferDelay !== undefined) {
+        const prev = prevBufferRef.current;
+        if (prev && bufferEmittedCount > prev.count) {
+          measuredBufferDelay = Math.round(
+            ((bufferDelaySum - prev.delay) / (bufferEmittedCount - prev.count)) * 1000
+          );
+        }
+        prevBufferRef.current = { delay: bufferDelaySum, count: bufferEmittedCount };
+      }
 
       // Adaptive playout buffer (viewer only): grow fast on retransmission bursts/high jitter, shrink slowly when calm.
       const isViewing = measuredBufferDelay !== undefined;

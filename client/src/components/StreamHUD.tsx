@@ -30,7 +30,7 @@ export const StreamHUD: React.FC<StreamHUDProps> = ({
   };
 
   const bitrateMbps = (stats.bitrateKbps / 1000).toFixed(2);
-  const currentBuffer = stats.bufferDelayMs ?? stats.playoutBufferMs ?? playoutBufferMs ?? 200;
+  const targetBuffer = stats.playoutBufferMs ?? playoutBufferMs ?? 200;
 
   return (
     <div className="absolute top-2 left-2 sm:top-4 sm:left-4 z-40 bg-black/90 backdrop-blur-md border border-white/10 rounded-2xl p-3 sm:p-4 text-xs font-mono text-gray-200 shadow-2xl w-[calc(100vw-1rem)] max-w-sm sm:w-auto sm:min-w-[300px] transition-all">
@@ -102,7 +102,7 @@ export const StreamHUD: React.FC<StreamHUDProps> = ({
         </div>
         <div className="flex items-center gap-1.5">
           <span className="text-[10px] bg-emerald-500/20 text-emerald-300 font-bold px-1.5 py-0.5 rounded border border-emerald-500/30">
-            Alvo {currentBuffer}ms
+            {stats.bufferDelayMs !== undefined ? `Atual ${stats.bufferDelayMs}ms · ` : ''}alvo {targetBuffer}ms
           </span>
           {stats.jitterMs > 0 && (
             <span className="text-[10px] text-gray-500 font-normal">
