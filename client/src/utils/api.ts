@@ -6,7 +6,7 @@ export function getApiBaseUrl(): string {
   if (envUrl && typeof envUrl === 'string' && envUrl.trim().length > 0) {
     return envUrl.replace(/\/$/, '');
   }
-  if (typeof window !== 'undefined' && (window.location.protocol === 'file:' || window.desktopAPI?.isDesktop)) {
+  if (typeof window !== 'undefined' && (window.location.protocol === 'file:')) {
     return 'http://127.0.0.1:3001';
   }
   return '/api';

@@ -30,7 +30,7 @@ export const StreamHUD: React.FC<StreamHUDProps> = ({
   };
 
   const bitrateMbps = (stats.bitrateKbps / 1000).toFixed(2);
-  const currentBuffer = stats.bufferDelayMs ?? stats.playoutBufferMs ?? playoutBufferMs ?? 800;
+  const currentBuffer = stats.bufferDelayMs ?? stats.playoutBufferMs ?? playoutBufferMs ?? 200;
 
   return (
     <div className="absolute top-2 left-2 sm:top-4 sm:left-4 z-40 bg-black/90 backdrop-blur-md border border-white/10 rounded-2xl p-3 sm:p-4 text-xs font-mono text-gray-200 shadow-2xl w-[calc(100vw-1rem)] max-w-sm sm:w-auto sm:min-w-[300px] transition-all">
@@ -94,7 +94,7 @@ export const StreamHUD: React.FC<StreamHUDProps> = ({
         </div>
       </div>
 
-      {/* Playout Buffer Metric (Padronizado e Estabilizado para 60 FPS) */}
+      {/* Playout Buffer Metric (adaptativo) */}
       <div className="mt-2.5 bg-white/5 p-2 rounded-xl border border-white/5 flex items-center justify-between">
         <div className="flex items-center gap-1.5 text-gray-400">
           <Clock className="w-3.5 h-3.5 text-emerald-400" />
@@ -102,7 +102,7 @@ export const StreamHUD: React.FC<StreamHUDProps> = ({
         </div>
         <div className="flex items-center gap-1.5">
           <span className="text-[10px] bg-emerald-500/20 text-emerald-300 font-bold px-1.5 py-0.5 rounded border border-emerald-500/30">
-            Estabilizado (~{currentBuffer}ms)
+            Alvo {currentBuffer}ms
           </span>
           {stats.jitterMs > 0 && (
             <span className="text-[10px] text-gray-500 font-normal">
@@ -111,6 +111,23 @@ export const StreamHUD: React.FC<StreamHUDProps> = ({
           )}
         </div>
       </div>
+
+      {(stats.qualityLimitationReason !== undefined || stats.freezeCount || stats.framesDropped) && (
+        <div className="mt-2.5 bg-white/5 p-2 rounded-xl border border-white/5 flex items-center justify-between gap-3 text-[11px]">
+          {stats.qualityLimitationReason !== undefined && (
+            <span className={stats.qualityLimitationReason === 'none' ? 'text-emerald-400' : 'text-rose-400'}>
+              Limite: {stats.qualityLimitationReason === 'cpu' ? 'CPU' : stats.qualityLimitationReason === 'bandwidth' ? 'banda' : 'nenhum'}
+              {stats.encodeTimeMs !== undefined && ` · encode ${stats.encodeTimeMs}ms`}
+            </span>
+          )}
+          {(stats.freezeCount || stats.framesDropped) ? (
+            <span className="text-amber-400">
+              {stats.freezeCount ? `${stats.freezeCount} freeze ` : ''}
+              {stats.framesDropped ? `${stats.framesDropped} quadros perdidos` : ''}
+            </span>
+          ) : null}
+        </div>
+      )}
 
       <div className="mt-2.5 pt-2 border-t border-white/10 flex items-center justify-between text-gray-400">
         <div className="flex items-center gap-1">

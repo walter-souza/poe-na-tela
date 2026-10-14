@@ -1,6 +1,6 @@
-import React, { useState, useEffect } from 'react';
-import { Monitor, Zap, X, ShieldCheck, Sparkles, RefreshCw, Layers } from 'lucide-react';
-import type { StreamQualityConfig, VideoResolution, VideoFrameRate, DesktopSource } from '../types';
+import React, { useState } from 'react';
+import { Monitor, Zap, X, ShieldCheck, Sparkles } from 'lucide-react';
+import type { StreamQualityConfig, VideoResolution, VideoFrameRate } from '../types';
 
 interface ScreenShareModalProps {
   isOpen: boolean;
@@ -13,71 +13,22 @@ export const ScreenShareModal: React.FC<ScreenShareModalProps> = ({
   onClose,
   onConfirm,
 }) => {
-  const isDesktopApp = typeof window !== 'undefined' && !!window.desktopAPI?.isDesktop;
-
   const [resolution, setResolution] = useState<VideoResolution>('1080p');
   const [frameRate, setFrameRate] = useState<VideoFrameRate>(60);
   const [isolateRoomAudio, setIsolateRoomAudio] = useState<boolean>(true);
 
-  // Desktop native source selection
-  const [sources, setSources] = useState<DesktopSource[]>([]);
-  const [selectedSourceId, setSelectedSourceId] = useState<string | null>(null);
-  const [activeTab, setActiveTab] = useState<'screens' | 'windows'>('windows');
-  const [isLoadingSources, setIsLoadingSources] = useState<boolean>(false);
-
-  const fetchDesktopSources = async () => {
-    if (!window.desktopAPI?.getSources) return;
-    setIsLoadingSources(true);
-    try {
-      const available = await window.desktopAPI.getSources();
-      setSources(available);
-      if (available.length > 0 && !selectedSourceId) {
-        // Prefer first game/window or first screen
-        const firstWindow = available.find((s) => s.id.startsWith('window:'));
-        setSelectedSourceId(firstWindow ? firstWindow.id : available[0].id);
-      }
-    } catch (e) {
-      console.error('Failed to load desktop sources:', e);
-    } finally {
-      setIsLoadingSources(false);
-    }
-  };
-
-  useEffect(() => {
-    if (isOpen && isDesktopApp) {
-      fetchDesktopSources();
-    }
-  }, [isOpen, isDesktopApp]);
-
   if (!isOpen) return null;
 
   const handleStart = () => {
-    const is60 = frameRate === 60;
-    const finalBitrate =
-      resolution === '4k'
-        ? (is60 ? 12000 : 7000)
-        : resolution === '1440p'
-        ? (is60 ? 7000 : 4500)
-        : resolution === '1080p'
-        ? (is60 ? 4500 : 3000)
-        : (is60 ? 2800 : 1800);
-
     onConfirm({
       resolution,
       frameRate,
-      bitrateKbps: finalBitrate,
-      codec: 'h264',
       includeAudio: true,
       contentHint: 'motion',
       isolateRoomAudio,
-      sourceId: selectedSourceId || undefined,
     });
     onClose();
   };
-
-  const screenSources = sources.filter((s) => s.id.startsWith('screen:'));
-  const windowSources = sources.filter((s) => s.id.startsWith('window:'));
-  const displayedSources = activeTab === 'screens' ? screenSources : windowSources;
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/80 backdrop-blur-sm animate-fadeIn">
@@ -91,16 +42,9 @@ export const ScreenShareModal: React.FC<ScreenShareModalProps> = ({
             <div>
               <div className="flex items-center gap-2">
                 <h3 className="font-bold text-white text-sm sm:text-base">Configurações de Transmissão</h3>
-                {isDesktopApp && (
-                  <span className="text-[10px] bg-purple-500/20 text-purple-300 font-bold px-2 py-0.5 rounded-full border border-purple-500/30 flex items-center gap-1">
-                    <Sparkles className="w-3 h-3" /> APP DESKTOP (60 FPS)
-                  </span>
-                )}
               </div>
               <p className="text-[11px] sm:text-xs text-gray-400">
-                {isDesktopApp
-                  ? 'Captura nativa de jogos com aceleração por GPU e taxa fluida'
-                  : 'Qualidade de vídeo e isolamento de som para seus amigos'}
+                Qualidade de vídeo e isolamento de som para seus amigos
               </p>
             </div>
           </div>
@@ -113,89 +57,6 @@ export const ScreenShareModal: React.FC<ScreenShareModalProps> = ({
         </div>
 
         <div className="p-4 sm:p-6 space-y-4 sm:space-y-5 text-sm max-h-[80vh] sm:max-h-[75vh] overflow-y-auto">
-          {/* Desktop Source Picker (Screens / Windows) */}
-          {isDesktopApp && (
-            <div className="space-y-3">
-              <div className="flex items-center justify-between">
-                <label className="block font-medium text-xs text-gray-400 uppercase tracking-wider">
-                  Selecione o que transmitir
-                </label>
-                <button
-                  onClick={fetchDesktopSources}
-                  disabled={isLoadingSources}
-                  className="flex items-center gap-1 text-xs text-indigo-400 hover:text-indigo-300 transition"
-                >
-                  <RefreshCw className={`w-3.5 h-3.5 ${isLoadingSources ? 'animate-spin' : ''}`} />
-                  Atualizar Janelas
-                </button>
-              </div>
-
-              {/* Tabs: Janelas / Telas */}
-              <div className="flex gap-2 p-1 bg-white/5 rounded-xl border border-white/5">
-                <button
-                  type="button"
-                  onClick={() => setActiveTab('windows')}
-                  className={`flex-1 py-1.5 px-3 rounded-lg text-xs font-semibold transition flex items-center justify-center gap-1.5 ${
-                    activeTab === 'windows'
-                      ? 'bg-indigo-600 text-white shadow'
-                      : 'text-gray-400 hover:text-white'
-                  }`}
-                >
-                  <Layers className="w-3.5 h-3.5" />
-                  Janelas de Jogos ({windowSources.length})
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setActiveTab('screens')}
-                  className={`flex-1 py-1.5 px-3 rounded-lg text-xs font-semibold transition flex items-center justify-center gap-1.5 ${
-                    activeTab === 'screens'
-                      ? 'bg-indigo-600 text-white shadow'
-                      : 'text-gray-400 hover:text-white'
-                  }`}
-                >
-                  <Monitor className="w-3.5 h-3.5" />
-                  Telas Inteiras ({screenSources.length})
-                </button>
-              </div>
-
-              {/* Source Grid */}
-              <div className="grid grid-cols-2 gap-3 max-h-48 overflow-y-auto p-1 bg-black/30 rounded-xl border border-white/5">
-                {displayedSources.map((source) => (
-                  <button
-                    key={source.id}
-                    type="button"
-                    onClick={() => setSelectedSourceId(source.id)}
-                    className={`p-2 rounded-xl border text-left transition flex flex-col gap-1.5 relative overflow-hidden group ${
-                      selectedSourceId === source.id
-                        ? 'bg-indigo-600/20 border-indigo-500 shadow-md ring-1 ring-indigo-500'
-                        : 'bg-white/5 border-white/5 hover:bg-white/10 text-gray-300'
-                    }`}
-                  >
-                    <div className="w-full h-24 rounded-lg bg-black/60 overflow-hidden flex items-center justify-center border border-white/5">
-                      {source.thumbnail ? (
-                        <img
-                          src={source.thumbnail}
-                          alt={source.name}
-                          className="w-full h-full object-contain"
-                        />
-                      ) : (
-                        <Monitor className="w-8 h-8 text-gray-600" />
-                      )}
-                    </div>
-                    <div className="flex items-center gap-1.5 truncate w-full">
-                      {source.appIcon && (
-                        <img src={source.appIcon} alt="" className="w-4 h-4 rounded shrink-0" />
-                      )}
-                      <span className="text-xs font-medium truncate text-white">
-                        {source.name || 'Janela'}
-                      </span>
-                    </div>
-                  </button>
-                ))}
-              </div>
-            </div>
-          )}
-
           {/* Frame Rate Selection (Unlocked 60 FPS / 30 FPS) */}
           <div>
             <label className="block font-medium text-xs text-gray-400 uppercase tracking-wider mb-2">

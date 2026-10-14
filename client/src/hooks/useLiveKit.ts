@@ -3,9 +3,7 @@ import {
   Room,
   RoomEvent,
   Track,
-  LocalVideoTrack,
   LocalAudioTrack,
-  VideoPresets,
   ConnectionState,
   type RemoteParticipant,
 } from 'livekit-client';
@@ -13,6 +11,7 @@ import type { StreamQualityConfig, StreamStats, ChatMessage, ReactionEvent, Part
 import { playJoinSound, playLeaveSound } from '../utils/soundEffects';
 import { startKeepAlive, stopKeepAlive } from '../utils/keepAlive';
 import { isNoiseSuppressionSupported, NoiseSuppressionProcessor } from '../utils/noiseSuppression';
+import { buildScreenShareProfile, getResolutionSize } from '../utils/streamProfile';
 
 export interface UseLiveKitOptions {
   url: string;
@@ -166,15 +165,18 @@ export function useLiveKit({ url, token, onDisconnected }: UseLiveKitOptions) {
   isNoiseSuppressionEnabledRef.current = isNoiseSuppressionEnabled;
   const activeProcessorRef = useRef<NoiseSuppressionProcessor | null>(null);
 
-  // WebRTC Playout / Jitter Buffer (Estabilizado padrão em 800ms [faixa de 600-1000ms] para máxima fluidez e zero congelamentos)
-  const DEFAULT_STREAM_BUFFER_MS = 800;
-  const [playoutBufferMs] = useState<number>(DEFAULT_STREAM_BUFFER_MS);
+  // WebRTC Playout / Jitter Buffer: começa baixo (latência) e sobe só quando as stats mostram freezes/jitter.
+  const DEFAULT_STREAM_BUFFER_MS = 200;
+  const MIN_STREAM_BUFFER_MS = 100;
+  const MAX_STREAM_BUFFER_MS = 1000;
+  const MAX_VOICE_BUFFER_MS = 150;
+  const [playoutBufferMs, setPlayoutBufferMsState] = useState<number>(DEFAULT_STREAM_BUFFER_MS);
   const playoutBufferMsRef = useRef<number>(DEFAULT_STREAM_BUFFER_MS);
 
   const statsIntervalRef = useRef<number | null>(null);
-  const prevStatsRef = useRef<{ bytes: number; frames: number; timestamp: number } | null>(null);
+  const prevStatsRef = useRef<{ bytes: number; frames: number; timestamp: number; freezes: number; dropped: number } | null>(null);
+  const calmSamplesRef = useRef<number>(0);
   const currentVolumeRef = useRef<number>(1);
-  const desktopTracksRef = useRef<{ videoTrack?: LocalVideoTrack; audioTrack?: LocalAudioTrack }>({});
 
   const applyNoiseSuppression = useCallback(async (track: LocalAudioTrack, enable: boolean) => {
     try {
@@ -319,9 +321,9 @@ export function useLiveKit({ url, token, onDisconnected }: UseLiveKitOptions) {
         track.source === Track.Source.ScreenShare ||
         track.source === Track.Source.ScreenShareAudio;
 
-      // Screen share video & game audio get the stabilized anti-freeze buffer (800ms).
+      // Screen share video & game audio get the adaptive stream buffer.
       // Voice chat (microphone) stays at low latency (<= 150ms) to preserve natural conversation.
-      const targetMs = isScreen ? bufferMs : Math.min(bufferMs, 150);
+      const targetMs = isScreen ? bufferMs : Math.min(bufferMs, MAX_VOICE_BUFFER_MS);
       const targetSec = targetMs / 1000;
 
       const receiver = (track as any).receiver as RTCRtpReceiver | undefined;
@@ -354,6 +356,7 @@ export function useLiveKit({ url, token, onDisconnected }: UseLiveKitOptions) {
         const receivers = subPC.getReceivers() as RTCRtpReceiver[];
         const bufferSec = bufferMs / 1000;
         receivers.forEach((receiver) => {
+          if (receiver.track?.kind === 'audio') return; // mic/screen audio handled per track below
           if ('playoutDelayHint' in receiver) {
             receiver.playoutDelayHint = bufferSec;
           }
@@ -377,8 +380,9 @@ export function useLiveKit({ url, token, onDisconnected }: UseLiveKitOptions) {
   }, [applyReceiverPlayoutBuffer]);
 
   const setPlayoutBufferMs = useCallback((bufferMs: number) => {
-    const clamped = Math.max(600, Math.min(1000, bufferMs));
+    const clamped = Math.max(MIN_STREAM_BUFFER_MS, Math.min(MAX_STREAM_BUFFER_MS, bufferMs));
     playoutBufferMsRef.current = clamped;
+    setPlayoutBufferMsState(clamped);
     applyBufferToAllReceivers(clamped);
   }, [applyBufferToAllReceivers]);
 
@@ -543,11 +547,15 @@ export function useLiveKit({ url, token, onDisconnected }: UseLiveKitOptions) {
       let fps = 0;
       let width = 0;
       let height = 0;
-      let codec = 'VP9';
+      let codec = '';
       let totalBytes = 0;
       let totalFrames = 0;
       let jitter = 0;
       let measuredBufferDelay: number | undefined;
+      let qualityLimitationReason: string | undefined;
+      let encodeTimeMs: number | undefined;
+      let totalFreezes = 0;
+      let totalDropped = 0;
       const now = Date.now();
 
       reports.forEach((rtcReport) => {
@@ -589,6 +597,8 @@ export function useLiveKit({ url, token, onDisconnected }: UseLiveKitOptions) {
             if (report.jitter !== undefined) {
               jitter = Math.round(report.jitter * 1000);
             }
+            if (report.freezeCount) totalFreezes += report.freezeCount;
+            if (report.framesDropped) totalDropped += report.framesDropped;
             if (report.jitterBufferDelay !== undefined && report.jitterBufferEmittedCount) {
               measuredBufferDelay = Math.round(
                 (report.jitterBufferDelay / report.jitterBufferEmittedCount) * 1000
@@ -619,6 +629,12 @@ export function useLiveKit({ url, token, onDisconnected }: UseLiveKitOptions) {
             if (report.bytesSent) {
               totalBytes = Math.max(totalBytes, report.bytesSent);
             }
+            if (report.qualityLimitationReason) {
+              qualityLimitationReason = report.qualityLimitationReason;
+            }
+            if (report.totalEncodeTime && report.framesEncoded) {
+              encodeTimeMs = Math.round((report.totalEncodeTime / report.framesEncoded) * 1000 * 10) / 10;
+            }
             if (report.codecId) {
               const codecReport = rtcReport.get(report.codecId);
               if (codecReport && codecReport.mimeType) {
@@ -645,30 +661,50 @@ export function useLiveKit({ url, token, onDisconnected }: UseLiveKitOptions) {
         }
       }
 
-      prevStatsRef.current = { bytes: totalBytes, frames: totalFrames, timestamp: now };
+      const freezeDelta = prevStatsRef.current ? Math.max(0, totalFreezes - prevStatsRef.current.freezes) : 0;
+      const droppedDelta = prevStatsRef.current ? Math.max(0, totalDropped - prevStatsRef.current.dropped) : 0;
+      prevStatsRef.current = {
+        bytes: totalBytes,
+        frames: totalFrames,
+        timestamp: now,
+        freezes: totalFreezes,
+        dropped: totalDropped,
+      };
 
-      if (width === 0 || height === 0) {
-        width = 1920;
-        height = 1080;
+      // Adaptive playout buffer (viewer only): grow fast on freezes/high jitter, shrink slowly when calm.
+      const isViewing = measuredBufferDelay !== undefined;
+      if (isViewing) {
+        const current = playoutBufferMsRef.current;
+        if (freezeDelta > 0 || jitter > current * 0.5) {
+          calmSamplesRef.current = 0;
+          if (current < MAX_STREAM_BUFFER_MS) setPlayoutBufferMs(current + 100);
+        } else if (++calmSamplesRef.current >= 15 && current > DEFAULT_STREAM_BUFFER_MS) {
+          calmSamplesRef.current = 0;
+          setPlayoutBufferMs(current - 50);
+        }
       }
 
       setStats({
         bitrateKbps: bitrate,
         rttMs: rtt,
         packetLossPercent: parseFloat(packetLoss.toFixed(1)),
-        fps: fps || (totalBytes > 0 ? 60 : 0),
+        fps,
         width,
         height,
-        codec,
+        codec: codec || '—',
         jitterMs: jitter,
-        bufferDelayMs: measuredBufferDelay ?? playoutBufferMsRef.current,
+        bufferDelayMs: measuredBufferDelay,
         playoutBufferMs: playoutBufferMsRef.current,
         bytesReceivedOrSent: totalBytes,
+        qualityLimitationReason,
+        encodeTimeMs,
+        freezeCount: freezeDelta,
+        framesDropped: droppedDelta,
       });
     } catch {
       // Ignore stats collection error during renegotiations
     }
-  }, []);
+  }, [setPlayoutBufferMs]);
 
   // Connect to room
   useEffect(() => {
@@ -685,16 +721,7 @@ export function useLiveKit({ url, token, onDisconnected }: UseLiveKitOptions) {
         noiseSuppression: true,
         echoCancellation: true,
       },
-      videoCaptureDefaults: {
-        resolution: VideoPresets.h1080.resolution,
-      },
       publishDefaults: {
-        videoCodec: 'h264',
-        screenShareEncoding: {
-          maxBitrate: 3500000,
-          maxFramerate: 60,
-          priority: 'high',
-        },
         audioPreset: {
           maxBitrate: 192000,
           priority: 'high',
@@ -1128,142 +1155,23 @@ export function useLiveKit({ url, token, onDisconnected }: UseLiveKitOptions) {
     });
   };
 
-  // Start Screen Sharing with high-fidelity stereo audio capture (Cinema / Gaming / Music mode)
+  // Start Screen Sharing: codec/bitrate/SVC are derived from the device's encoder support (see streamProfile)
   const startScreenShare = async (config?: Partial<StreamQualityConfig>) => {
     const room = roomRef.current;
     if (!room) return;
 
     try {
       const targetFps = config?.frameRate || 60;
-      const is60Fps = targetFps === 60;
+      const resolution = config?.resolution || '1080p';
       const shouldIncludeAudio = config?.includeAudio ?? true;
       const shouldIsolateRoomAudio = config?.isolateRoomAudio ?? true;
 
-      const targetBitrate = config?.bitrateKbps
-        ? config.bitrateKbps * 1000
-        : config?.resolution === '4k'
-        ? (is60Fps ? 12000000 : 7000000)
-        : config?.resolution === '1440p'
-        ? (is60Fps ? 7000000 : 4500000)
-        : config?.resolution === '1080p'
-        ? (is60Fps ? 4500000 : 3000000)
-        : (is60Fps ? 2800000 : 1800000);
+      const profile = await buildScreenShareProfile(resolution, targetFps, {
+        codec: config?.codec,
+        bitrateKbps: config?.bitrateKbps,
+      });
+      const { width, height } = getResolutionSize(resolution);
 
-      const screenResolution =
-        config?.resolution === '4k'
-          ? { width: 3840, height: 2160, frameRate: targetFps }
-          : config?.resolution === '1440p'
-          ? { width: 2560, height: 1440, frameRate: targetFps }
-          : config?.resolution === '720p'
-          ? { width: 1280, height: 720, frameRate: targetFps }
-          : { width: 1920, height: 1080, frameRate: targetFps };
-
-      // 1. Check if running in native Desktop App with selected source
-      if (typeof window !== 'undefined' && window.desktopAPI?.isDesktop && config?.sourceId) {
-        const desktopConstraints: any = {
-          audio: shouldIncludeAudio
-            ? {
-                mandatory: {
-                  chromeMediaSource: 'desktop',
-                },
-              }
-            : false,
-          video: {
-            mandatory: {
-              chromeMediaSource: 'desktop',
-              chromeMediaSourceId: config.sourceId,
-              minWidth: screenResolution.width,
-              maxWidth: screenResolution.width,
-              minHeight: screenResolution.height,
-              maxHeight: screenResolution.height,
-              minFrameRate: Math.min(30, targetFps),
-              maxFrameRate: targetFps,
-            },
-            optional: [
-              { minFrameRate: Math.min(30, targetFps) },
-              { maxFrameRate: targetFps },
-              { frameRate: targetFps },
-            ],
-          },
-        };
-
-        let mediaStream: MediaStream;
-        try {
-          mediaStream = await navigator.mediaDevices.getUserMedia(desktopConstraints);
-        } catch (mediaErr) {
-          console.warn('Desktop getUserMedia with audio failed, falling back to video-only capture:', mediaErr);
-          const videoOnlyConstraints: any = {
-            audio: false,
-            video: desktopConstraints.video,
-          };
-          mediaStream = await navigator.mediaDevices.getUserMedia(videoOnlyConstraints);
-        }
-        const videoMediaTrack = mediaStream.getVideoTracks()[0];
-        const audioMediaTrack = mediaStream.getAudioTracks()[0];
-
-        if (videoMediaTrack) {
-          videoMediaTrack.contentHint = config?.contentHint || 'motion';
-          const localVideoTrack = new LocalVideoTrack(videoMediaTrack);
-
-          await room.localParticipant.publishTrack(localVideoTrack, {
-            name: 'screen_share',
-            source: Track.Source.ScreenShare,
-            videoCodec: (config?.codec as any) || 'h264',
-            videoEncoding: {
-              maxBitrate: targetBitrate,
-              maxFramerate: targetFps,
-              priority: 'high',
-            },
-            simulcast: false,
-          });
-
-          try {
-            const sender = (localVideoTrack as any).sender as RTCRtpSender;
-            if (sender && typeof sender.getParameters === 'function') {
-              const params = sender.getParameters();
-              if (params) {
-                params.degradationPreference = 'balanced';
-                if (params.encodings && params.encodings.length > 0) {
-                  params.encodings[0].maxFramerate = targetFps;
-                  params.encodings[0].maxBitrate = targetBitrate;
-                  params.encodings[0].networkPriority = 'high';
-                  params.encodings[0].priority = 'high';
-                }
-                await sender.setParameters(params);
-              }
-            }
-          } catch (e) {
-            // Non-critical
-          }
-
-          desktopTracksRef.current.videoTrack = localVideoTrack;
-          setLocalScreenTrack(localVideoTrack);
-        }
-
-        if (audioMediaTrack && shouldIncludeAudio) {
-          audioMediaTrack.contentHint = 'music';
-          const localAudioTrack = new LocalAudioTrack(audioMediaTrack);
-
-          await room.localParticipant.publishTrack(localAudioTrack, {
-            name: 'screen_share_audio',
-            source: Track.Source.ScreenShareAudio,
-            audioPreset: { maxBitrate: 192000, priority: 'high' },
-            dtx: false,
-            red: true,
-          });
-
-          desktopTracksRef.current.audioTrack = localAudioTrack;
-        }
-
-        setIsScreenSharing(true);
-        setIsLocalScreenAudioMuted(false);
-        setHostName(room.localParticipant.name || room.localParticipant.identity);
-        startKeepAlive();
-        updateScreenShares(room);
-        return;
-      }
-
-      // 2. Browser Standard getDisplayMedia capture
       await room.localParticipant.setScreenShareEnabled(
         true,
         {
@@ -1281,7 +1189,8 @@ export function useLiveKit({ url, token, onDisconnected }: UseLiveKitOptions) {
           surfaceSwitching: 'include',
           systemAudio: 'include',
           suppressLocalAudioPlayback: false,
-          resolution: screenResolution,
+          resolution: { width, height, frameRate: targetFps },
+          contentHint: config?.contentHint || 'motion',
         },
         {
           audioPreset: {
@@ -1291,9 +1200,13 @@ export function useLiveKit({ url, token, onDisconnected }: UseLiveKitOptions) {
           dtx: false,
           red: true,
           simulcast: false,
-          videoCodec: (config?.codec as any) || 'h264',
+          videoCodec: profile.codec,
+          scalabilityMode: profile.scalabilityMode,
+          // Backup codec costs a second encode on the host; only AV1 has decoders missing in the wild.
+          backupCodec: profile.codec === 'av1',
+          degradationPreference: profile.degradationPreference,
           videoEncoding: {
-            maxBitrate: targetBitrate,
+            maxBitrate: profile.maxBitrate,
             maxFramerate: targetFps,
             priority: 'high',
           },
@@ -1308,34 +1221,6 @@ export function useLiveKit({ url, token, onDisconnected }: UseLiveKitOptions) {
 
       const videoTrackPub = room.localParticipant.getTrackPublication(Track.Source.ScreenShare);
       if (videoTrackPub && videoTrackPub.track) {
-        const mediaTrack = videoTrackPub.track.mediaStreamTrack;
-
-        // Unified mode: 'motion' contentHint + balanced degradation ensures 60 FPS smoothness while preserving crisp text
-        if (mediaTrack) {
-          mediaTrack.contentHint = 'motion';
-        }
-
-        // Apply degradation preference & encoding parameters to allow smooth adaptation under network stress without freezing
-        try {
-          const sender = (videoTrackPub.track as any).sender as RTCRtpSender;
-          if (sender && typeof sender.getParameters === 'function') {
-            const params = sender.getParameters();
-            if (params) {
-              params.degradationPreference = 'balanced';
-
-              if (params.encodings && params.encodings.length > 0) {
-                params.encodings[0].maxFramerate = targetFps;
-                params.encodings[0].maxBitrate = targetBitrate;
-                params.encodings[0].networkPriority = 'high';
-                params.encodings[0].priority = 'high';
-              }
-              await sender.setParameters(params);
-            }
-          }
-        } catch (e) {
-          // Non-critical fallback
-        }
-
         setLocalScreenTrack(videoTrackPub.track);
         setIsScreenSharing(true);
         setIsLocalScreenAudioMuted(false);
@@ -1356,23 +1241,7 @@ export function useLiveKit({ url, token, onDisconnected }: UseLiveKitOptions) {
     const room = roomRef.current;
     if (!room) return;
 
-    if (desktopTracksRef.current.videoTrack || desktopTracksRef.current.audioTrack) {
-      if (desktopTracksRef.current.videoTrack) {
-        try {
-          await room.localParticipant.unpublishTrack(desktopTracksRef.current.videoTrack);
-          desktopTracksRef.current.videoTrack.stop();
-        } catch {}
-      }
-      if (desktopTracksRef.current.audioTrack) {
-        try {
-          await room.localParticipant.unpublishTrack(desktopTracksRef.current.audioTrack);
-          desktopTracksRef.current.audioTrack.stop();
-        } catch {}
-      }
-      desktopTracksRef.current = {};
-    } else {
-      await room.localParticipant.setScreenShareEnabled(false);
-    }
+    await room.localParticipant.setScreenShareEnabled(false);
 
     setIsScreenSharing(false);
     setIsLocalScreenAudioMuted(false);
@@ -1384,13 +1253,6 @@ export function useLiveKit({ url, token, onDisconnected }: UseLiveKitOptions) {
   const toggleLocalScreenAudio = () => {
     const room = roomRef.current;
     if (!room || !room.localParticipant) return;
-
-    if (desktopTracksRef.current.audioTrack?.mediaStreamTrack) {
-      const nextMute = !isLocalScreenAudioMuted;
-      desktopTracksRef.current.audioTrack.mediaStreamTrack.enabled = !nextMute;
-      setIsLocalScreenAudioMuted(nextMute);
-      return;
-    }
 
     const audioPub = room.localParticipant.getTrackPublication(Track.Source.ScreenShareAudio);
     if (audioPub && audioPub.track && audioPub.track.mediaStreamTrack) {

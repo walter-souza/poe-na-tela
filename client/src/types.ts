@@ -5,12 +5,11 @@ export type VideoCodecPreference = 'vp9' | 'vp8' | 'h264' | 'av1';
 export interface StreamQualityConfig {
   resolution: VideoResolution;
   frameRate: VideoFrameRate;
-  bitrateKbps: number; // e.g. 6000 for 6 Mbps
-  codec: VideoCodecPreference;
+  bitrateKbps?: number; // override; default derives from resolution/fps/codec
+  codec?: VideoCodecPreference; // default: auto-detected from device encoder support
   includeAudio: boolean;
   contentHint?: 'motion' | 'detail';
   isolateRoomAudio?: boolean; // WebRTC restrictOwnAudio to prevent voice chat loopback
-  sourceId?: string; // Specific window or screen ID in Desktop App
 }
 
 export interface StreamStats {
@@ -25,6 +24,14 @@ export interface StreamStats {
   bufferDelayMs?: number;
   playoutBufferMs?: number;
   bytesReceivedOrSent: number;
+  /** Publisher only: why the encoder is below target ('cpu' | 'bandwidth' | 'none'). */
+  qualityLimitationReason?: string;
+  /** Publisher only: average encode time per frame (ms). */
+  encodeTimeMs?: number;
+  /** Viewer only: video freezes in the last sampling window. */
+  freezeCount?: number;
+  /** Viewer only: frames dropped by the decoder/renderer in the last sampling window. */
+  framesDropped?: number;
 }
 
 export interface ChatMessage {
@@ -71,27 +78,4 @@ export interface ScreenShareItem {
   videoTrack: any; // Track from livekit-client
   audioTrack?: any; // Track from livekit-client
   isLocal: boolean;
-}
-
-export interface DesktopSource {
-  id: string;
-  name: string;
-  thumbnail: string;
-  appIcon?: string | null;
-  display_id?: string;
-}
-
-declare global {
-  interface Window {
-    desktopAPI?: {
-      isDesktop: boolean;
-      getSources: () => Promise<DesktopSource[]>;
-      minimize: () => void;
-      maximize: () => void;
-      close: () => void;
-      setPriority: (priority: 'high' | 'realtime' | 'normal') => Promise<boolean>;
-      registerShortcut: (shortcut: string, actionName: string) => Promise<boolean>;
-      onShortcut: (callback: (action: string) => void) => () => void;
-    };
-  }
 }
