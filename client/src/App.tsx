@@ -281,7 +281,6 @@ function StreamRoom({
           <StreamHUD
             stats={screenShares.length > 0 ? stats : null}
             isOpen={isHUDOpen}
-            onClose={() => setIsHUDOpen(false)}
             playoutBufferMs={playoutBufferMs}
           />
 
