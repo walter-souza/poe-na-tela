@@ -1,0 +1,15 @@
+api-dev.194.61.238.98.sslip.io {
+    reverse_proxy localhost:3002
+}
+
+api.194.61.238.98.sslip.io {
+    reverse_proxy localhost:3001
+}
+
+livekit.194.61.238.98.sslip.io {
+    reverse_proxy localhost:7880
+}
+
+stream.194.61.238.98.sslip.io {
+    reverse_proxy localhost:8889
+}

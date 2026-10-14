@@ -1,0 +1,30 @@
+# Stack de mídia da VPS: LiveKit (SFU para chamadas/telas) + MediaMTX (ingest SRT do OBS e playback WHEP).
+# Segredos ficam em .env (ao lado deste arquivo, chmod 600, fora do Git). Veja infra/vps/README.md.
+services:
+  livekit:
+    image: livekit/livekit-server:v1.13.9
+    container_name: streampulse-livekit
+    restart: unless-stopped
+    command: --config /etc/livekit.yaml
+    network_mode: host
+    environment:
+      LIVEKIT_KEYS: ${LIVEKIT_KEYS:?defina LIVEKIT_KEYS no .env}
+    volumes:
+      - ./livekit.yaml:/etc/livekit.yaml:ro
+      # Certificado do TURN emitido pelo Caddy (somente leitura).
+      - /var/lib/caddy/.local/share/caddy/certificates/acme-v02.api.letsencrypt.org-directory/turn.194.61.238.98.sslip.io/turn.194.61.238.98.sslip.io.crt:/certs/turn.crt:ro
+      - /var/lib/caddy/.local/share/caddy/certificates/acme-v02.api.letsencrypt.org-directory/turn.194.61.238.98.sslip.io/turn.194.61.238.98.sslip.io.key:/certs/turn.key:ro
+
+  mediamtx:
+    # Só sobe com ENABLE_OBS=1 no apply.sh (docker compose --profile obs).
+    profiles: ["obs"]
+    # Variante -ffmpeg (Alpine): traz sh e wget, usados pelos hooks que avisam o backend.
+    image: bluenviron/mediamtx:1.21.2-ffmpeg
+    container_name: poe-mediamtx
+    restart: unless-stopped
+    network_mode: host
+    environment:
+      # Não usar o prefixo MTX_: o MediaMTX o interpreta como parâmetro de configuração.
+      WEBHOOK_SECRET: ${WEBHOOK_SECRET:?defina WEBHOOK_SECRET no .env}
+    volumes:
+      - ./mediamtx.yml:/mediamtx.yml:ro

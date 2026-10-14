@@ -1,0 +1,42 @@
+# MediaMTX: recebe streams do OBS por SRT e entrega aos espectadores por WebRTC (WHEP).
+# Contrato com o app:
+#   - OBS publica em srt://<IP>:8890?streamid=publish:<sala>[/<usuario>]
+#   - Espectadores leem em https://stream.<IP>.sslip.io/<sala>[/<usuario>]/whep (Caddy -> :8889)
+#   - O backend lista streams em http://127.0.0.1:9997/v3/paths/list
+logLevel: info
+
+# Só a API local (usada pelo backend). Não expor.
+api: yes
+apiAddress: 127.0.0.1:9997
+
+# OBS -> SRT
+srt: yes
+srtAddress: :8890
+
+# Playback WHEP; o TLS é feito pelo Caddy (reverse_proxy para 127.0.0.1:8889).
+webrtc: yes
+webrtcAddress: 127.0.0.1:8889
+webrtcAllowOrigin: '*'
+webrtcLocalUDPAddress: :8189
+webrtcLocalTCPAddress: :8189
+webrtcIPsFromInterfaces: no
+webrtcAdditionalHosts:
+  - 194.61.238.98
+
+# Protocolos que o app não usa ficam desligados para reduzir a superfície exposta.
+rtsp: no
+rtmp: no
+hls: no
+moq: no
+playback: no
+metrics: no
+pprof: no
+
+paths:
+  all_others:
+    # Avisa os backends (prod :3001 e dev :3002) assim que um stream entra ou sai, para atualizar a
+    # lista dos espectadores na hora. Se falhar, o monitor do backend reconcilia em até 15s.
+    runOnReady: |-
+      sh -c 'for p in 3001 3002; do wget -q -T 3 -O /dev/null --header "x-webhook-secret: $WEBHOOK_SECRET" --header "Content-Type: application/json" --post-data "{\"path\":\"$MTX_PATH\"}" "http://127.0.0.1:$p/api/webhooks/mediamtx" || true; done'
+    runOnNotReady: |-
+      sh -c 'for p in 3001 3002; do wget -q -T 3 -O /dev/null --header "x-webhook-secret: $WEBHOOK_SECRET" --header "Content-Type: application/json" --post-data "{\"path\":\"$MTX_PATH\"}" "http://127.0.0.1:$p/api/webhooks/mediamtx" || true; done'

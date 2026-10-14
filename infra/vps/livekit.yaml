@@ -1,0 +1,26 @@
+# As chaves da API não ficam aqui: vêm da variável LIVEKIT_KEYS (veja docker-compose.yml).
+port: 7880
+bind_addresses:
+  - "0.0.0.0"
+
+rtc:
+  tcp_port: 7881
+  # Porta UDP única (multiplexada) no lugar da faixa 50000-50100: um buraco só no firewall e sem
+  # limite de ~100 conexões simultâneas.
+  udp_port: 7882
+  use_external_ip: true
+
+# TURN embutido: relay para quem não consegue UDP direto (rede corporativa/CGNAT).
+# O certificado é o do Caddy (turn.<IP>.sslip.io); o LiveKit só o lê na inicialização, então
+# reinicie o container depois de uma renovação (Caddy renova ~30 dias antes de vencer).
+turn:
+  enabled: true
+  domain: turn.194.61.238.98.sslip.io
+  udp_port: 3478
+  tls_port: 5349
+  cert_file: /certs/turn.crt
+  key_file: /certs/turn.key
+
+logging:
+  json: false
+  level: info
