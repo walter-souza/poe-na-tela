@@ -1212,7 +1212,9 @@ export function useLiveKit({ url, token, onDisconnected }: UseLiveKitOptions) {
           // Backup codec costs a second encode on the host; only AV1 has decoders missing in the wild.
           backupCodec: profile.codec === 'av1',
           degradationPreference: profile.degradationPreference,
-          videoEncoding: {
+          // livekit-client reads `screenShareEncoding` (not `videoEncoding`) for screen shares;
+          // omitting it falls back to its 15 fps / 2.5 Mbps preset.
+          screenShareEncoding: {
             maxBitrate: profile.maxBitrate,
             maxFramerate: targetFps,
             priority: 'high',
