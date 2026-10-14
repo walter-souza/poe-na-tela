@@ -1,9 +1,10 @@
 name: Deploy Backend to VPS
 
+# main -> producao (~/poe-na-tela, pm2 "backend")
+# develop -> dev (~/poe-na-tela-dev, pm2 "backend-dev")
 on:
   push:
     branches:
-      - master
       - main
       - develop
     paths:
@@ -11,9 +12,11 @@ on:
       - '.github/workflows/deploy-backend.yml'
 
 jobs:
-  deploy:
-    name: Deploy Backend
+  deploy-prod:
+    name: Deploy Backend (producao)
+    if: github.ref_name == 'main'
     runs-on: ubuntu-latest
+    concurrency: deploy-backend-prod
 
     steps:
       - name: Executar Deploy via SSH na VPS
@@ -24,14 +27,40 @@ jobs:
           password: ${{ secrets.VPS_PASSWORD }}
           key: ${{ secrets.VPS_SSH_KEY }}
           port: 22
+          script_stop: true
           script: |
             echo "🚀 Verificando serviços de infraestrutura (LiveKit + SSL)..."
             cd ~/app-stack && docker compose up -d
 
-            echo "🚀 Iniciando deploy do Backend na VPS..."
-            cd ~/poe-na-tela/server || exit 1
-            git pull origin ${{ github.ref_name }}
-            npm install
+            echo "🚀 Iniciando deploy do Backend (producao)..."
+            cd ~/poe-na-tela/server
+            git pull --ff-only origin main
+            npm ci
             npm run build
-            pm2 restart backend || pm2 start dist/index.js --name "backend"
-            echo "✅ Deploy do backend e infraestrutura finalizados com sucesso!"
+            pm2 restart backend --update-env
+            echo "✅ Deploy de producao finalizado!"
+
+  deploy-dev:
+    name: Deploy Backend (dev)
+    if: github.ref_name == 'develop'
+    runs-on: ubuntu-latest
+    concurrency: deploy-backend-dev
+
+    steps:
+      - name: Executar Deploy via SSH na VPS
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USERNAME }}
+          password: ${{ secrets.VPS_PASSWORD }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+          port: 22
+          script_stop: true
+          script: |
+            echo "🚀 Iniciando deploy do Backend (dev)..."
+            cd ~/poe-na-tela-dev/server
+            git pull --ff-only origin develop
+            npm ci
+            npm run build
+            pm2 restart backend-dev --update-env
+            echo "✅ Deploy de dev finalizado!"
