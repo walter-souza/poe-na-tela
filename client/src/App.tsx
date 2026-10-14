@@ -4,7 +4,6 @@ import { useLiveKit } from './hooks/useLiveKit';
 import { VideoPlayer } from './components/VideoPlayer';
 import { ControlsBar } from './components/ControlsBar';
 import { ChatPanel } from './components/ChatPanel';
-import { StreamHUD } from './components/StreamHUD';
 import { ScreenShareModal } from './components/ScreenShareModal';
 import { MaintenanceScreen } from './components/MaintenanceScreen';
 import { Lobby } from './components/Lobby';
@@ -240,7 +239,6 @@ function StreamRoom({
     messages,
     participants,
     stats,
-    playoutBufferMs,
     reaction,
     startScreenShare,
     stopScreenShare,
@@ -278,13 +276,8 @@ function StreamRoom({
     <div className="h-screen h-[100dvh] w-screen flex flex-col bg-[#090a0f] text-gray-100 overflow-hidden select-none">
       <div className="flex-1 flex overflow-hidden relative">
         <div className="flex-1 flex flex-col p-1 sm:p-3 md:p-4 min-w-0 relative">
-          <StreamHUD
-            stats={screenShares.length > 0 ? stats : null}
-            isOpen={isHUDOpen}
-            playoutBufferMs={playoutBufferMs}
-          />
-
           <VideoPlayer
+            stats={stats}
             screenShares={screenShares}
             streamVolumes={streamVolumes}
             onStreamVolumeChange={setStreamVolume}

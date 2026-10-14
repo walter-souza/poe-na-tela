@@ -4,6 +4,8 @@ import type { StreamStats } from '../types';
 interface StreamHUDProps {
   stats: StreamStats | null;
   isOpen: boolean;
+  /** Absolute-position classes supplied by the tile that hosts the panel. */
+  className?: string;
   playoutBufferMs?: number;
 }
 
@@ -15,7 +17,7 @@ const Row: React.FC<{ label: string; children: React.ReactNode }> = ({ label, ch
 );
 
 // Same compact look as the WHEP (OBS) panel in WhepTile.
-export const StreamHUD: React.FC<StreamHUDProps> = ({ stats, isOpen, playoutBufferMs }) => {
+export const StreamHUD: React.FC<StreamHUDProps> = ({ stats, isOpen, className = '', playoutBufferMs }) => {
   if (!isOpen || !stats) return null;
 
   const targetBuffer = stats.playoutBufferMs ?? playoutBufferMs ?? 200;
@@ -25,7 +27,7 @@ export const StreamHUD: React.FC<StreamHUDProps> = ({ stats, isOpen, playoutBuff
   const hasRetransmits = !!stats.nackCount || !!stats.pliCount;
 
   return (
-    <div className="absolute top-2 left-2 sm:top-4 sm:left-4 z-40 pointer-events-none bg-black/80 backdrop-blur-md border border-white/10 rounded-xl px-2.5 py-2 text-[11px] font-mono text-gray-200 space-y-0.5 shadow-xl">
+    <div className={`pointer-events-none bg-black/80 backdrop-blur-md border border-white/10 rounded-xl px-2.5 py-2 text-[11px] font-mono text-gray-200 space-y-0.5 shadow-xl ${className}`}>
       <Row label="Quadros">
         <span className={`font-bold ${fpsColor}`}>{stats.fps} FPS</span>
       </Row>

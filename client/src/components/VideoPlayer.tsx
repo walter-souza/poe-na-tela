@@ -8,7 +8,7 @@ import {
   Layers,
   Sparkles,
 } from 'lucide-react';
-import type { ScreenShareItem, ReactionEvent, StreamLayoutMode } from '../types';
+import type { ScreenShareItem, ReactionEvent, StreamLayoutMode, StreamStats } from '../types';
 import { StreamTile } from './StreamTile';
 import { WhepTile } from './WhepTile';
 import { getWhepUrl, fetchRoomStreams, type ObsStreamItem } from '../utils/api';
@@ -45,6 +45,7 @@ interface VideoPlayerProps {
   isLocalScreenAudioMuted?: boolean;
   onToggleLocalScreenAudio?: () => void;
   roomName?: string;
+  stats?: StreamStats | null;
 }
 
 export const VideoPlayer: React.FC<VideoPlayerProps> = ({
@@ -60,6 +61,7 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
   isLocalScreenAudioMuted = false,
   onToggleLocalScreenAudio,
   roomName,
+  stats = null,
 }) => {
   const [layoutMode, setLayoutMode] = useState<StreamLayoutMode>('grid');
   const [spotlightId, setSpotlightId] = useState<string | null>(null);
@@ -193,6 +195,14 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
     return () => clearInterval(interval);
   }, []);
 
+  // LiveKit stats are room-wide: show them once on the local (publisher) tile and once on the first remote tile.
+  const firstLocalId = screenShares.find((s) => s.isLocal)?.id;
+  const firstRemoteId = screenShares.find((s) => !s.isLocal)?.id;
+  const ownsStats = (s: ScreenShareItem) =>
+    s.isLocal
+      ? s.id === firstLocalId && stats?.captureFps !== undefined
+      : s.id === firstRemoteId && stats?.bufferDelayMs !== undefined;
+
   // Helper to render polymorphic stream tile (WebRTC or OBS)
   const renderStreamTile = (
     item: UnifiedStreamItem,
@@ -216,6 +226,8 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
           onSelectThumbnail={options.onSelectThumbnail}
           isLocalScreenAudioMuted={isLocalScreenAudioMuted}
           onToggleLocalScreenAudio={onToggleLocalScreenAudio}
+          stats={stats}
+          showStats={isHUDOpen && ownsStats(item.webrtcStream)}
         />
       );
     }

@@ -13,7 +13,8 @@ import {
   EyeOff,
   Radio,
 } from 'lucide-react';
-import type { ScreenShareItem } from '../types';
+import type { ScreenShareItem, StreamStats } from '../types';
+import { StreamHUD } from './StreamHUD';
 
 interface StreamTileProps {
   stream: ScreenShareItem;
@@ -25,6 +26,9 @@ interface StreamTileProps {
   onSelectThumbnail?: () => void;
   isLocalScreenAudioMuted?: boolean;
   onToggleLocalScreenAudio?: () => void;
+  /** Diagnostics for this stream; the panel renders only when showStats is true. */
+  stats?: StreamStats | null;
+  showStats?: boolean;
 }
 
 export const StreamTile: React.FC<StreamTileProps> = ({
@@ -37,6 +41,8 @@ export const StreamTile: React.FC<StreamTileProps> = ({
   onSelectThumbnail,
   isLocalScreenAudioMuted = false,
   onToggleLocalScreenAudio,
+  stats = null,
+  showStats = false,
 }) => {
   const videoRef = useRef<HTMLVideoElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -240,6 +246,12 @@ export const StreamTile: React.FC<StreamTileProps> = ({
           )}
         </div>
       </div>
+
+      <StreamHUD
+        stats={stats}
+        isOpen={showStats}
+        className="absolute top-11 right-2 sm:top-14 sm:right-3 z-20"
+      />
 
       {/* Top Right Pin/Spotlight Button */}
       {onToggleSpotlight && (
