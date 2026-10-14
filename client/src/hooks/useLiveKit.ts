@@ -168,7 +168,7 @@ export function useLiveKit({ url, token, onDisconnected }: UseLiveKitOptions) {
   // WebRTC Playout / Jitter Buffer: começa baixo (latência) e sobe só quando as stats mostram freezes/jitter.
   const DEFAULT_STREAM_BUFFER_MS = 200;
   const MIN_STREAM_BUFFER_MS = 100;
-  const MAX_STREAM_BUFFER_MS = 1000;
+  const MAX_STREAM_BUFFER_MS = 500;
   const MAX_VOICE_BUFFER_MS = 150;
   const [playoutBufferMs, setPlayoutBufferMsState] = useState<number>(DEFAULT_STREAM_BUFFER_MS);
   const playoutBufferMsRef = useRef<number>(DEFAULT_STREAM_BUFFER_MS);
@@ -176,6 +176,7 @@ export function useLiveKit({ url, token, onDisconnected }: UseLiveKitOptions) {
   const statsIntervalRef = useRef<number | null>(null);
   const prevStatsRef = useRef<{ bytes: number; frames: number; timestamp: number; freezes: number; dropped: number } | null>(null);
   const calmSamplesRef = useRef<number>(0);
+  const badSamplesRef = useRef<number>(0);
   const prevCountersRef = useRef<{ nack: number; pli: number }>({ nack: 0, pli: 0 });
   const prevBufferRef = useRef<{ delay: number; count: number } | null>(null);
   const currentVolumeRef = useRef<number>(1);
@@ -711,17 +712,27 @@ export function useLiveKit({ url, token, onDisconnected }: UseLiveKitOptions) {
         prevBufferRef.current = { delay: bufferDelaySum, count: bufferEmittedCount };
       }
 
-      // Adaptive playout buffer (viewer only): grow fast on retransmission bursts/high jitter, shrink slowly when calm.
+      // Adaptive playout buffer (viewer only). Latency is the priority: grow slowly, only on a
+      // sustained problem (2 consecutive bad windows), cap low, and shrink back quickly.
       const isViewing = measuredBufferDelay !== undefined;
       if (isViewing) {
         const current = playoutBufferMsRef.current;
         // Not freezeCount: screen capture is event-driven, so a static screen looks like a freeze.
-        if (nackDelta > 5 || jitter > current * 0.5) {
+        const bad = nackDelta > 10 || jitter > Math.max(60, current * 0.5);
+        if (bad) {
           calmSamplesRef.current = 0;
-          if (current < MAX_STREAM_BUFFER_MS) setPlayoutBufferMs(current + 100);
-        } else if (++calmSamplesRef.current >= 15 && current > DEFAULT_STREAM_BUFFER_MS) {
-          calmSamplesRef.current = 0;
-          setPlayoutBufferMs(current - 50);
+          badSamplesRef.current += 1;
+          if (badSamplesRef.current >= 2 && current < MAX_STREAM_BUFFER_MS) {
+            console.debug(`[buffer] +50ms -> ${current + 50}ms (nack=${nackDelta} jitter=${jitter}ms)`);
+            setPlayoutBufferMs(current + 50);
+          }
+        } else {
+          badSamplesRef.current = 0;
+          if (++calmSamplesRef.current >= 5 && current > DEFAULT_STREAM_BUFFER_MS) {
+            calmSamplesRef.current = 0;
+            console.debug(`[buffer] -50ms -> ${current - 50}ms`);
+            setPlayoutBufferMs(current - 50);
+          }
         }
       }
 
