@@ -412,7 +412,7 @@ export const WhepTile: React.FC<WhepTileProps> = ({
 
       {/* Diagnostics panel (toggled by the HUD button) */}
       {showStats && whepStats && (
-        <div className="absolute top-11 left-2 sm:top-14 sm:left-3 z-20 pointer-events-none bg-black/80 backdrop-blur-md border border-white/10 rounded-xl px-2.5 py-2 text-[11px] font-mono text-gray-200 space-y-0.5 shadow-xl">
+        <div className="absolute top-11 right-2 sm:top-14 sm:right-3 z-20 pointer-events-none bg-black/80 backdrop-blur-md border border-white/10 rounded-xl px-2.5 py-2 text-[11px] font-mono text-gray-200 space-y-0.5 shadow-xl">
           <div className="flex items-center justify-between gap-4">
             <span className="text-gray-400">Quadros</span>
             <span className={`font-bold ${whepStats.fps >= 55 ? 'text-emerald-400' : whepStats.fps >= 30 ? 'text-amber-400' : 'text-rose-400'}`}>

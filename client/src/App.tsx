@@ -279,7 +279,7 @@ function StreamRoom({
       <div className="flex-1 flex overflow-hidden relative">
         <div className="flex-1 flex flex-col p-1 sm:p-3 md:p-4 min-w-0 relative">
           <StreamHUD
-            stats={stats}
+            stats={screenShares.length > 0 ? stats : null}
             isOpen={isHUDOpen}
             onClose={() => setIsHUDOpen(false)}
             playoutBufferMs={playoutBufferMs}
