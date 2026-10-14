@@ -9,6 +9,7 @@ import {
   PictureInPicture,
   User,
 } from 'lucide-react';
+import { useWhepStats } from '../hooks/useWhepStats';
 
 interface WhepTileProps {
   whepUrl: string;
@@ -21,6 +22,8 @@ interface WhepTileProps {
   onSelectThumbnail?: () => void;
   volume?: number;
   onVolumeChange?: (volume: number) => void;
+  /** Shows the live diagnostics panel (fps, resolution, bitrate, loss, buffer). */
+  showStats?: boolean;
 }
 
 export const WhepTile: React.FC<WhepTileProps> = ({
@@ -34,6 +37,7 @@ export const WhepTile: React.FC<WhepTileProps> = ({
   onSelectThumbnail,
   volume = 1,
   onVolumeChange,
+  showStats = false,
 }) => {
   const videoRef = useRef<HTMLVideoElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -48,6 +52,8 @@ export const WhepTile: React.FC<WhepTileProps> = ({
   const [isMuted, setIsMuted] = useState(false);
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [showControls, setShowControls] = useState(false);
+
+  const whepStats = useWhepStats(pcRef, showStats && isPlaying);
 
   // Stable ref for onStateChange to prevent effect re-trigger loops
   const onStateChangeRef = useRef(onStateChange);
@@ -403,6 +409,50 @@ export const WhepTile: React.FC<WhepTileProps> = ({
           </span>
         </div>
       </div>
+
+      {/* Diagnostics panel (toggled by the HUD button) */}
+      {showStats && whepStats && (
+        <div className="absolute top-11 left-2 sm:top-14 sm:left-3 z-20 pointer-events-none bg-black/80 backdrop-blur-md border border-white/10 rounded-xl px-2.5 py-2 text-[11px] font-mono text-gray-200 space-y-0.5 shadow-xl">
+          <div className="flex items-center justify-between gap-4">
+            <span className="text-gray-400">Quadros</span>
+            <span className={`font-bold ${whepStats.fps >= 55 ? 'text-emerald-400' : whepStats.fps >= 30 ? 'text-amber-400' : 'text-rose-400'}`}>
+              {whepStats.fps} FPS
+            </span>
+          </div>
+          <div className="flex items-center justify-between gap-4">
+            <span className="text-gray-400">Resolução</span>
+            <span>{whepStats.width}x{whepStats.height} {whepStats.codec}</span>
+          </div>
+          <div className="flex items-center justify-between gap-4">
+            <span className="text-gray-400">Bitrate</span>
+            <span>{(whepStats.bitrateKbps / 1000).toFixed(2)} Mbps</span>
+          </div>
+          <div className="flex items-center justify-between gap-4">
+            <span className="text-gray-400">Perda</span>
+            <span className={whepStats.packetLossPercent > 1 ? 'text-amber-400' : ''}>
+              {whepStats.packetLossPercent.toFixed(1)}%
+            </span>
+          </div>
+          {whepStats.bufferDelayMs !== null && (
+            <div className="flex items-center justify-between gap-4">
+              <span className="text-gray-400">Buffer atual</span>
+              <span>{whepStats.bufferDelayMs} ms</span>
+            </div>
+          )}
+          {whepStats.rttMs !== null && (
+            <div className="flex items-center justify-between gap-4">
+              <span className="text-gray-400">RTT</span>
+              <span>{whepStats.rttMs} ms</span>
+            </div>
+          )}
+          {(whepStats.freezeCount > 0 || whepStats.framesDropped > 0) && (
+            <div className="text-amber-400">
+              {whepStats.freezeCount > 0 && `${whepStats.freezeCount} freeze `}
+              {whepStats.framesDropped > 0 && `${whepStats.framesDropped} quadros perdidos`}
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Top Right Pin / Spotlight Button */}
       {onToggleSpotlight && (

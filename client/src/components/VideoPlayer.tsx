@@ -232,6 +232,7 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
         onToggleSpotlight={options.onToggleSpotlight}
         isThumbnail={options.isThumbnail}
         onSelectThumbnail={options.onSelectThumbnail}
+        showStats={isHUDOpen}
         onStateChange={(active) => {
           setActiveWhepMap((prev) =>
             prev[item.rawId] === active ? prev : { ...prev, [item.rawId]: active }

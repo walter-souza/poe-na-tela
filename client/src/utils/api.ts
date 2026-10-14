@@ -42,6 +42,8 @@ export function getWhepUrl(roomName: string): string {
   return `https://stream.194.61.238.98.sslip.io/${encodeURIComponent(roomName)}/whep`;
 }
 
+export const OBS_SRT_LATENCY_US = 250000;
+
 /**
  * Returns the ready-to-use SRT streaming URL for OBS Studio.
  * When userName is provided, builds a squad multi-stream streamid (e.g. srt://host:8890?streamid=publish:sala/usuario).
@@ -51,7 +53,8 @@ export function getObsSrtUrl(roomName: string, userName?: string): string {
   const cleanRoom = roomName.trim();
   const cleanUser = userName ? userName.trim() : '';
   const path = cleanUser ? `${cleanRoom}/${cleanUser}` : cleanRoom;
-  return `srt://${srtHost}?streamid=publish:${path}`;
+  // Latency (µs): 250 ms absorbs the ~2-3% loss seen on home uplinks; MediaMTX's 120 ms default drops late packets.
+  return `srt://${srtHost}?streamid=publish:${path}&latency=${OBS_SRT_LATENCY_US}`;
 }
 
 export interface ObsStreamItem {

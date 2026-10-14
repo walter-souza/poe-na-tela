@@ -15,8 +15,10 @@ import {
   Check,
   Wand2,
   Tv,
+  HelpCircle,
 } from 'lucide-react';
 import { getObsSrtUrl } from '../utils/api';
+import { ObsGuideModal } from './ObsGuideModal';
 
 interface ControlsBarProps {
   isMicEnabled: boolean;
@@ -57,6 +59,7 @@ export const ControlsBar: React.FC<ControlsBarProps> = ({
 }) => {
   const [copied, setCopied] = useState(false);
   const [copiedObs, setCopiedObs] = useState(false);
+  const [isObsGuideOpen, setIsObsGuideOpen] = useState(false);
 
   const handleCopyInvite = () => {
     const inviteUrl = `${window.location.origin}${window.location.pathname}?room=${encodeURIComponent(roomName)}`;
@@ -185,6 +188,14 @@ export const ControlsBar: React.FC<ControlsBarProps> = ({
             {copiedObs ? 'Link OBS Copiado!' : 'Link OBS'}
           </span>
         </button>
+
+        <button
+          onClick={() => setIsObsGuideOpen(true)}
+          title="Guia: como transmitir com o OBS em 60 FPS"
+          className="flex items-center p-2 sm:px-2.5 sm:py-2.5 rounded-2xl border border-white/10 bg-white/5 hover:bg-white/10 text-gray-400 hover:text-white transition"
+        >
+          <HelpCircle className="w-4 h-4" />
+        </button>
       </div>
 
       {/* Right Controls */}
@@ -236,6 +247,12 @@ export const ControlsBar: React.FC<ControlsBarProps> = ({
           <span className="hidden sm:inline">Sair</span>
         </button>
       </div>
+
+      <ObsGuideModal
+        isOpen={isObsGuideOpen}
+        onClose={() => setIsObsGuideOpen(false)}
+        obsUrl={getObsSrtUrl(roomName, userName)}
+      />
     </div>
   );
 };
