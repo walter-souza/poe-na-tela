@@ -87,6 +87,7 @@ export interface ScreenShareItem {
   participantIdentity: string;
   participantName: string;
   videoTrack: any; // Track from livekit-client
+  videoPublication?: any; // TrackPublication from livekit-client (remote: used to request a simulcast layer)
   audioTrack?: any; // Track from livekit-client
   isLocal: boolean;
 }

@@ -403,6 +403,7 @@ export function useLiveKit({ url, token, onDisconnected }: UseLiveKitOptions) {
           participantIdentity: room.localParticipant.identity,
           participantName: room.localParticipant.name || room.localParticipant.identity,
           videoTrack: localVideoPub.track,
+          videoPublication: localVideoPub,
           audioTrack: localAudioPub?.track,
           isLocal: true,
         });
@@ -419,6 +420,7 @@ export function useLiveKit({ url, token, onDisconnected }: UseLiveKitOptions) {
           participantIdentity: p.identity,
           participantName: p.name || p.identity,
           videoTrack: videoPub.track,
+          videoPublication: videoPub,
           audioTrack: audioPub?.track,
           isLocal: false,
         });
@@ -778,7 +780,8 @@ export function useLiveKit({ url, token, onDisconnected }: UseLiveKitOptions) {
     isExplicitDisconnectRef.current = false;
 
     const room = new Room({
-      adaptiveStream: { pixelDensity: 'screen' },
+      // Layer choice is explicit per tile (StreamTile): adaptiveStream would cap it by element size.
+      adaptiveStream: false,
       dynacast: true,
       audioCaptureDefaults: {
         autoGainControl: true,

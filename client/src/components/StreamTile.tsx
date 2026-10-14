@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
+import { VideoQuality } from 'livekit-client';
 import {
   Maximize,
   Minimize,
@@ -62,6 +63,12 @@ export const StreamTile: React.FC<StreamTileProps> = ({
       }
     };
   }, [stream.videoTrack, stream.isLocal, isPreviewPaused]);
+
+  // Ask the SFU for the best layer the viewer's bandwidth allows; thumbnails only need the lowest.
+  useEffect(() => {
+    if (stream.isLocal || !stream.videoPublication?.setVideoQuality) return;
+    stream.videoPublication.setVideoQuality(isThumbnail ? VideoQuality.LOW : VideoQuality.HIGH);
+  }, [stream.videoPublication, stream.isLocal, isThumbnail]);
 
   const handleMouseMove = () => {
     if (isThumbnail) return;
