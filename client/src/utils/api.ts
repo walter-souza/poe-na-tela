@@ -1,3 +1,5 @@
+import { isDesktop } from './desktop';
+
 /**
  * Resolves API endpoints dynamically for Web and Desktop (Electron file://) environments.
  */
@@ -8,6 +10,10 @@ export function getApiBaseUrl(): string {
   }
   if (typeof window !== 'undefined' && (window.location.protocol === 'file:')) {
     return 'http://127.0.0.1:3001';
+  }
+  // No app desktop (Tauri) não há proxy '/api': usa o backend de produção quando VITE_API_URL não foi definida.
+  if (isDesktop && !import.meta.env.DEV) {
+    return 'https://api.194.61.238.98.sslip.io';
   }
   return '/api';
 }

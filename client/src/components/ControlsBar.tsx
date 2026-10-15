@@ -16,6 +16,7 @@ import {
   Wand2,
   Tv,
   HelpCircle,
+  Keyboard,
 } from 'lucide-react';
 import { getObsSrtUrl } from '../utils/api';
 import { ObsGuideModal } from './ObsGuideModal';
@@ -30,6 +31,8 @@ interface ControlsBarProps {
   roomName: string;
   userName?: string;
   onToggleMic: () => void;
+  /** Só existe no app desktop (atalho global de microfone). */
+  onOpenHotkeySettings?: () => void;
   onToggleDeafen: () => void;
   onToggleNoiseSuppression?: () => void;
   onToggleScreenShare: () => void;
@@ -49,6 +52,7 @@ export const ControlsBar: React.FC<ControlsBarProps> = ({
   roomName,
   userName,
   onToggleMic,
+  onOpenHotkeySettings,
   onToggleDeafen,
   onToggleNoiseSuppression,
   onToggleScreenShare,
@@ -107,6 +111,16 @@ export const ControlsBar: React.FC<ControlsBarProps> = ({
           {isMicEnabled ? <Mic className="w-4 h-4" /> : <MicOff className="w-4 h-4" />}
           <span className="hidden md:inline">{isMicEnabled ? 'Microfone Ativo' : 'Microfone Mudo'}</span>
         </button>
+
+        {onOpenHotkeySettings && (
+          <button
+            onClick={onOpenHotkeySettings}
+            title="Atalho global do microfone (funciona com o jogo em foco)"
+            className="p-2.5 rounded-2xl border bg-white/5 hover:bg-white/10 border-white/10 text-gray-400 hover:text-white transition"
+          >
+            <Keyboard className="w-4 h-4" />
+          </button>
+        )}
 
         {/* Supressão de Ruído (IA RNNoise) */}
         {onToggleNoiseSuppression && (

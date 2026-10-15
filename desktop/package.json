@@ -1,0 +1,15 @@
+{
+  "name": "desktop",
+  "private": true,
+  "version": "1.9.0",
+  "type": "module",
+  "scripts": {
+    "fetch:ffmpeg": "node scripts/fetch-ffmpeg.mjs",
+    "tauri": "tauri",
+    "dev": "tauri dev",
+    "build": "tauri build"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "^2"
+  }
+}

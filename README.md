@@ -74,6 +74,23 @@ docker compose down
 
 ---
 
+## 🖥️ App Desktop (Windows) — Transmissão sem OBS + Atalho Global de Microfone
+
+O app em `desktop/` (Tauri) carrega o mesmo front e adiciona o que o navegador não consegue:
+
+- **Transmissão nativa**: captura da tela (DXGI) ou de uma janela/jogo (Windows Graphics Capture), encoder da GPU (NVENC, Quick Sync ou AMF) e envio por **SRT** para o mesmo MediaMTX do OBS. Os espectadores veem o stream normalmente (WHEP), sem mudança no servidor. Receita idêntica ao guia do OBS: H.264 High, CBR, GOP de 1 s, sem B-frames, 60 FPS constantes.
+- **Áudio do sistema sem eco**: o som do jogo vai na transmissão, mas a voz dos amigos tocada pelo app da sala **não** volta (captura "tudo exceto este app", Windows 10 2004+). Sua voz continua pelo chat de voz da sala.
+- **Atalho global do microfone**: botão de teclado na barra de controles. Aceita tecla solta (ex.: `F8`) ou combinação, e funciona com o jogo em foco.
+
+```bash
+npm run dev:desktop     # desenvolvimento (precisa de Rust, e de ffmpeg no PATH ou via fetch:ffmpeg)
+npm run build:desktop   # baixa o ffmpeg LGPL e gera o instalador NSIS
+```
+
+Pré-requisitos de desenvolvimento: Rust (MSVC), Visual Studio Build Tools e WebView2 (já vem no Windows 11). Os instaladores saem pelo workflow `Release Desktop` a cada tag `vX.Y.Z`.
+
+---
+
 ## 🌐 Como Jogar com Amigos Fora da Sua Rede Local (Sem Abrir Portas)
 
 1. **Cloudflare Tunnel (100% Grátis)**:
@@ -110,6 +127,8 @@ quick-tesla/
 │   │   └── index.css                # Estilos modernos escuros
 │   ├── Dockerfile
 │   └── nginx.conf
+├── desktop/                    # App desktop Windows (Tauri/Rust): captura, encoder GPU, SRT e atalho global
+│   └── src-tauri/src/               # capture.rs (ffmpeg), audio.rs (WASAPI), sources.rs, encoders.rs, hotkey.rs
 ├── server/                     # Backend de Token e Orquestração de Salas
 │   ├── src/
 │   │   └── index.ts                 # Endpoints /api/token, /api/rooms e autenticação JWT

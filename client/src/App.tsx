@@ -1,6 +1,13 @@
-import { useState, useEffect, type Dispatch, type SetStateAction } from 'react';
+import { useState, useEffect, useRef, type Dispatch, type SetStateAction } from 'react';
 import { MessageSquare, Tv } from 'lucide-react';
 import { useLiveKit } from './hooks/useLiveKit';
+import { useNativeStream } from './hooks/useNativeStream';
+import { useMicHotkey } from './hooks/useMicHotkey';
+import { NativeStreamModal } from './components/NativeStreamModal';
+import { NativeStreamStatus } from './components/NativeStreamStatus';
+import { HotkeyModal } from './components/HotkeyModal';
+import { isDesktop } from './utils/desktop';
+import { playJoinSound, playLeaveSound } from './utils/soundEffects';
 import { VideoPlayer } from './components/VideoPlayer';
 import { ControlsBar } from './components/ControlsBar';
 import { ChatPanel } from './components/ChatPanel';
@@ -255,12 +262,33 @@ function StreamRoom({
     onDisconnected: onLeave,
   });
 
+  // No app desktop a transmissão é nativa (GPU + SRT, como o OBS); no navegador segue o WebRTC do LiveKit.
+  const native = useNativeStream();
+  const [isHotkeyModalOpen, setIsHotkeyModalOpen] = useState(false);
+  const hotkeyTriggeredRef = useRef(false);
+  const { hotkey, error: hotkeyError, setHotkey } = useMicHotkey(() => {
+    hotkeyTriggeredRef.current = true;
+    void toggleMic();
+  });
+
+  // Feedback sonoro só para mudanças vindas do atalho global (o botão da tela já dá retorno visual).
+  useEffect(() => {
+    if (!hotkeyTriggeredRef.current) return;
+    hotkeyTriggeredRef.current = false;
+    if (isMicEnabled) playJoinSound(0.2);
+    else playLeaveSound(0.2);
+  }, [isMicEnabled]);
+
   const handleConfirmScreenShare = (config: StreamQualityConfig) => {
     startScreenShare(config);
   };
 
+  const isBroadcasting = isScreenSharing || native.isStreaming;
+
   const handleToggleScreenShare = () => {
-    if (isScreenSharing) {
+    if (native.isStreaming) {
+      void native.stop();
+    } else if (isScreenSharing) {
       stopScreenShare();
     } else {
       setIsScreenShareModalOpen(true);
@@ -339,12 +367,13 @@ function StreamRoom({
         isMicEnabled={isMicEnabled}
         isDeafened={isDeafened}
         isNoiseSuppressionEnabled={isNoiseSuppressionEnabled}
-        isScreenSharing={isScreenSharing}
+        isScreenSharing={isBroadcasting}
         isChatOpen={isChatOpen}
         isHUDOpen={isHUDOpen}
         roomName={session.roomName}
         userName={session.userName}
         onToggleMic={toggleMic}
+        onOpenHotkeySettings={isDesktop ? () => setIsHotkeyModalOpen(true) : undefined}
         onToggleDeafen={toggleDeafen}
         onToggleNoiseSuppression={toggleNoiseSuppression}
         onToggleScreenShare={handleToggleScreenShare}
@@ -354,11 +383,31 @@ function StreamRoom({
         onLeave={handleExitRoom}
       />
 
-      <ScreenShareModal
-        isOpen={isScreenShareModalOpen}
-        onClose={() => setIsScreenShareModalOpen(false)}
-        onConfirm={handleConfirmScreenShare}
-      />
+      {isDesktop ? (
+        <>
+          <NativeStreamModal
+            isOpen={isScreenShareModalOpen}
+            roomName={session.roomName}
+            userName={session.userName}
+            onClose={() => setIsScreenShareModalOpen(false)}
+            onStart={(config) => void native.start(config)}
+          />
+          <HotkeyModal
+            isOpen={isHotkeyModalOpen}
+            hotkey={hotkey}
+            error={hotkeyError}
+            onSave={setHotkey}
+            onClose={() => setIsHotkeyModalOpen(false)}
+          />
+          <NativeStreamStatus state={native.state} stats={native.stats} message={native.message} />
+        </>
+      ) : (
+        <ScreenShareModal
+          isOpen={isScreenShareModalOpen}
+          onClose={() => setIsScreenShareModalOpen(false)}
+          onConfirm={handleConfirmScreenShare}
+        />
+      )}
     </div>
   );
 }
