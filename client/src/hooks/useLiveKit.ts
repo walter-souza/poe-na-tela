@@ -65,9 +65,24 @@ export function useLiveKit({ url, token, onDisconnected }: UseLiveKitOptions) {
 
   // Dedicated Web Audio Boost Context for 101% - 200% voice amplification
   const boostAudioContextRef = useRef<AudioContext | null>(null);
-  const audioBoostersRef = useRef<
-    Map<string, { source: MediaStreamAudioSourceNode; gain: GainNode; stream: MediaStream }>
-  >(new Map());
+  interface AudioBooster {
+    source: MediaStreamAudioSourceNode;
+    gain: GainNode;
+    limiter: DynamicsCompressorNode;
+    stream: MediaStream;
+  }
+  const audioBoostersRef = useRef<Map<string, AudioBooster>>(new Map());
+
+  const disposeBooster = useCallback((participantIdentity: string) => {
+    const booster = audioBoostersRef.current.get(participantIdentity);
+    if (!booster) return;
+    try {
+      booster.source.disconnect();
+      booster.gain.disconnect();
+      booster.limiter.disconnect();
+    } catch {}
+    audioBoostersRef.current.delete(participantIdentity);
+  }, []);
 
   const getBoostAudioContext = useCallback((): AudioContext => {
     if (!boostAudioContextRef.current || boostAudioContextRef.current.state === 'closed') {
@@ -203,6 +218,9 @@ export function useLiveKit({ url, token, onDisconnected }: UseLiveKitOptions) {
           }
         }
 
+        // Stacking the browser suppressor before RNNoise attenuates the voice twice.
+        await track.mediaStreamTrack.applyConstraints({ noiseSuppression: false }).catch(() => {});
+
         const processor = new NoiseSuppressionProcessor();
         activeProcessorRef.current = processor;
         await track.setProcessor(processor);
@@ -211,6 +229,7 @@ export function useLiveKit({ url, token, onDisconnected }: UseLiveKitOptions) {
           await track.stopProcessor();
           activeProcessorRef.current = null;
         }
+        await track.mediaStreamTrack.applyConstraints({ noiseSuppression: true }).catch(() => {});
       }
     } catch (err) {
       console.error('Failed to apply noise suppression to track:', err);
@@ -278,9 +297,18 @@ export function useLiveKit({ url, token, onDisconnected }: UseLiveKitOptions) {
               const stream = new MediaStream([mediaTrack]);
               const source = ctx.createMediaStreamSource(stream);
               const gain = ctx.createGain();
+              // Voice arrives with peaks near -3 dBFS (sender AGC), so up to +6 dB of gain would
+              // hard-clip every peak, which sounds robotic. The limiter catches those peaks instead.
+              const limiter = ctx.createDynamicsCompressor();
+              limiter.threshold.value = -3;
+              limiter.knee.value = 3;
+              limiter.ratio.value = 20;
+              limiter.attack.value = 0.001;
+              limiter.release.value = 0.1;
               source.connect(gain);
-              gain.connect(ctx.destination);
-              booster = { source, gain, stream };
+              gain.connect(limiter);
+              limiter.connect(ctx.destination);
+              booster = { source, gain, limiter, stream };
               audioBoostersRef.current.set(participantIdentity, booster);
             }
             booster.gain.gain.setTargetAtTime(clamped, ctx.currentTime, 0.05);
@@ -297,14 +325,7 @@ export function useLiveKit({ url, token, onDisconnected }: UseLiveKitOptions) {
         }
       } else {
         // Normal volume (0% to 100%) or deafened:
-        const booster = audioBoostersRef.current.get(participantIdentity);
-        if (booster) {
-          try {
-            booster.gain.disconnect();
-            booster.source.disconnect();
-          } catch {}
-          audioBoostersRef.current.delete(participantIdentity);
-        }
+        disposeBooster(participantIdentity);
 
         audioElements.forEach((el) => {
           try {
@@ -314,7 +335,7 @@ export function useLiveKit({ url, token, onDisconnected }: UseLiveKitOptions) {
         });
       }
     },
-    [getBoostAudioContext]
+    [getBoostAudioContext, disposeBooster]
   );
 
   // Helper to apply WebRTC playoutDelayHint & jitterBufferTarget to an individual track's receiver
@@ -484,6 +505,14 @@ export function useLiveKit({ url, token, onDisconnected }: UseLiveKitOptions) {
     const now = Date.now();
     let stateChanged = false;
 
+    // The local mic's mediaStreamTrack switches to the processed (suppressed) track whenever a
+    // processor is set/restarted, so the indicator must follow it instead of the raw capture.
+    const local = room.localParticipant;
+    const localMicTrack = local?.getTrackPublication(Track.Source.Microphone)?.track?.mediaStreamTrack;
+    if (local?.isMicrophoneEnabled && localMicTrack) {
+      registerVadTrack(local.identity, localMicTrack);
+    }
+
     vadNodesRef.current.forEach((node, identity) => {
       if (node.track.readyState === 'ended') {
         unregisterVadTrack(identity);
@@ -529,7 +558,7 @@ export function useLiveKit({ url, token, onDisconnected }: UseLiveKitOptions) {
     if (stateChanged) {
       updateParticipantList(room);
     }
-  }, [unregisterVadTrack, updateParticipantList]);
+  }, [registerVadTrack, unregisterVadTrack, updateParticipantList]);
 
   // WebRTC Real-time Stats Collector for both Host (publisher) and Viewer (subscriber)
   const collectStats = useCallback(async () => {
@@ -831,10 +860,6 @@ export function useLiveKit({ url, token, onDisconnected }: UseLiveKitOptions) {
             registerVadTrack(p.identity, micPub.track.mediaStreamTrack);
           }
         });
-        const localMicPub = room.localParticipant?.getTrackPublication(Track.Source.Microphone);
-        if (localMicPub?.track?.mediaStreamTrack) {
-          registerVadTrack(room.localParticipant.identity, localMicPub.track.mediaStreamTrack);
-        }
         if (vadIntervalRef.current) clearInterval(vadIntervalRef.current);
         vadIntervalRef.current = window.setInterval(checkAudioActivity, 40);
       } catch (vadErr) {
@@ -951,14 +976,7 @@ export function useLiveKit({ url, token, onDisconnected }: UseLiveKitOptions) {
           if (track.source !== Track.Source.ScreenShareAudio) {
             unregisterVadTrack(participantId);
           }
-          const booster = audioBoostersRef.current.get(participantId);
-          if (booster) {
-            try {
-              booster.gain.disconnect();
-              booster.source.disconnect();
-            } catch {}
-            audioBoostersRef.current.delete(participantId);
-          }
+          disposeBooster(participantId);
         }
       }
 
@@ -1049,12 +1067,7 @@ export function useLiveKit({ url, token, onDisconnected }: UseLiveKitOptions) {
     room.on(RoomEvent.TrackUnsubscribed, handleTrackUnsubscribed);
     room.on(RoomEvent.TrackPublished, () => updateScreenShares(room));
     room.on(RoomEvent.TrackUnpublished, () => updateScreenShares(room));
-    room.on(RoomEvent.LocalTrackPublished, (pub) => {
-      updateScreenShares(room);
-      if (pub.source === Track.Source.Microphone && pub.track?.mediaStreamTrack) {
-        registerVadTrack(room.localParticipant.identity, pub.track.mediaStreamTrack);
-      }
-    });
+    room.on(RoomEvent.LocalTrackPublished, () => updateScreenShares(room));
     room.on(RoomEvent.LocalTrackUnpublished, (pub) => {
       updateScreenShares(room);
       if (pub.source === Track.Source.Microphone) {
@@ -1105,13 +1118,7 @@ export function useLiveKit({ url, token, onDisconnected }: UseLiveKitOptions) {
         activeProcessorRef.current.destroy().catch(() => {});
         activeProcessorRef.current = null;
       }
-      audioBoostersRef.current.forEach((booster) => {
-        try {
-          booster.gain.disconnect();
-          booster.source.disconnect();
-        } catch {}
-      });
-      audioBoostersRef.current.clear();
+      audioBoostersRef.current.forEach((_, participantId) => disposeBooster(participantId));
       if (boostAudioContextRef.current && boostAudioContextRef.current.state !== 'closed') {
         boostAudioContextRef.current.close().catch(() => {});
         boostAudioContextRef.current = null;
@@ -1346,10 +1353,6 @@ export function useLiveKit({ url, token, onDisconnected }: UseLiveKitOptions) {
       });
       setIsMicEnabled(nextState);
       if (nextState) {
-        const localTrack = pub?.track as LocalAudioTrack | undefined;
-        if (localTrack?.mediaStreamTrack) {
-          registerVadTrack(room.localParticipant.identity, localTrack.mediaStreamTrack);
-        }
         if (isNoiseSuppressionEnabledRef.current && pub?.track) {
           try {
             await applyNoiseSuppression(pub.track as LocalAudioTrack, true);
@@ -1496,13 +1499,7 @@ export function useLiveKit({ url, token, onDisconnected }: UseLiveKitOptions) {
       activeProcessorRef.current.destroy().catch(() => {});
       activeProcessorRef.current = null;
     }
-    audioBoostersRef.current.forEach((booster) => {
-      try {
-        booster.gain.disconnect();
-        booster.source.disconnect();
-      } catch {}
-    });
-    audioBoostersRef.current.clear();
+    audioBoostersRef.current.forEach((_, participantId) => disposeBooster(participantId));
     if (boostAudioContextRef.current && boostAudioContextRef.current.state !== 'closed') {
       boostAudioContextRef.current.close().catch(() => {});
       boostAudioContextRef.current = null;

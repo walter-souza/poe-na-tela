@@ -1,6 +1,6 @@
 [package]
 name = "poe-na-tela-desktop"
-version = "1.9.0"
+version = "1.9.1"
 description = "Põe na Tela! Desktop — captura e transmissão 60 FPS sem OBS"
 edition = "2021"
 
