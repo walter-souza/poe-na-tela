@@ -846,6 +846,37 @@ export function useLiveKit({ url, token, onDisconnected }: UseLiveKitOptions) {
     }
   }, [setPlayoutBufferMs]);
 
+  const setMicEnabled = useCallback(
+    async (enabled: boolean) => {
+      const room = roomRef.current;
+      if (!room) return;
+
+      try {
+        const pub = await room.localParticipant.setMicrophoneEnabled(enabled, {
+          echoCancellation: true,
+          noiseSuppression: !isNoiseSuppressionEnabledRef.current,
+          autoGainControl: true,
+        });
+        setIsMicEnabled(enabled);
+        if (enabled) {
+          if (isNoiseSuppressionEnabledRef.current && pub?.track) {
+            try {
+              await applyNoiseSuppression(pub.track as LocalAudioTrack, true);
+            } catch (suppressErr) {
+              console.warn('Noise suppression could not be applied, continuing with raw mic:', suppressErr);
+            }
+          }
+        } else {
+          unregisterVadTrack(room.localParticipant.identity);
+        }
+        updateParticipantList(room);
+      } catch (err) {
+        console.error('Failed to toggle microphone:', err);
+      }
+    },
+    [applyNoiseSuppression, unregisterVadTrack, updateParticipantList]
+  );
+
   // Connect to room
   useEffect(() => {
     if (!url || !token) return;
@@ -1124,14 +1155,20 @@ export function useLiveKit({ url, token, onDisconnected }: UseLiveKitOptions) {
     room.on(RoomEvent.ActiveSpeakersChanged, () => updateParticipantList(room));
     room.on(RoomEvent.DataReceived, handleDataReceived);
 
-    room.connect(url, token).catch((err: any) => {
-      if (!isSubscribed) return;
-      if (err?.message?.includes('Client initiated disconnect')) {
-        return;
-      }
-      console.error('Error connecting to LiveKit room:', err);
-      setConnectionState(ConnectionState.Disconnected);
-    });
+    room
+      .connect(url, token)
+      .then(() => {
+        // The microphone starts on by default; if permission is denied it stays muted.
+        if (isSubscribed) void setMicEnabled(true);
+      })
+      .catch((err: any) => {
+        if (!isSubscribed) return;
+        if (err?.message?.includes('Client initiated disconnect')) {
+          return;
+        }
+        console.error('Error connecting to LiveKit room:', err);
+        setConnectionState(ConnectionState.Disconnected);
+      });
 
     return () => {
       isSubscribed = false;
@@ -1180,6 +1217,7 @@ export function useLiveKit({ url, token, onDisconnected }: UseLiveKitOptions) {
     getVadAudioContext,
     registerVadTrack,
     unregisterVadTrack,
+    setMicEnabled,
   ]);
 
   // Unlock browser audio autoplay policy
@@ -1385,34 +1423,7 @@ export function useLiveKit({ url, token, onDisconnected }: UseLiveKitOptions) {
   };
 
   // Toggle Microphone
-  const toggleMic = async () => {
-    const room = roomRef.current;
-    if (!room) return;
-
-    try {
-      const nextState = !isMicEnabled;
-      const pub = await room.localParticipant.setMicrophoneEnabled(nextState, {
-        echoCancellation: true,
-        noiseSuppression: !isNoiseSuppressionEnabledRef.current,
-        autoGainControl: true,
-      });
-      setIsMicEnabled(nextState);
-      if (nextState) {
-        if (isNoiseSuppressionEnabledRef.current && pub?.track) {
-          try {
-            await applyNoiseSuppression(pub.track as LocalAudioTrack, true);
-          } catch (suppressErr) {
-            console.warn('Noise suppression could not be applied, continuing with raw mic:', suppressErr);
-          }
-        }
-      } else {
-        unregisterVadTrack(room.localParticipant.identity);
-      }
-      updateParticipantList(room);
-    } catch (err) {
-      console.error('Failed to toggle microphone:', err);
-    }
-  };
+  const toggleMic = () => setMicEnabled(!isMicEnabled);
 
   // Toggle Noise Suppression (AI RNNoise)
   const toggleNoiseSuppression = useCallback(async () => {
