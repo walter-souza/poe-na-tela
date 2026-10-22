@@ -16,7 +16,7 @@ const VOICE_GATE_OPTIONS = {
   lookaheadMs: 20,
 };
 
-function getAssetUrl(path: string): string {
+export function getAssetUrl(path: string): string {
   try {
     const base = import.meta.env.BASE_URL || '/';
     const cleanBase = base.endsWith('/') ? base : `${base}/`;

@@ -10,7 +10,7 @@ import {
 import type { StreamQualityConfig, StreamStats, ChatMessage, ReactionEvent, ParticipantInfo, ScreenShareItem } from '../types';
 import { playJoinSound, playLeaveSound } from '../utils/soundEffects';
 import { startKeepAlive, stopKeepAlive } from '../utils/keepAlive';
-import { isNoiseSuppressionSupported, NoiseSuppressionProcessor } from '../utils/noiseSuppression';
+import { getAssetUrl, isNoiseSuppressionSupported, NoiseSuppressionProcessor } from '../utils/noiseSuppression';
 import { buildScreenShareProfile, getResolutionSize } from '../utils/streamProfile';
 
 export interface UseLiveKitOptions {
@@ -67,17 +67,23 @@ export function useLiveKit({ url, token, onDisconnected }: UseLiveKitOptions) {
   const boostAudioContextRef = useRef<AudioContext | null>(null);
   interface AudioBooster {
     source: MediaStreamAudioSourceNode;
+    leveler: AudioWorkletNode;
     gain: GainNode;
-    limiter: DynamicsCompressorNode;
+    limiter: AudioWorkletNode;
     stream: MediaStream;
   }
   const audioBoostersRef = useRef<Map<string, AudioBooster>>(new Map());
+  // Boosters waiting for the worklet module: identity -> latest requested volume.
+  const pendingBoostersRef = useRef<Map<string, number>>(new Map());
+  const boostWorkletRef = useRef<{ ctx: AudioContext; ready: Promise<void> } | null>(null);
 
   const disposeBooster = useCallback((participantIdentity: string) => {
+    pendingBoostersRef.current.delete(participantIdentity);
     const booster = audioBoostersRef.current.get(participantIdentity);
     if (!booster) return;
     try {
       booster.source.disconnect();
+      booster.leveler.disconnect();
       booster.gain.disconnect();
       booster.limiter.disconnect();
     } catch {}
@@ -88,6 +94,7 @@ export function useLiveKit({ url, token, onDisconnected }: UseLiveKitOptions) {
     if (!boostAudioContextRef.current || boostAudioContextRef.current.state === 'closed') {
       const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
       boostAudioContextRef.current = new AudioCtx({ sampleRate: 48000 });
+      boostWorkletRef.current = null;
     }
     if (boostAudioContextRef.current.state === 'suspended') {
       boostAudioContextRef.current.resume().catch(() => {});
@@ -273,55 +280,93 @@ export function useLiveKit({ url, token, onDisconnected }: UseLiveKitOptions) {
       ) as NodeListOf<HTMLAudioElement>;
 
       if (clamped > 1.0 && !isDeafenedRef.current) {
-        // Boosted (>100%): Mute native element so there is no echo/double audio
-        audioElements.forEach((el) => {
-          try {
-            el.volume = 0;
-            el.muted = true;
-          } catch {}
-        });
+        const muteNativeElements = () =>
+          audioElements.forEach((el) => {
+            try {
+              el.volume = 0;
+              el.muted = true;
+            } catch {}
+          });
+        // Level and gain follow the slider: the auto-leveler fades in over 100% -> 200%.
+        const applyBoost = (booster: AudioBooster, ctx: AudioContext, vol: number) => {
+          booster.gain.gain.setTargetAtTime(vol, ctx.currentTime, 0.05);
+          booster.leveler.parameters.get('amount')?.setTargetAtTime(vol - 1, ctx.currentTime, 0.05);
+        };
 
-        // Find media track for booster
-        let mediaTrack = (track as any)?.mediaStreamTrack;
-        if (!mediaTrack && room) {
-          const participant = room.remoteParticipants.get(participantIdentity);
-          const micPub = participant?.getTrackPublication(Track.Source.Microphone);
-          mediaTrack = micPub?.track?.mediaStreamTrack;
-        }
+        try {
+          const ctx = getBoostAudioContext();
+          const existing = audioBoostersRef.current.get(participantIdentity);
+          if (existing) {
+            // Boosted (>100%): mute the native element so there is no echo/double audio
+            muteNativeElements();
+            applyBoost(existing, ctx, clamped);
+            return;
+          }
 
-        if (mediaTrack) {
-          try {
-            const ctx = getBoostAudioContext();
-            let booster = audioBoostersRef.current.get(participantIdentity);
-            if (!booster) {
+          // Find media track for booster
+          let mediaTrack = (track as any)?.mediaStreamTrack;
+          if (!mediaTrack && room) {
+            const participant = room.remoteParticipants.get(participantIdentity);
+            const micPub = participant?.getTrackPublication(Track.Source.Microphone);
+            mediaTrack = micPub?.track?.mediaStreamTrack;
+          }
+          if (!mediaTrack) {
+            muteNativeElements();
+            return;
+          }
+
+          // The worklet module loads asynchronously; keep the native element playing until the
+          // booster is wired, and remember only the latest requested volume meanwhile.
+          const alreadyPending = pendingBoostersRef.current.has(participantIdentity);
+          pendingBoostersRef.current.set(participantIdentity, clamped);
+          if (alreadyPending) return;
+
+          if (!boostWorkletRef.current || boostWorkletRef.current.ctx !== ctx) {
+            boostWorkletRef.current = {
+              ctx,
+              ready: ctx.audioWorklet.addModule(getAssetUrl('rnnoise/voiceBoostWorklet.js')),
+            };
+          }
+          boostWorkletRef.current.ready
+            .then(() => {
+              const vol = pendingBoostersRef.current.get(participantIdentity);
+              pendingBoostersRef.current.delete(participantIdentity);
+              // Volume dropped back to <= 100%, or the context was replaced, while loading.
+              if (vol === undefined || ctx !== boostAudioContextRef.current || ctx.state === 'closed') return;
+
               const stream = new MediaStream([mediaTrack]);
               const source = ctx.createMediaStreamSource(stream);
+              // Evens out quiet speakers, applies the user's gain, then a lookahead limiter catches
+              // the peaks (a fast compressor here modulates the gain and sounds robotic).
+              const leveler = new AudioWorkletNode(ctx, 'voice-leveler');
               const gain = ctx.createGain();
-              // Voice arrives with peaks near -3 dBFS (sender AGC), so up to +6 dB of gain would
-              // hard-clip every peak, which sounds robotic. The limiter catches those peaks instead.
-              const limiter = ctx.createDynamicsCompressor();
-              limiter.threshold.value = -3;
-              limiter.knee.value = 3;
-              limiter.ratio.value = 20;
-              limiter.attack.value = 0.001;
-              limiter.release.value = 0.1;
-              source.connect(gain);
+              const limiter = new AudioWorkletNode(ctx, 'voice-limiter', {
+                processorOptions: { ceilingDb: -1, lookaheadMs: 5, releaseMs: 120 },
+              });
+              source.connect(leveler);
+              leveler.connect(gain);
               gain.connect(limiter);
               limiter.connect(ctx.destination);
-              booster = { source, gain, limiter, stream };
+              const booster: AudioBooster = { source, leveler, gain, limiter, stream };
               audioBoostersRef.current.set(participantIdentity, booster);
-            }
-            booster.gain.gain.setTargetAtTime(clamped, ctx.currentTime, 0.05);
-          } catch (err) {
-            console.warn('Failed to apply audio boost:', err);
-            // Fallback: restore native audio to 100%
-            audioElements.forEach((el) => {
-              try {
-                el.volume = 1;
-                el.muted = false;
-              } catch {}
+              applyBoost(booster, ctx, vol);
+              document
+                .querySelectorAll(`audio[data-participant="${participantIdentity}"][data-source="microphone"]`)
+                .forEach((node) => {
+                  try {
+                    (node as HTMLAudioElement).volume = 0;
+                    (node as HTMLAudioElement).muted = true;
+                  } catch {}
+                });
+            })
+            .catch((err) => {
+              pendingBoostersRef.current.delete(participantIdentity);
+              boostWorkletRef.current = null;
+              console.warn('Failed to apply audio boost:', err);
             });
-          }
+        } catch (err) {
+          pendingBoostersRef.current.delete(participantIdentity);
+          console.warn('Failed to apply audio boost:', err);
         }
       } else {
         // Normal volume (0% to 100%) or deafened:
