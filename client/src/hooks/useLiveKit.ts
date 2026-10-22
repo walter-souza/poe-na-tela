@@ -847,9 +847,9 @@ export function useLiveKit({ url, token, onDisconnected }: UseLiveKitOptions) {
   }, [setPlayoutBufferMs]);
 
   const setMicEnabled = useCallback(
-    async (enabled: boolean) => {
+    async (enabled: boolean): Promise<boolean> => {
       const room = roomRef.current;
-      if (!room) return;
+      if (!room) return false;
 
       try {
         const pub = await room.localParticipant.setMicrophoneEnabled(enabled, {
@@ -870,8 +870,10 @@ export function useLiveKit({ url, token, onDisconnected }: UseLiveKitOptions) {
           unregisterVadTrack(room.localParticipant.identity);
         }
         updateParticipantList(room);
+        return true;
       } catch (err) {
         console.error('Failed to toggle microphone:', err);
+        return false;
       }
     },
     [applyNoiseSuppression, unregisterVadTrack, updateParticipantList]
@@ -922,6 +924,8 @@ export function useLiveKit({ url, token, onDisconnected }: UseLiveKitOptions) {
           isSystem: true,
         },
       ]);
+
+      playJoinSound();
 
       // Attempt unlocking browser audio autoplay
       room.startAudio().catch(() => {});
@@ -1423,7 +1427,13 @@ export function useLiveKit({ url, token, onDisconnected }: UseLiveKitOptions) {
   };
 
   // Toggle Microphone
-  const toggleMic = () => setMicEnabled(!isMicEnabled);
+  // Only user-initiated toggles (button or hotkey) chime; the automatic start on connect does not.
+  const toggleMic = async () => {
+    const nextState = !isMicEnabled;
+    if (!(await setMicEnabled(nextState))) return;
+    if (nextState) playJoinSound(0.2);
+    else playLeaveSound(0.2);
+  };
 
   // Toggle Noise Suppression (AI RNNoise)
   const toggleNoiseSuppression = useCallback(async () => {
@@ -1449,6 +1459,8 @@ export function useLiveKit({ url, token, onDisconnected }: UseLiveKitOptions) {
     const nextDeafen = !isDeafened;
     setIsDeafened(nextDeafen);
     isDeafenedRef.current = nextDeafen;
+    if (nextDeafen) playLeaveSound(0.2);
+    else playJoinSound(0.2);
 
     const room = roomRef.current;
     if (!room) return;
@@ -1550,6 +1562,7 @@ export function useLiveKit({ url, token, onDisconnected }: UseLiveKitOptions) {
 
   const handleManualDisconnect = () => {
     isExplicitDisconnectRef.current = true;
+    playLeaveSound();
     stopKeepAlive();
     if (activeProcessorRef.current) {
       activeProcessorRef.current.destroy().catch(() => {});
