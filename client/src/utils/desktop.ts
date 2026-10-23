@@ -38,6 +38,14 @@ export function listen<T>(event: string, handler: (payload: T) => void): () => v
 
 export type CaptureSource = { kind: 'monitor'; index: number } | { kind: 'window'; hwnd: number };
 
+/** Identificador de fonte usado pelo seletor: `monitor:<indice>` ou `window:<hwnd>`. */
+export type SourceChoice = `monitor:${number}` | `window:${number}`;
+
+export const toCaptureSource = (choice: SourceChoice): CaptureSource => {
+  const [kind, id] = choice.split(':');
+  return kind === 'monitor' ? { kind: 'monitor', index: Number(id) } : { kind: 'window', hwnd: Number(id) };
+};
+
 export interface MonitorSource {
   index: number;
   name: string;
@@ -48,6 +56,7 @@ export interface MonitorSource {
 export interface WindowSource {
   hwnd: number;
   title: string;
+  minimized: boolean;
 }
 
 export interface CaptureSources {
@@ -77,3 +86,7 @@ export interface NativeCaptureStats {
 
 export const listSources = () => invoke<CaptureSources>('list_sources');
 export const detectEncoders = () => invoke<string[]>('detect_encoders');
+/** Um quadro da fonte como data URL JPEG; rejeita quando a fonte não entrega imagem (ex.: janela minimizada). */
+export const captureThumbnail = (source: CaptureSource) => invoke<string>('capture_thumbnail', { source });
+/** Ícone do app dono da janela (PNG como data URL), usado quando a janela não tem prévia. */
+export const windowIcon = (hwnd: number) => invoke<string>('window_icon', { hwnd });

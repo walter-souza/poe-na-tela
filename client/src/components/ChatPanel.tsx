@@ -6,6 +6,7 @@ import {
   Sparkles,
   Mic,
   MicOff,
+  HeadphoneOff,
   Volume2,
   VolumeX,
   Monitor,
@@ -15,13 +16,17 @@ import {
   LogIn,
   LogOut,
   PanelRightClose,
+  ImagePlus,
+  X,
 } from 'lucide-react';
 import type { ChatMessage, ParticipantInfo } from '../types';
+import { isAcceptedImage } from '../utils/chatImage';
 
 interface ChatPanelProps {
   messages: ChatMessage[];
   participants: ParticipantInfo[];
   onSendMessage: (text: string) => void;
+  onSendImage: (file: File) => Promise<void>;
   onSendReaction: (emoji: string) => void;
   userName: string;
   roomName: string;
@@ -41,6 +46,7 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({
   messages,
   participants,
   onSendMessage,
+  onSendImage,
   onSendReaction,
   userName,
   roomName,
@@ -52,6 +58,10 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({
   const [inputText, setInputText] = useState('');
   const [copied, setCopied] = useState(false);
   const [showEmojiPicker, setShowEmojiPicker] = useState(false);
+  const [imageError, setImageError] = useState<string | null>(null);
+  const [isSendingImage, setIsSendingImage] = useState(false);
+  const [lightboxUrl, setLightboxUrl] = useState<string | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const emojiPickerRef = useRef<HTMLDivElement>(null);
 
@@ -88,6 +98,31 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({
     setInputText('');
   };
 
+  const handleImageFile = async (file: File) => {
+    setImageError(null);
+    setIsSendingImage(true);
+    try {
+      await onSendImage(file);
+    } catch (err) {
+      setImageError(err instanceof Error ? err.message : 'Falha ao enviar a imagem.');
+    } finally {
+      setIsSendingImage(false);
+    }
+  };
+
+  const handlePaste = (e: React.ClipboardEvent) => {
+    const file = Array.from(e.clipboardData.files).find(isAcceptedImage);
+    if (!file) return;
+    e.preventDefault();
+    void handleImageFile(file);
+  };
+
+  const handleDrop = (e: React.DragEvent) => {
+    const file = Array.from(e.dataTransfer.files).find(isAcceptedImage);
+    e.preventDefault();
+    if (file) void handleImageFile(file);
+  };
+
   const copyRoomLink = () => {
     const inviteUrl = `${window.location.origin}${window.location.pathname}?room=${encodeURIComponent(roomName)}`;
     navigator.clipboard.writeText(inviteUrl);
@@ -96,7 +131,11 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-50 w-full h-[100dvh] flex flex-col bg-[#11131a] md:relative md:inset-auto md:w-80 lg:w-96 md:h-full md:border-l border-white/10 shadow-2xl">
+    <div
+      onDragOver={(e) => e.preventDefault()}
+      onDrop={handleDrop}
+      className="fixed inset-0 z-50 w-full h-[100dvh] flex flex-col bg-[#11131a] md:relative md:inset-auto md:w-80 lg:w-96 md:h-full md:border-l border-white/10 shadow-2xl"
+    >
       <div className="flex items-center justify-between p-3 border-b border-white/10 bg-white/5 safe-area-top">
         <div className="flex bg-black/40 p-1 rounded-xl border border-white/5">
           <button
@@ -210,9 +249,24 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({
                     )}
                     :
                   </span>
-                  <span className="text-gray-100 break-words whitespace-pre-wrap selection:bg-indigo-500/30">
-                    {m.text}
-                  </span>
+                  {m.text && (
+                    <span className="text-gray-100 break-words whitespace-pre-wrap selection:bg-indigo-500/30">
+                      {m.text}
+                    </span>
+                  )}
+                  {m.imageUrl && (
+                    <button
+                      type="button"
+                      onClick={() => setLightboxUrl(m.imageUrl!)}
+                      className="block mt-1 cursor-zoom-in"
+                    >
+                      <img
+                        src={m.imageUrl}
+                        alt={`Imagem enviada por ${m.sender}`}
+                        className="max-w-full max-h-60 rounded-lg border border-white/10"
+                      />
+                    </button>
+                  )}
                 </div>
               );
             })
@@ -258,6 +312,11 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({
                       {p.isScreenSharing && (
                         <span className="p-1 rounded bg-indigo-500/20 text-indigo-400" title="Compartilhando Tela">
                           <Monitor className="w-3.5 h-3.5" />
+                        </span>
+                      )}
+                      {p.isDeafened && (
+                        <span className="p-1 rounded bg-rose-500/20 text-rose-400" title="Áudio desativado pelo usuário">
+                          <HeadphoneOff className="w-3.5 h-3.5" />
                         </span>
                       )}
                       {p.isMuted ? (
@@ -325,6 +384,28 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({
         <div ref={messagesEndRef} />
       </div>
 
+      {activeTab === 'chat' && imageError && (
+        <div className="px-3 py-1.5 text-xs text-rose-300 bg-rose-500/10 border-t border-rose-500/20">
+          {imageError}
+        </div>
+      )}
+
+      {lightboxUrl && (
+        <div
+          className="fixed inset-0 z-[60] bg-black/85 flex items-center justify-center p-4 cursor-zoom-out"
+          onClick={() => setLightboxUrl(null)}
+        >
+          <button
+            type="button"
+            title="Fechar"
+            className="absolute top-4 right-4 p-2 rounded-full bg-white/10 hover:bg-white/20 text-white"
+          >
+            <X className="w-5 h-5" />
+          </button>
+          <img src={lightboxUrl} alt="Imagem ampliada" className="max-w-full max-h-full rounded-lg" />
+        </div>
+      )}
+
       {activeTab === 'chat' && (
         <form onSubmit={handleSend} className="p-3 border-t border-white/10 bg-white/5 flex items-center gap-2 relative safe-area-bottom">
           <input
@@ -332,8 +413,30 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({
             placeholder="Conversar com amigos..."
             value={inputText}
             onChange={(e) => setInputText(e.target.value)}
-            className="flex-1 bg-black/50 border border-white/10 rounded-xl px-3 py-2 text-sm text-white placeholder-gray-500 focus:outline-none focus:border-indigo-500 transition"
+            onPaste={handlePaste}
+            className="flex-1 min-w-0 bg-black/50 border border-white/10 rounded-xl px-3 py-2 text-sm text-white placeholder-gray-500 focus:outline-none focus:border-indigo-500 transition"
           />
+
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept="image/png,image/jpeg,image/webp,image/gif"
+            className="hidden"
+            onChange={(e) => {
+              const file = e.target.files?.[0];
+              e.target.value = '';
+              if (file) void handleImageFile(file);
+            }}
+          />
+          <button
+            type="button"
+            onClick={() => fileInputRef.current?.click()}
+            disabled={isSendingImage}
+            title="Enviar imagem (ou cole com Ctrl+V)"
+            className="p-2 rounded-xl border bg-white/5 hover:bg-white/10 border-white/10 text-gray-300 hover:text-white transition cursor-pointer disabled:opacity-40 disabled:cursor-wait"
+          >
+            <ImagePlus className="w-4 h-4" />
+          </button>
 
           {/* Emoji Reaction Popover */}
           <div className="relative" ref={emojiPickerRef}>

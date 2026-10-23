@@ -115,7 +115,7 @@ export const ControlsBar: React.FC<ControlsBarProps> = ({
         {onOpenHotkeySettings && (
           <button
             onClick={onOpenHotkeySettings}
-            title="Atalho global do microfone (funciona com o jogo em foco)"
+            title="Atalhos globais de microfone e áudio (funcionam com o jogo em foco)"
             className="p-2.5 rounded-2xl border bg-white/5 hover:bg-white/10 border-white/10 text-gray-400 hover:text-white transition"
           >
             <Keyboard className="w-4 h-4" />

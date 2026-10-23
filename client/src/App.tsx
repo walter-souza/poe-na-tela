@@ -2,7 +2,7 @@ import { useState, useEffect, type Dispatch, type SetStateAction } from 'react';
 import { MessageSquare, Tv } from 'lucide-react';
 import { useLiveKit } from './hooks/useLiveKit';
 import { useNativeStream } from './hooks/useNativeStream';
-import { useMicHotkey } from './hooks/useMicHotkey';
+import { useHotkeys } from './hooks/useHotkeys';
 import { NativeStreamModal } from './components/NativeStreamModal';
 import { NativeStreamStatus } from './components/NativeStreamStatus';
 import { HotkeyModal } from './components/HotkeyModal';
@@ -253,6 +253,7 @@ function StreamRoom({
     toggleDeafen,
     toggleNoiseSuppression,
     sendMessage,
+    sendImage,
     sendReaction,
     disconnect,
   } = useLiveKit({
@@ -264,9 +265,17 @@ function StreamRoom({
   // No app desktop a transmissão é nativa (GPU + SRT, como o OBS); no navegador segue o WebRTC do LiveKit.
   const native = useNativeStream();
   const [isHotkeyModalOpen, setIsHotkeyModalOpen] = useState(false);
-  const { hotkey, error: hotkeyError, setHotkey } = useMicHotkey(() => {
-    void toggleMic();
-  });
+  const { hotkeys, errors: hotkeyErrors, setHotkey } = useHotkeys(
+    {
+      mic: () => {
+        void toggleMic();
+      },
+      deafen: () => {
+        toggleDeafen();
+      },
+    },
+    { paused: isHotkeyModalOpen },
+  );
 
   const handleConfirmScreenShare = (config: StreamQualityConfig) => {
     startScreenShare(config);
@@ -342,6 +351,7 @@ function StreamRoom({
             messages={messages}
             participants={participants}
             onSendMessage={sendMessage}
+            onSendImage={sendImage}
             onSendReaction={sendReaction}
             userName={session.userName}
             roomName={session.roomName}
@@ -383,8 +393,8 @@ function StreamRoom({
           />
           <HotkeyModal
             isOpen={isHotkeyModalOpen}
-            hotkey={hotkey}
-            error={hotkeyError}
+            hotkeys={hotkeys}
+            errors={hotkeyErrors}
             onSave={setHotkey}
             onClose={() => setIsHotkeyModalOpen(false)}
           />

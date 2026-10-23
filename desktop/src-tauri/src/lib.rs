@@ -3,6 +3,8 @@ mod capture;
 mod encoders;
 mod ffmpeg;
 mod hotkey;
+mod icon;
+mod modkeys;
 mod sources;
 
 use tauri::Manager;
@@ -11,8 +13,11 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_global_shortcut::Builder::new().build())
         .manage(capture::CaptureState::default())
+        .manage(hotkey::HotkeyState::default())
         .invoke_handler(tauri::generate_handler![
             sources::list_sources,
+            sources::capture_thumbnail,
+            icon::window_icon,
             encoders::detect_encoders,
             capture::start_capture,
             capture::stop_capture,

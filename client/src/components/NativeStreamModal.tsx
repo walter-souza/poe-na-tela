@@ -1,12 +1,15 @@
-import React, { useCallback, useEffect, useState } from 'react';
-import { Monitor, AppWindow, RefreshCw, X, Zap, Cpu } from 'lucide-react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import { RefreshCw, X, Zap, Cpu } from 'lucide-react';
+import { SourcePicker } from './SourcePicker';
 import { getObsSrtUrl } from '../utils/api';
 import { getResolutionSize } from '../utils/streamProfile';
 import {
   detectEncoders,
   listSources,
+  toCaptureSource,
   type CaptureSources,
   type NativeCaptureConfig,
+  type SourceChoice,
 } from '../utils/desktop';
 import type { VideoFrameRate, VideoResolution } from '../types';
 
@@ -33,8 +36,6 @@ const ENCODER_LABEL: Record<string, string> = {
   h264_amf: 'AMD AMF',
 };
 const OWN_WINDOW_TITLE = 'Põe na Tela!';
-
-type SourceChoice = `monitor:${number}` | `window:${number}`;
 
 export const NativeStreamModal: React.FC<NativeStreamModalProps> = ({
   isOpen,
@@ -69,6 +70,12 @@ export const NativeStreamModal: React.FC<NativeStreamModalProps> = ({
     if (isOpen) void load();
   }, [isOpen, load]);
 
+  // Referência estável: a sala re-renderiza a cada segundo e um objeto novo aqui reiniciaria a fila de miniaturas.
+  const visibleSources = useMemo(
+    () => sources && { ...sources, windows: sources.windows.filter((w) => w.title !== OWN_WINDOW_TITLE) },
+    [sources],
+  );
+
   if (!isOpen) return null;
 
   const pickQuality = (nextRes: VideoResolution, nextFps: VideoFrameRate) => {
@@ -78,10 +85,9 @@ export const NativeStreamModal: React.FC<NativeStreamModalProps> = ({
   };
 
   const handleStart = () => {
-    const [kind, id] = source.split(':');
     const { width, height } = getResolutionSize(resolution);
     onStart({
-      source: kind === 'monitor' ? { kind: 'monitor', index: Number(id) } : { kind: 'window', hwnd: Number(id) },
+      source: toCaptureSource(source),
       encoder,
       fps,
       width,
@@ -93,7 +99,6 @@ export const NativeStreamModal: React.FC<NativeStreamModalProps> = ({
     onClose();
   };
 
-  const windows = sources?.windows.filter((w) => w.title !== OWN_WINDOW_TITLE) ?? [];
   const noEncoder = encoders !== null && encoders.length === 0;
   const canStart = !!sources && !!encoder && !loadError;
 
@@ -145,36 +150,14 @@ export const NativeStreamModal: React.FC<NativeStreamModalProps> = ({
               <span className="font-medium text-xs text-gray-400 uppercase tracking-wider">O que transmitir</span>
               <button
                 onClick={() => void load()}
-                title="Atualizar lista de janelas"
+                title="Atualizar telas, janelas e miniaturas"
                 className="p-1 rounded-lg text-gray-400 hover:text-white hover:bg-white/10 transition"
               >
                 <RefreshCw className="w-3.5 h-3.5" />
               </button>
             </div>
-            <select
-              value={source}
-              onChange={(e) => setSource(e.target.value as SourceChoice)}
-              className="w-full bg-white/5 border border-white/10 rounded-xl px-3 py-2.5 text-sm text-white focus:outline-none focus:border-indigo-500"
-            >
-              <optgroup label="Tela inteira">
-                {(sources?.monitors ?? [{ index: 0, name: 'Monitor 1', width: 0, height: 0 }]).map((m) => (
-                  <option key={m.index} value={`monitor:${m.index}`} className="bg-[#13151f]">
-                    {m.name} {m.width ? `(${m.width}x${m.height})` : ''}
-                  </option>
-                ))}
-              </optgroup>
-              {windows.length > 0 && (
-                <optgroup label="Janela / jogo">
-                  {windows.map((w) => (
-                    <option key={w.hwnd} value={`window:${w.hwnd}`} className="bg-[#13151f]">
-                      {w.title.slice(0, 70)}
-                    </option>
-                  ))}
-                </optgroup>
-              )}
-            </select>
-            <p className="mt-1.5 text-[11px] text-gray-500 flex items-center gap-1.5">
-              {source.startsWith('window') ? <AppWindow className="w-3 h-3" /> : <Monitor className="w-3 h-3" />}
+            <SourcePicker sources={visibleSources} value={source} onChange={setSource} />
+            <p className="mt-2 text-[11px] text-gray-500">
               Jogos em tela cheia exclusiva podem não aparecer: use o modo janela sem bordas.
             </p>
           </div>

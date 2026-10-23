@@ -12,6 +12,7 @@ import { playJoinSound, playLeaveSound } from '../utils/soundEffects';
 import { startKeepAlive, stopKeepAlive } from '../utils/keepAlive';
 import { getAssetUrl, isNoiseSuppressionSupported, NoiseSuppressionProcessor } from '../utils/noiseSuppression';
 import { buildScreenShareProfile, getResolutionSize } from '../utils/streamProfile';
+import { CHAT_IMAGE_TOPIC, MAX_RECEIVED_BYTES, isAcceptedMime, prepareChatImage } from '../utils/chatImage';
 
 export interface UseLiveKitOptions {
   url: string;
@@ -32,8 +33,12 @@ export function useLiveKit({ url, token, onDisconnected }: UseLiveKitOptions) {
   const [isMicEnabled, setIsMicEnabled] = useState<boolean>(false);
   const [isDeafened, setIsDeafened] = useState<boolean>(false);
   const isDeafenedRef = useRef<boolean>(false);
+  // Who has their audio turned off; shared over the data channel since LiveKit has no such flag.
+  const deafenedPeersRef = useRef<Set<string>>(new Set());
   const [canPlaybackAudio, setCanPlaybackAudio] = useState<boolean>(true);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
+  // blob: URLs of chat images, released when the room is left.
+  const chatImageUrlsRef = useRef<string[]>([]);
   const [participants, setParticipants] = useState<ParticipantInfo[]>([]);
   const [screenShares, setScreenShares] = useState<ScreenShareItem[]>([]);
   const [streamVolumes, setStreamVolumes] = useState<Record<string, number>>({});
@@ -522,6 +527,7 @@ export function useLiveKit({ url, token, onDisconnected }: UseLiveKitOptions) {
         isSpeaking,
         isScreenSharing: room.localParticipant.isScreenShareEnabled,
         isMuted: !room.localParticipant.isMicrophoneEnabled,
+        isDeafened: isDeafenedRef.current,
       });
     }
 
@@ -536,10 +542,16 @@ export function useLiveKit({ url, token, onDisconnected }: UseLiveKitOptions) {
         isSpeaking,
         isScreenSharing: p.isScreenShareEnabled,
         isMuted: !p.isMicrophoneEnabled,
+        isDeafened: deafenedPeersRef.current.has(p.identity),
       });
     });
 
     setParticipants(list);
+  }, []);
+
+  const broadcastDeafened = useCallback((room: Room, deafened: boolean) => {
+    const payload = new TextEncoder().encode(JSON.stringify({ type: 'deafen', deafened }));
+    room.localParticipant.publishData(payload, { reliable: true }).catch(() => {});
   }, []);
 
   // Real-time audio activity detector (runs every 40ms, updates React ONLY on state change)
@@ -1010,6 +1022,12 @@ export function useLiveKit({ url, token, onDisconnected }: UseLiveKitOptions) {
         el.setAttribute('data-participant', participant.identity);
         el.setAttribute('data-source', isScreenAudio ? 'screen_share_audio' : 'microphone');
 
+        // Deafening disables the incoming tracks (toggleDeafen); tracks that arrive afterwards,
+        // such as someone joining later, must start disabled too or they would be heard.
+        if (isDeafenedRef.current && track.mediaStreamTrack) {
+          track.mediaStreamTrack.enabled = false;
+        }
+
         if (isScreenAudio) {
           const streamVol = streamVolumesRef.current[participant.identity] !== undefined
             ? streamVolumesRef.current[participant.identity]
@@ -1081,6 +1099,12 @@ export function useLiveKit({ url, token, onDisconnected }: UseLiveKitOptions) {
               isHost: data.isHost,
             },
           ]);
+        } else if (data.type === 'deafen') {
+          if (participant) {
+            if (data.deafened) deafenedPeersRef.current.add(participant.identity);
+            else deafenedPeersRef.current.delete(participant.identity);
+            updateParticipantList(room);
+          }
         } else if (data.type === 'reaction') {
           setReaction({
             emoji: data.emoji,
@@ -1095,6 +1119,8 @@ export function useLiveKit({ url, token, onDisconnected }: UseLiveKitOptions) {
 
     const handleParticipantConnected = (participant: RemoteParticipant) => {
       if (!isSubscribed) return;
+      // Newcomers cannot know the current state, so repeat it when someone joins.
+      if (isDeafenedRef.current) broadcastDeafened(room, true);
       updateParticipantList(room);
       updateScreenShares(room);
       const name = participant.name || participant.identity || 'Um usuário';
@@ -1117,6 +1143,7 @@ export function useLiveKit({ url, token, onDisconnected }: UseLiveKitOptions) {
 
     const handleParticipantDisconnected = (participant: RemoteParticipant) => {
       if (!isSubscribed) return;
+      deafenedPeersRef.current.delete(participant.identity);
       unregisterVadTrack(participant.identity);
       updateParticipantList(room);
       updateScreenShares(room);
@@ -1159,6 +1186,32 @@ export function useLiveKit({ url, token, onDisconnected }: UseLiveKitOptions) {
     room.on(RoomEvent.ActiveSpeakersChanged, () => updateParticipantList(room));
     room.on(RoomEvent.DataReceived, handleDataReceived);
 
+    room.registerByteStreamHandler(CHAT_IMAGE_TOPIC, async (reader, { identity }) => {
+      const { mimeType, size } = reader.info;
+      // Never trust the sender: check type and size before touching the bytes.
+      if (!isAcceptedMime(mimeType) || (size ?? 0) > MAX_RECEIVED_BYTES) return;
+      try {
+        const chunks = await reader.readAll();
+        if (!isSubscribed) return;
+        const url = URL.createObjectURL(new Blob(chunks as BlobPart[], { type: mimeType }));
+        chatImageUrlsRef.current.push(url);
+        const sender = room.remoteParticipants.get(identity);
+        setMessages((prev) => [
+          ...prev,
+          {
+            id: `${Date.now()}-${Math.random()}`,
+            sender: sender?.name || identity,
+            text: '',
+            imageUrl: url,
+            timestamp: Date.now(),
+            isHost: sender?.isScreenShareEnabled,
+          },
+        ]);
+      } catch (err) {
+        console.error('Failed to receive chat image', err);
+      }
+    });
+
     room
       .connect(url, token)
       .then(() => {
@@ -1200,6 +1253,9 @@ export function useLiveKit({ url, token, onDisconnected }: UseLiveKitOptions) {
       room.off(RoomEvent.AudioPlaybackStatusChanged, handleAudioPlaybackStatusChanged);
       room.off(RoomEvent.TrackSubscribed, handleTrackSubscribed);
       room.off(RoomEvent.TrackUnsubscribed, handleTrackUnsubscribed);
+      room.unregisterByteStreamHandler(CHAT_IMAGE_TOPIC);
+      chatImageUrlsRef.current.forEach((u) => URL.revokeObjectURL(u));
+      chatImageUrlsRef.current = [];
       if (activeProcessorRef.current) {
         activeProcessorRef.current.destroy().catch(() => {});
         activeProcessorRef.current = null;
@@ -1222,6 +1278,7 @@ export function useLiveKit({ url, token, onDisconnected }: UseLiveKitOptions) {
     registerVadTrack,
     unregisterVadTrack,
     setMicEnabled,
+    broadcastDeafened,
   ]);
 
   // Unlock browser audio autoplay policy
@@ -1465,6 +1522,9 @@ export function useLiveKit({ url, token, onDisconnected }: UseLiveKitOptions) {
     const room = roomRef.current;
     if (!room) return;
 
+    broadcastDeafened(room, nextDeafen);
+    updateParticipantList(room);
+
     room.remoteParticipants.forEach((p) => {
       p.audioTrackPublications.forEach((pub) => {
         if (pub.track && pub.track.mediaStreamTrack) {
@@ -1540,6 +1600,29 @@ export function useLiveKit({ url, token, onDisconnected }: UseLiveKitOptions) {
     setMessages((prev) => [...prev, msg]);
   };
 
+  // Send an image to the room over a LiveKit byte stream (throws a user-facing Error on invalid files).
+  const sendImage = async (file: File) => {
+    const room = roomRef.current;
+    if (!room) return;
+
+    const prepared = await prepareChatImage(file);
+    await room.localParticipant.sendFile(prepared, { topic: CHAT_IMAGE_TOPIC });
+
+    const url = URL.createObjectURL(prepared);
+    chatImageUrlsRef.current.push(url);
+    setMessages((prev) => [
+      ...prev,
+      {
+        id: `${Date.now()}-${Math.random()}`,
+        sender: room.localParticipant.name || room.localParticipant.identity,
+        text: '',
+        imageUrl: url,
+        timestamp: Date.now(),
+        isHost: isScreenSharing,
+      },
+    ]);
+  };
+
   // Send Reaction / Emoji
   const sendReaction = async (emoji: string) => {
     const room = roomRef.current;
@@ -1609,6 +1692,7 @@ export function useLiveKit({ url, token, onDisconnected }: UseLiveKitOptions) {
     toggleDeafen,
     toggleNoiseSuppression,
     sendMessage,
+    sendImage,
     sendReaction,
     disconnect: handleManualDisconnect,
   };

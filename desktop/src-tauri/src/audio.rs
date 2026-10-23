@@ -1,6 +1,6 @@
-//! Captura do áudio do sistema por WASAPI "process loopback" em modo de exclusão: pega tudo que toca no PC
-//! MENOS este app (e os processos do WebView dele). Assim a voz dos amigos, tocada pelo chat da sala,
-//! não volta na transmissão. Requer Windows 10 2004+.
+//! Captura de áudio por WASAPI "process loopback". Monitor: tudo que toca no PC MENOS este app (e o WebView
+//! dele). Janela: só o app dono da janela. Nos dois casos a voz dos amigos, tocada pelo chat da sala neste
+//! app, não volta na transmissão. Requer Windows 10 2004+.
 use std::collections::VecDeque;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc;
@@ -15,13 +15,16 @@ use windows::Win32::Media::Audio::{
     AUDCLNT_STREAMFLAGS_AUTOCONVERTPCM, AUDCLNT_STREAMFLAGS_LOOPBACK,
     AUDCLNT_STREAMFLAGS_SRC_DEFAULT_QUALITY, AUDIOCLIENT_ACTIVATION_PARAMS,
     AUDIOCLIENT_ACTIVATION_TYPE_PROCESS_LOOPBACK, AUDIOCLIENT_PROCESS_LOOPBACK_PARAMS,
-    PROCESS_LOOPBACK_MODE_EXCLUDE_TARGET_PROCESS_TREE, VIRTUAL_AUDIO_DEVICE_PROCESS_LOOPBACK,
+    PROCESS_LOOPBACK_MODE_EXCLUDE_TARGET_PROCESS_TREE, PROCESS_LOOPBACK_MODE_INCLUDE_TARGET_PROCESS_TREE,
+    VIRTUAL_AUDIO_DEVICE_PROCESS_LOOPBACK,
     WAVEFORMATEX,
 };
 use windows::Win32::System::Com::StructuredStorage::PROPVARIANT;
 use windows::Win32::System::Diagnostics::ToolHelp::{
     CreateToolhelp32Snapshot, Process32FirstW, Process32NextW, PROCESSENTRY32W, TH32CS_SNAPPROCESS,
 };
+use windows::Win32::Foundation::HWND;
+use windows::Win32::UI::WindowsAndMessaging::GetWindowThreadProcessId;
 use windows::Win32::System::Com::{CoInitializeEx, CoUninitialize, BLOB, COINIT_MULTITHREADED};
 use windows::Win32::System::Variant::VT_BLOB;
 
@@ -74,15 +77,35 @@ fn webview_root_pid(app_pid: u32) -> Option<u32> {
     }
 }
 
-/// Ativa o cliente de áudio "tudo exceto a árvore de processos de `pid`".
-unsafe fn activate_excluding(pid: u32) -> Result<IAudioClient, String> {
+/// O que capturar.
+#[derive(Clone, Copy)]
+pub enum AudioTarget {
+    /// Todo o áudio do PC, exceto este app.
+    AllExceptApp,
+    /// Apenas o áudio do app dono da janela.
+    Window(u64),
+}
+
+/// Processo dono da janela; `None` se a janela não existe mais.
+fn window_pid(hwnd: u64) -> Option<u32> {
+    let mut pid = 0u32;
+    unsafe { GetWindowThreadProcessId(HWND(hwnd as usize as *mut _), Some(&mut pid)) };
+    (pid != 0).then_some(pid)
+}
+
+/// Ativa o cliente de áudio da árvore de processos de `pid` (só ela, ou tudo menos ela).
+unsafe fn activate(pid: u32, include: bool) -> Result<IAudioClient, String> {
     let mut params = AUDIOCLIENT_ACTIVATION_PARAMS {
         ActivationType: AUDIOCLIENT_ACTIVATION_TYPE_PROCESS_LOOPBACK,
         ..Default::default()
     };
     params.Anonymous.ProcessLoopbackParams = AUDIOCLIENT_PROCESS_LOOPBACK_PARAMS {
         TargetProcessId: pid,
-        ProcessLoopbackMode: PROCESS_LOOPBACK_MODE_EXCLUDE_TARGET_PROCESS_TREE,
+        ProcessLoopbackMode: if include {
+            PROCESS_LOOPBACK_MODE_INCLUDE_TARGET_PROCESS_TREE
+        } else {
+            PROCESS_LOOPBACK_MODE_EXCLUDE_TARGET_PROCESS_TREE
+        },
     };
 
     let mut variant = PROPVARIANT::default();
@@ -121,10 +144,23 @@ unsafe fn activate_excluding(pid: u32) -> Result<IAudioClient, String> {
         .map_err(|e| e.to_string())
 }
 
-unsafe fn run(queue: &AudioQueue, stop: &AtomicBool, ready: &mpsc::Sender<Result<(), String>>) -> Result<(), String> {
+unsafe fn run(
+    target: AudioTarget,
+    queue: &AudioQueue,
+    stop: &AtomicBool,
+    ready: &mpsc::Sender<Result<(), String>>,
+) -> Result<(), String> {
     let app_pid = std::process::id();
-    let target = webview_root_pid(app_pid).unwrap_or(app_pid);
-    let client = activate_excluding(target)?;
+    let exclude_app = || activate(webview_root_pid(app_pid).unwrap_or(app_pid), false);
+    let client = match target {
+        AudioTarget::AllExceptApp => exclude_app()?,
+        AudioTarget::Window(hwnd) => match window_pid(hwnd) {
+            // A janela é deste app: incluir o processo traria a sala de volta (eco).
+            Some(pid) if pid != app_pid => activate(pid, true)?,
+            Some(_) => exclude_app()?,
+            None => return Err("a janela escolhida não existe mais".into()),
+        },
+    };
     let format = WAVEFORMATEX {
         wFormatTag: WAVE_FORMAT_IEEE_FLOAT,
         nChannels: CHANNELS,
@@ -186,8 +222,8 @@ impl Drop for Loopback {
     }
 }
 
-/// Inicia a captura do áudio do sistema (sem o próprio app) alimentando `queue`.
-pub fn start_loopback(queue: AudioQueue) -> Result<Loopback, String> {
+/// Inicia a captura de áudio de `target` (nunca o próprio app) alimentando `queue`.
+pub fn start_loopback(queue: AudioQueue, target: AudioTarget) -> Result<Loopback, String> {
     let stop = Arc::new(AtomicBool::new(false));
     let (ready_tx, ready_rx) = mpsc::channel();
     let handle = {
@@ -197,7 +233,7 @@ pub fn start_loopback(queue: AudioQueue) -> Result<Loopback, String> {
                 let _ = ready_tx.send(Err("falha ao inicializar COM".to_string()));
                 return;
             }
-            if let Err(e) = run(&queue, &stop, &ready_tx) {
+            if let Err(e) = run(target, &queue, &stop, &ready_tx) {
                 // Falha durante a captura (ou na partida): quem espera `ready` recebe o motivo.
                 let _ = ready_tx.send(Err(e));
             }
@@ -234,7 +270,7 @@ mod tests {
     fn captura_real_sem_o_proprio_processo() {
         // Só verifica que a ativação do Windows funciona nesta máquina; o isolamento é coberto no E2E.
         let queue: AudioQueue = Arc::default();
-        let capture = start_loopback(queue).expect("process loopback indisponível");
+        let capture = start_loopback(queue, AudioTarget::AllExceptApp).expect("process loopback indisponível");
         drop(capture);
     }
 }

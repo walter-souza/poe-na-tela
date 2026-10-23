@@ -1,4 +1,4 @@
-use crate::audio::{self, AudioQueue, SAMPLE_RATE};
+use crate::audio::{self, AudioQueue, AudioTarget, SAMPLE_RATE};
 use crate::ffmpeg;
 use serde::{Deserialize, Serialize};
 use std::collections::VecDeque;
@@ -20,6 +20,24 @@ const HEALTHY_RUN: Duration = Duration::from_secs(10);
 pub enum Source {
     Monitor { index: u32 },
     Window { hwnd: u64 },
+}
+
+impl Source {
+    /// Janela: só o áudio dela; monitor: o do PC sem a sala deste app.
+    fn audio_target(&self) -> AudioTarget {
+        match *self {
+            Source::Monitor { .. } => AudioTarget::AllExceptApp,
+            Source::Window { hwnd } => AudioTarget::Window(hwnd),
+        }
+    }
+
+    /// Filtro de origem do ffmpeg (saida em quadros D3D11, ainda na GPU).
+    pub fn grab_filter(&self, fps: u32) -> String {
+        match *self {
+            Source::Monitor { index } => format!("ddagrab=framerate={fps}:output_idx={index}:draw_mouse=1"),
+            Source::Window { hwnd } => format!("gfxcapture=hwnd={hwnd}:max_framerate={fps}:capture_cursor=1"),
+        }
+    }
 }
 
 #[derive(Deserialize, Clone)]
@@ -76,14 +94,7 @@ impl CaptureConfig {
 
     fn video_graph(&self) -> String {
         let (w, h, fps) = (self.width, self.height, self.fps);
-        let grab = match self.source {
-            Source::Monitor { index } => {
-                format!("ddagrab=framerate={fps}:output_idx={index}:draw_mouse=1")
-            }
-            Source::Window { hwnd } => {
-                format!("gfxcapture=hwnd={hwnd}:max_framerate={fps}:capture_cursor=1")
-            }
-        };
+        let grab = self.source.grab_filter(fps);
         // gfxcapture só emite quadros quando a janela muda; `fps` mantém o ritmo constante.
         let cfr = if matches!(self.source, Source::Window { .. }) {
             format!(",fps={fps}")
@@ -128,7 +139,7 @@ impl CaptureConfig {
         args.extend(strs(&["-f", "lavfi", "-i"]));
         args.push(self.video_graph());
         if with_audio {
-            args.extend(strs(&["-use_wallclock_as_timestamps", "1", "-f", "f32le", "-ar"]));
+            args.extend(strs(&["-f", "f32le", "-ar"]));
             args.push(SAMPLE_RATE.to_string());
             args.extend(strs(&["-ac", "2", "-i", "pipe:0"]));
         }
@@ -141,7 +152,7 @@ impl CaptureConfig {
         args.push(self.fps.to_string());
         args.extend(self.encoder_args());
         if with_audio {
-            args.extend(strs(&["-c:a", "libopus", "-b:a", "160k", "-af", "aresample=async=1:first_pts=0"]));
+            args.extend(strs(&["-c:a", "libopus", "-b:a", "160k"]));
         }
         args.extend(strs(&["-muxdelay", "0", "-f", "mpegts"]));
         args.push(self.srt_url.clone());
@@ -232,7 +243,7 @@ fn supervise(app: AppHandle, cfg: CaptureConfig, stop: Arc<AtomicBool>) {
     let mut audio_error = None;
     // O Stream precisa viver até o fim da transmissão.
     let loopback = if cfg.system_audio {
-        match audio::start_loopback(queue.clone()) {
+        match audio::start_loopback(queue.clone(), cfg.source.audio_target()) {
             Ok(stream) => Some(stream),
             Err(e) => {
                 audio_error = Some(e);

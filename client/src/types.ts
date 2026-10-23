@@ -49,6 +49,8 @@ export interface ChatMessage {
   id: string;
   sender: string;
   text: string;
+  /** blob: URL of an attached image (text is empty for image-only messages). */
+  imageUrl?: string;
   timestamp: number;
   isHost?: boolean;
   isSystem?: boolean;
