@@ -231,13 +231,13 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({
               return (
                 <div
                   key={m.id}
-                  className="py-1 px-2 rounded-lg hover:bg-white/[0.04] transition-colors text-sm leading-relaxed animate-fadeIn"
+                  className="py-1 px-2 rounded-lg hover:bg-white/[0.04] transition-colors text-sm leading-relaxed animate-fadeIn select-text"
                 >
                   <span className="text-xs text-gray-500 font-mono tabular-nums mr-2 select-none align-baseline">
                     {timeString}
                   </span>
                   <span
-                    className={`font-semibold mr-1 cursor-default ${
+                    className={`font-semibold mr-1 cursor-default select-none ${
                       isMe ? 'text-indigo-400' : 'text-purple-400'
                     }`}
                   >
