@@ -21,6 +21,7 @@ import {
 } from 'lucide-react';
 import type { ChatMessage, ParticipantInfo } from '../types';
 import { MAX_CAPTION_LENGTH, isAcceptedImage } from '../utils/chatImage';
+import { ChatMessageText } from './ChatMessageText';
 
 interface ChatPanelProps {
   messages: ChatMessage[];
@@ -277,11 +278,7 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({
                     )}
                     :
                   </span>
-                  {m.text && (
-                    <span className="text-gray-100 break-words whitespace-pre-wrap selection:bg-indigo-500/30">
-                      {m.text}
-                    </span>
-                  )}
+                  {m.text && <ChatMessageText text={m.text} />}
                   {m.imageUrl && (
                     <button
                       type="button"
