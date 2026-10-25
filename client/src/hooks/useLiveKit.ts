@@ -20,6 +20,12 @@ export interface UseLiveKitOptions {
   onDisconnected?: () => void;
 }
 
+// Message ids are chosen by the sender so edits and deletes can refer to them; peers only
+// accept short, plain ids and fall back to a local one otherwise.
+const MESSAGE_ID_PATTERN = /^[\w.-]{1,64}$/;
+const newMessageId = () => `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+const acceptMessageId = (id: unknown) => (typeof id === 'string' && MESSAGE_ID_PATTERN.test(id) ? id : newMessageId());
+
 export function useLiveKit({ url, token, onDisconnected }: UseLiveKitOptions) {
   const roomRef = useRef<Room | null>(null);
   const onDisconnectedRef = useRef(onDisconnected);
@@ -37,6 +43,8 @@ export function useLiveKit({ url, token, onDisconnected }: UseLiveKitOptions) {
   const deafenedPeersRef = useRef<Set<string>>(new Set());
   const [canPlaybackAudio, setCanPlaybackAudio] = useState<boolean>(true);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const messagesRef = useRef<ChatMessage[]>([]);
+  messagesRef.current = messages;
   // blob: URLs of chat images, released when the room is left.
   const chatImageUrlsRef = useRef<string[]>([]);
   const [participants, setParticipants] = useState<ParticipantInfo[]>([]);
@@ -1089,16 +1097,39 @@ export function useLiveKit({ url, token, onDisconnected }: UseLiveKitOptions) {
         const data = JSON.parse(decoded);
 
         if (data.type === 'chat') {
+          const id = acceptMessageId(data.id);
           setMessages((prev) => [
             ...prev,
-            {
-              id: `${Date.now()}-${Math.random()}`,
-              sender: participant?.name || participant?.identity || data.sender || 'Amigo',
-              text: data.text,
-              timestamp: Date.now(),
-              isHost: data.isHost,
-            },
+            ...(prev.some((m) => m.id === id)
+              ? []
+              : [
+                  {
+                    id,
+                    sender: participant?.name || participant?.identity || data.sender || 'Amigo',
+                    senderIdentity: participant?.identity,
+                    text: data.text,
+                    timestamp: Date.now(),
+                    isHost: data.isHost,
+                  },
+                ]),
           ]);
+        } else if (data.type === 'chat-edit' || data.type === 'chat-delete') {
+          // Only the author may change a message: the sender identity comes from LiveKit,
+          // so a peer cannot touch someone else's message by guessing its id.
+          if (!participant || typeof data.id !== 'string') return;
+          const target = messagesRef.current.find(
+            (m) => m.id === data.id && m.senderIdentity === participant.identity
+          );
+          if (!target) return;
+          if (data.type === 'chat-delete') {
+            if (target.imageUrl) URL.revokeObjectURL(target.imageUrl);
+            setMessages((prev) => prev.filter((m) => m !== target));
+          } else {
+            const text = typeof data.text === 'string' ? data.text.trim() : '';
+            if (!text && !target.imageUrl) return;
+            const next = target.imageUrl ? text.slice(0, MAX_CAPTION_LENGTH) : text;
+            setMessages((prev) => prev.map((m) => (m === target ? { ...m, text: next, edited: true } : m)));
+          }
         } else if (data.type === 'deafen') {
           if (participant) {
             if (data.deafened) deafenedPeersRef.current.add(participant.identity);
@@ -1197,16 +1228,22 @@ export function useLiveKit({ url, token, onDisconnected }: UseLiveKitOptions) {
         const url = URL.createObjectURL(new Blob(chunks as BlobPart[], { type: mimeType }));
         chatImageUrlsRef.current.push(url);
         const sender = room.remoteParticipants.get(identity);
+        const id = acceptMessageId(attributes?.id);
         setMessages((prev) => [
           ...prev,
-          {
-            id: `${Date.now()}-${Math.random()}`,
-            sender: sender?.name || identity,
-            text: (attributes?.caption ?? '').slice(0, MAX_CAPTION_LENGTH),
-            imageUrl: url,
-            timestamp: Date.now(),
-            isHost: attributes?.isHost === '1',
-          },
+          ...(prev.some((m) => m.id === id)
+            ? []
+            : [
+                {
+                  id,
+                  sender: sender?.name || identity,
+                  senderIdentity: identity,
+                  text: (attributes?.caption ?? '').slice(0, MAX_CAPTION_LENGTH),
+                  imageUrl: url,
+                  timestamp: Date.now(),
+                  isHost: attributes?.isHost === '1',
+                },
+              ]),
         ]);
       } catch (err) {
         console.error('Failed to receive chat image', err);
@@ -1581,8 +1618,10 @@ export function useLiveKit({ url, token, onDisconnected }: UseLiveKitOptions) {
     if (!room || !text.trim()) return;
 
     const msg: ChatMessage = {
-      id: `${Date.now()}-${Math.random()}`,
+      id: newMessageId(),
       sender: room.localParticipant.name || room.localParticipant.identity,
+      senderIdentity: room.localParticipant.identity,
+      isOwn: true,
       text: text.trim(),
       timestamp: Date.now(),
       isHost: isScreenSharing,
@@ -1591,6 +1630,7 @@ export function useLiveKit({ url, token, onDisconnected }: UseLiveKitOptions) {
     const payload = new TextEncoder().encode(
       JSON.stringify({
         type: 'chat',
+        id: msg.id,
         text: msg.text,
         sender: msg.sender,
         isHost: isScreenSharing,
@@ -1609,9 +1649,10 @@ export function useLiveKit({ url, token, onDisconnected }: UseLiveKitOptions) {
 
     const prepared = await prepareChatImage(file);
     const text = caption.trim().slice(0, MAX_CAPTION_LENGTH);
+    const id = newMessageId();
     await room.localParticipant.sendBytes(new Uint8Array(await prepared.arrayBuffer()), {
       topic: CHAT_IMAGE_TOPIC,
-      attributes: { mime: prepared.type, caption: text, isHost: isScreenSharing ? '1' : '0' },
+      attributes: { id, mime: prepared.type, caption: text, isHost: isScreenSharing ? '1' : '0' },
     });
 
     const url = URL.createObjectURL(prepared);
@@ -1619,14 +1660,41 @@ export function useLiveKit({ url, token, onDisconnected }: UseLiveKitOptions) {
     setMessages((prev) => [
       ...prev,
       {
-        id: `${Date.now()}-${Math.random()}`,
+        id,
         sender: room.localParticipant.name || room.localParticipant.identity,
+        senderIdentity: room.localParticipant.identity,
+        isOwn: true,
         text,
         imageUrl: url,
         timestamp: Date.now(),
         isHost: isScreenSharing,
       },
     ]);
+  };
+
+  // Edit one of our own messages; peers re-check authorship on their side.
+  const editMessage = async (id: string, text: string) => {
+    const room = roomRef.current;
+    const target = messagesRef.current.find((m) => m.id === id && m.isOwn);
+    if (!room || !target) return;
+    const trimmed = text.trim();
+    const next = target.imageUrl ? trimmed.slice(0, MAX_CAPTION_LENGTH) : trimmed;
+    if (next === target.text || (!next && !target.imageUrl)) return;
+
+    const payload = new TextEncoder().encode(JSON.stringify({ type: 'chat-edit', id, text: next }));
+    await room.localParticipant.publishData(payload, { reliable: true });
+    setMessages((prev) => prev.map((m) => (m === target ? { ...m, text: next, edited: true } : m)));
+  };
+
+  const deleteMessage = async (id: string) => {
+    const room = roomRef.current;
+    const target = messagesRef.current.find((m) => m.id === id && m.isOwn);
+    if (!room || !target) return;
+
+    const payload = new TextEncoder().encode(JSON.stringify({ type: 'chat-delete', id }));
+    await room.localParticipant.publishData(payload, { reliable: true });
+    if (target.imageUrl) URL.revokeObjectURL(target.imageUrl);
+    setMessages((prev) => prev.filter((m) => m !== target));
   };
 
   // Send Reaction / Emoji
@@ -1699,6 +1767,8 @@ export function useLiveKit({ url, token, onDisconnected }: UseLiveKitOptions) {
     toggleNoiseSuppression,
     sendMessage,
     sendImage,
+    editMessage,
+    deleteMessage,
     sendReaction,
     disconnect: handleManualDisconnect,
   };

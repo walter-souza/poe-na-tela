@@ -254,6 +254,8 @@ function StreamRoom({
     toggleNoiseSuppression,
     sendMessage,
     sendImage,
+    editMessage,
+    deleteMessage,
     sendReaction,
     disconnect,
   } = useLiveKit({
@@ -352,6 +354,8 @@ function StreamRoom({
             participants={participants}
             onSendMessage={sendMessage}
             onSendImage={sendImage}
+            onEditMessage={editMessage}
+            onDeleteMessage={deleteMessage}
             onSendReaction={sendReaction}
             userName={session.userName}
             roomName={session.roomName}

@@ -17,6 +17,8 @@ import {
   LogOut,
   PanelRightClose,
   ImagePlus,
+  Pencil,
+  Trash2,
   X,
 } from 'lucide-react';
 import type { ChatMessage, ParticipantInfo } from '../types';
@@ -28,6 +30,8 @@ interface ChatPanelProps {
   participants: ParticipantInfo[];
   onSendMessage: (text: string) => void;
   onSendImage: (file: File, caption: string) => Promise<void>;
+  onEditMessage: (id: string, text: string) => Promise<void>;
+  onDeleteMessage: (id: string) => Promise<void>;
   onSendReaction: (emoji: string) => void;
   userName: string;
   roomName: string;
@@ -63,6 +67,8 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({
   participants,
   onSendMessage,
   onSendImage,
+  onEditMessage,
+  onDeleteMessage,
   onSendReaction,
   userName,
   roomName,
@@ -78,6 +84,9 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({
   const [isSendingImage, setIsSendingImage] = useState(false);
   const [pendingImage, setPendingImage] = useState<{ file: File; url: string } | null>(null);
   const [lightboxUrl, setLightboxUrl] = useState<string | null>(null);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editText, setEditText] = useState('');
+  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
   const [panelWidth, setPanelWidth] = useState(readStoredWidth);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -138,6 +147,33 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({
     handle.addEventListener('pointermove', onMove);
     handle.addEventListener('pointerup', onEnd);
     handle.addEventListener('pointercancel', onEnd);
+  };
+
+  const startEdit = (m: ChatMessage) => {
+    setConfirmDeleteId(null);
+    setEditText(m.text);
+    setEditingId(m.id);
+  };
+
+  const saveEdit = async (m: ChatMessage) => {
+    const next = editText.trim();
+    // A text message cannot be emptied (delete it instead); an image can lose its caption.
+    if (!next && !m.imageUrl) return;
+    setEditingId(null);
+    try {
+      await onEditMessage(m.id, next);
+    } catch (err) {
+      console.error('Failed to edit message', err);
+    }
+  };
+
+  const handleDelete = async (id: string) => {
+    setConfirmDeleteId(null);
+    try {
+      await onDeleteMessage(id);
+    } catch (err) {
+      console.error('Failed to delete message', err);
+    }
   };
 
   const clearPendingImage = () => {
@@ -315,11 +351,55 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({
               }
 
               const isMe = m.sender === userName;
+              const isEditing = editingId === m.id;
+              const isConfirmingDelete = confirmDeleteId === m.id;
               return (
                 <div
                   key={m.id}
-                  className="py-1 px-2 rounded-lg hover:bg-white/[0.04] transition-colors text-sm leading-relaxed animate-fadeIn select-text"
+                  className="group relative py-1 px-2 rounded-lg hover:bg-white/[0.04] transition-colors text-sm leading-relaxed animate-fadeIn select-text"
                 >
+                  {m.isOwn && !isEditing && (
+                    <div className="absolute right-1 -top-2 flex items-center gap-0.5 rounded-lg border border-white/10 bg-[#1a1d29] px-1 py-0.5 shadow md:opacity-0 md:group-hover:opacity-100 focus-within:opacity-100 transition-opacity">
+                      {isConfirmingDelete ? (
+                        <>
+                          <span className="text-[11px] text-gray-300 px-1">Excluir?</span>
+                          <button
+                            type="button"
+                            onClick={() => void handleDelete(m.id)}
+                            className="px-1.5 py-0.5 rounded text-[11px] font-semibold text-rose-300 hover:bg-rose-500/20"
+                          >
+                            Sim
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setConfirmDeleteId(null)}
+                            className="px-1.5 py-0.5 rounded text-[11px] text-gray-300 hover:bg-white/10"
+                          >
+                            Não
+                          </button>
+                        </>
+                      ) : (
+                        <>
+                          <button
+                            type="button"
+                            onClick={() => startEdit(m)}
+                            title="Editar mensagem"
+                            className="p-1 rounded text-gray-400 hover:text-white hover:bg-white/10"
+                          >
+                            <Pencil className="w-3.5 h-3.5" />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setConfirmDeleteId(m.id)}
+                            title="Excluir mensagem"
+                            className="p-1 rounded text-gray-400 hover:text-rose-400 hover:bg-white/10"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        </>
+                      )}
+                    </div>
+                  )}
                   <span className="text-xs text-gray-500 font-mono tabular-nums mr-2 select-none align-baseline">
                     {timeString}
                   </span>
@@ -336,7 +416,36 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({
                     )}
                     :
                   </span>
-                  {m.text && <ChatMessageText text={m.text} />}
+                  {isEditing ? (
+                    <div className="mt-1">
+                      <input
+                        autoFocus
+                        value={editText}
+                        maxLength={MAX_CAPTION_LENGTH}
+                        onChange={(e) => setEditText(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') void saveEdit(m);
+                          else if (e.key === 'Escape') setEditingId(null);
+                        }}
+                        className="w-full bg-black/50 border border-indigo-500 rounded-lg px-2 py-1 text-sm text-white focus:outline-none"
+                      />
+                      <div className="mt-1 text-[11px] text-gray-500">
+                        Esc para{' '}
+                        <button type="button" onClick={() => setEditingId(null)} className="text-sky-400 hover:underline">
+                          cancelar
+                        </button>{' '}
+                        · Enter para{' '}
+                        <button type="button" onClick={() => void saveEdit(m)} className="text-sky-400 hover:underline">
+                          salvar
+                        </button>
+                      </div>
+                    </div>
+                  ) : (
+                    m.text && <ChatMessageText text={m.text} />
+                  )}
+                  {m.edited && !isEditing && (
+                    <span className="ml-1 text-[10px] text-gray-500 select-none">(editado)</span>
+                  )}
                   {m.imageUrl && (
                     <button
                       type="button"

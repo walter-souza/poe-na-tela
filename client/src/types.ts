@@ -51,6 +51,11 @@ export interface ChatMessage {
   text: string;
   /** blob: URL of an attached image (text is empty for image-only messages). */
   imageUrl?: string;
+  /** LiveKit identity of the author, as authenticated by the server (never taken from the payload). */
+  senderIdentity?: string;
+  /** True for messages sent by this client; only these can be edited or deleted. */
+  isOwn?: boolean;
+  edited?: boolean;
   timestamp: number;
   isHost?: boolean;
   isSystem?: boolean;
