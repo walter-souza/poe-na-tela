@@ -43,6 +43,21 @@ const EMOJI_LIST = [
   '😭', '✨', '⚡', '🏆', '💀'
 ];
 
+const WIDTH_STORAGE_KEY = 'poe-na-tela-chat-width';
+const DEFAULT_PANEL_WIDTH = 384;
+const MIN_PANEL_WIDTH = 288;
+const MAX_PANEL_WIDTH = 720;
+
+const clampWidth = (w: number) => Math.min(MAX_PANEL_WIDTH, Math.max(MIN_PANEL_WIDTH, Math.round(w)));
+
+const readStoredWidth = () => {
+  try {
+    const stored = Number(localStorage.getItem(WIDTH_STORAGE_KEY));
+    if (Number.isFinite(stored) && stored > 0) return clampWidth(stored);
+  } catch {}
+  return DEFAULT_PANEL_WIDTH;
+};
+
 export const ChatPanel: React.FC<ChatPanelProps> = ({
   messages,
   participants,
@@ -63,6 +78,7 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({
   const [isSendingImage, setIsSendingImage] = useState(false);
   const [pendingImage, setPendingImage] = useState<{ file: File; url: string } | null>(null);
   const [lightboxUrl, setLightboxUrl] = useState<string | null>(null);
+  const [panelWidth, setPanelWidth] = useState(readStoredWidth);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const emojiPickerRef = useRef<HTMLDivElement>(null);
@@ -92,6 +108,37 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({
       document.removeEventListener('mousedown', handleClickOutside);
     };
   }, [showEmojiPicker]);
+
+  const commitWidth = (width: number) => {
+    const clamped = clampWidth(width);
+    setPanelWidth(clamped);
+    try {
+      localStorage.setItem(WIDTH_STORAGE_KEY, String(clamped));
+    } catch {}
+  };
+
+  const startResize = (e: React.PointerEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    const handle = e.currentTarget;
+    handle.setPointerCapture(e.pointerId);
+    const startX = e.clientX;
+    const startWidth = panelWidth;
+    let latest = startWidth;
+    // The panel is anchored to the right, so dragging left makes it wider.
+    const onMove = (ev: PointerEvent) => {
+      latest = clampWidth(startWidth + (startX - ev.clientX));
+      setPanelWidth(latest);
+    };
+    const onEnd = () => {
+      handle.removeEventListener('pointermove', onMove);
+      handle.removeEventListener('pointerup', onEnd);
+      handle.removeEventListener('pointercancel', onEnd);
+      commitWidth(latest);
+    };
+    handle.addEventListener('pointermove', onMove);
+    handle.addEventListener('pointerup', onEnd);
+    handle.addEventListener('pointercancel', onEnd);
+  };
 
   const clearPendingImage = () => {
     setPendingImage((prev) => {
@@ -163,8 +210,19 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({
     <div
       onDragOver={(e) => e.preventDefault()}
       onDrop={handleDrop}
-      className="fixed inset-0 z-50 w-full h-[100dvh] flex flex-col bg-[#11131a] md:relative md:inset-auto md:w-80 lg:w-96 md:h-full md:border-l border-white/10 shadow-2xl"
+      style={{ '--chat-w': `${panelWidth}px` } as React.CSSProperties}
+      className="fixed inset-0 z-50 w-full h-[100dvh] flex flex-col bg-[#11131a] md:relative md:inset-auto md:w-[var(--chat-w)] md:max-w-[60vw] md:h-full md:border-l border-white/10 shadow-2xl"
     >
+      {/* Drag the left edge to resize (desktop layout only); double-click resets. */}
+      <div
+        role="separator"
+        aria-orientation="vertical"
+        aria-label="Redimensionar chat"
+        title="Arraste para redimensionar (duplo clique restaura)"
+        onPointerDown={startResize}
+        onDoubleClick={() => commitWidth(DEFAULT_PANEL_WIDTH)}
+        className="hidden md:block absolute left-0 inset-y-0 w-1.5 -ml-0.5 z-10 cursor-col-resize hover:bg-indigo-500/50 active:bg-indigo-500/70 transition-colors touch-none"
+      />
       <div className="flex items-center justify-between p-3 border-b border-white/10 bg-white/5 safe-area-top">
         <div className="flex bg-black/40 p-1 rounded-xl border border-white/5">
           <button
