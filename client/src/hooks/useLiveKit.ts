@@ -12,7 +12,7 @@ import { playJoinSound, playLeaveSound } from '../utils/soundEffects';
 import { startKeepAlive, stopKeepAlive } from '../utils/keepAlive';
 import { getAssetUrl, isNoiseSuppressionSupported, NoiseSuppressionProcessor } from '../utils/noiseSuppression';
 import { buildScreenShareProfile, getResolutionSize } from '../utils/streamProfile';
-import { CHAT_IMAGE_TOPIC, MAX_RECEIVED_BYTES, isAcceptedMime, prepareChatImage } from '../utils/chatImage';
+import { CHAT_IMAGE_TOPIC, MAX_CAPTION_LENGTH, MAX_RECEIVED_BYTES, isAcceptedMime, prepareChatImage } from '../utils/chatImage';
 
 export interface UseLiveKitOptions {
   url: string;
@@ -1187,7 +1187,8 @@ export function useLiveKit({ url, token, onDisconnected }: UseLiveKitOptions) {
     room.on(RoomEvent.DataReceived, handleDataReceived);
 
     room.registerByteStreamHandler(CHAT_IMAGE_TOPIC, async (reader, { identity }) => {
-      const { mimeType, size } = reader.info;
+      const { size, attributes } = reader.info;
+      const mimeType = attributes?.mime ?? '';
       // Never trust the sender: check type and size before touching the bytes.
       if (!isAcceptedMime(mimeType) || (size ?? 0) > MAX_RECEIVED_BYTES) return;
       try {
@@ -1201,10 +1202,10 @@ export function useLiveKit({ url, token, onDisconnected }: UseLiveKitOptions) {
           {
             id: `${Date.now()}-${Math.random()}`,
             sender: sender?.name || identity,
-            text: '',
+            text: (attributes?.caption ?? '').slice(0, MAX_CAPTION_LENGTH),
             imageUrl: url,
             timestamp: Date.now(),
-            isHost: sender?.isScreenShareEnabled,
+            isHost: attributes?.isHost === '1',
           },
         ]);
       } catch (err) {
@@ -1600,13 +1601,18 @@ export function useLiveKit({ url, token, onDisconnected }: UseLiveKitOptions) {
     setMessages((prev) => [...prev, msg]);
   };
 
-  // Send an image to the room over a LiveKit byte stream (throws a user-facing Error on invalid files).
-  const sendImage = async (file: File) => {
+  // Send an image (with optional caption) as one chat message over a LiveKit byte stream.
+  // Throws a user-facing Error on invalid files.
+  const sendImage = async (file: File, caption = '') => {
     const room = roomRef.current;
     if (!room) return;
 
     const prepared = await prepareChatImage(file);
-    await room.localParticipant.sendFile(prepared, { topic: CHAT_IMAGE_TOPIC });
+    const text = caption.trim().slice(0, MAX_CAPTION_LENGTH);
+    await room.localParticipant.sendBytes(new Uint8Array(await prepared.arrayBuffer()), {
+      topic: CHAT_IMAGE_TOPIC,
+      attributes: { mime: prepared.type, caption: text, isHost: isScreenSharing ? '1' : '0' },
+    });
 
     const url = URL.createObjectURL(prepared);
     chatImageUrlsRef.current.push(url);
@@ -1615,7 +1621,7 @@ export function useLiveKit({ url, token, onDisconnected }: UseLiveKitOptions) {
       {
         id: `${Date.now()}-${Math.random()}`,
         sender: room.localParticipant.name || room.localParticipant.identity,
-        text: '',
+        text,
         imageUrl: url,
         timestamp: Date.now(),
         isHost: isScreenSharing,

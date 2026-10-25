@@ -3,6 +3,7 @@ export const CHAT_IMAGE_TOPIC = 'chat-image';
 // Raster formats only: SVG can carry scripts.
 const ACCEPTED_TYPES = ['image/png', 'image/jpeg', 'image/webp', 'image/gif'];
 const MAX_SOURCE_BYTES = 10 * 1024 * 1024;
+export const MAX_CAPTION_LENGTH = 1000;
 export const MAX_RECEIVED_BYTES = 2 * 1024 * 1024;
 const MAX_DIMENSION = 1280;
 const JPEG_QUALITY = 0.82;

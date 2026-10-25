@@ -20,13 +20,13 @@ import {
   X,
 } from 'lucide-react';
 import type { ChatMessage, ParticipantInfo } from '../types';
-import { isAcceptedImage } from '../utils/chatImage';
+import { MAX_CAPTION_LENGTH, isAcceptedImage } from '../utils/chatImage';
 
 interface ChatPanelProps {
   messages: ChatMessage[];
   participants: ParticipantInfo[];
   onSendMessage: (text: string) => void;
-  onSendImage: (file: File) => Promise<void>;
+  onSendImage: (file: File, caption: string) => Promise<void>;
   onSendReaction: (emoji: string) => void;
   userName: string;
   roomName: string;
@@ -60,6 +60,7 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({
   const [showEmojiPicker, setShowEmojiPicker] = useState(false);
   const [imageError, setImageError] = useState<string | null>(null);
   const [isSendingImage, setIsSendingImage] = useState(false);
+  const [pendingImage, setPendingImage] = useState<{ file: File; url: string } | null>(null);
   const [lightboxUrl, setLightboxUrl] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -91,36 +92,63 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({
     };
   }, [showEmojiPicker]);
 
-  const handleSend = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!inputText.trim()) return;
-    onSendMessage(inputText);
-    setInputText('');
+  const clearPendingImage = () => {
+    setPendingImage((prev) => {
+      if (prev) URL.revokeObjectURL(prev.url);
+      return null;
+    });
   };
 
-  const handleImageFile = async (file: File) => {
+  // Release the preview URL if the panel closes with an image still staged.
+  const pendingUrlRef = useRef<string | null>(null);
+  pendingUrlRef.current = pendingImage?.url ?? null;
+  useEffect(() => () => {
+    if (pendingUrlRef.current) URL.revokeObjectURL(pendingUrlRef.current);
+  }, []);
+
+  const handleSend = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (isSendingImage) return;
+    if (!pendingImage) {
+      if (!inputText.trim()) return;
+      onSendMessage(inputText);
+      setInputText('');
+      return;
+    }
     setImageError(null);
     setIsSendingImage(true);
     try {
-      await onSendImage(file);
+      await onSendImage(pendingImage.file, inputText);
+      clearPendingImage();
+      setInputText('');
     } catch (err) {
+      // Keep the preview and caption so the user can retry or remove it.
       setImageError(err instanceof Error ? err.message : 'Falha ao enviar a imagem.');
     } finally {
       setIsSendingImage(false);
     }
   };
 
+  // Stage the image for review; nothing is sent until the user submits.
+  const stageImage = (file: File) => {
+    setImageError(null);
+    setPendingImage((prev) => {
+      if (prev) URL.revokeObjectURL(prev.url);
+      return { file, url: URL.createObjectURL(file) };
+    });
+  };
+
   const handlePaste = (e: React.ClipboardEvent) => {
     const file = Array.from(e.clipboardData.files).find(isAcceptedImage);
     if (!file) return;
     e.preventDefault();
-    void handleImageFile(file);
+    stageImage(file);
   };
 
   const handleDrop = (e: React.DragEvent) => {
     const file = Array.from(e.dataTransfer.files).find(isAcceptedImage);
     e.preventDefault();
-    if (file) void handleImageFile(file);
+    if (file) stageImage(file);
   };
 
   const copyRoomLink = () => {
@@ -406,14 +434,36 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({
         </div>
       )}
 
+      {activeTab === 'chat' && pendingImage && (
+        <div className="px-3 pt-3 border-t border-white/10 bg-white/5">
+          <div className="relative inline-block">
+            <img
+              src={pendingImage.url}
+              alt="Pré-visualização da imagem a enviar"
+              className={`max-h-40 max-w-full rounded-lg border border-white/10 ${isSendingImage ? 'opacity-50' : ''}`}
+            />
+            <button
+              type="button"
+              onClick={clearPendingImage}
+              disabled={isSendingImage}
+              title="Remover imagem"
+              className="absolute -top-2 -right-2 p-1 rounded-full bg-rose-600 hover:bg-rose-500 text-white shadow disabled:opacity-40"
+            >
+              <X className="w-3.5 h-3.5" />
+            </button>
+          </div>
+        </div>
+      )}
+
       {activeTab === 'chat' && (
         <form onSubmit={handleSend} className="p-3 border-t border-white/10 bg-white/5 flex items-center gap-2 relative safe-area-bottom">
           <input
             type="text"
-            placeholder="Conversar com amigos..."
+            placeholder={pendingImage ? 'Adicione um comentário (opcional)...' : 'Conversar com amigos...'}
             value={inputText}
             onChange={(e) => setInputText(e.target.value)}
             onPaste={handlePaste}
+            maxLength={MAX_CAPTION_LENGTH}
             className="flex-1 min-w-0 bg-black/50 border border-white/10 rounded-xl px-3 py-2 text-sm text-white placeholder-gray-500 focus:outline-none focus:border-indigo-500 transition"
           />
 
@@ -425,14 +475,14 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({
             onChange={(e) => {
               const file = e.target.files?.[0];
               e.target.value = '';
-              if (file) void handleImageFile(file);
+              if (file && isAcceptedImage(file)) stageImage(file);
             }}
           />
           <button
             type="button"
             onClick={() => fileInputRef.current?.click()}
             disabled={isSendingImage}
-            title="Enviar imagem (ou cole com Ctrl+V)"
+            title="Anexar imagem (ou cole com Ctrl+V)"
             className="p-2 rounded-xl border bg-white/5 hover:bg-white/10 border-white/10 text-gray-300 hover:text-white transition cursor-pointer disabled:opacity-40 disabled:cursor-wait"
           >
             <ImagePlus className="w-4 h-4" />
@@ -483,7 +533,7 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({
 
           <button
             type="submit"
-            disabled={!inputText.trim()}
+            disabled={isSendingImage || (!pendingImage && !inputText.trim())}
             className="p-2 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-40 disabled:hover:bg-indigo-600 rounded-xl text-white transition shadow cursor-pointer disabled:cursor-not-allowed"
             title="Enviar mensagem"
           >
