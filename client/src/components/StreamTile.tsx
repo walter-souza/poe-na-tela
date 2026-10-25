@@ -24,6 +24,8 @@ interface StreamTileProps {
   onToggleSpotlight?: () => void;
   isThumbnail?: boolean;
   onSelectThumbnail?: () => void;
+  /** Stops receiving this stream; remote streams only. */
+  onStopWatching?: () => void;
   isLocalScreenAudioMuted?: boolean;
   onToggleLocalScreenAudio?: () => void;
   /** Diagnostics for this stream; the panel renders only when showStats is true. */
@@ -39,6 +41,7 @@ export const StreamTile: React.FC<StreamTileProps> = ({
   onToggleSpotlight,
   isThumbnail = false,
   onSelectThumbnail,
+  onStopWatching,
   isLocalScreenAudioMuted = false,
   onToggleLocalScreenAudio,
   stats = null,
@@ -171,6 +174,18 @@ export const StreamTile: React.FC<StreamTileProps> = ({
           muted
           className="w-full h-full object-contain bg-black"
         />
+        {onStopWatching && (
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              onStopWatching();
+            }}
+            title="Parar de assistir"
+            className="absolute top-1 right-1 p-1 rounded-lg bg-black/60 hover:bg-rose-600/80 text-gray-300 hover:text-white opacity-0 group-hover:opacity-100 transition"
+          >
+            <EyeOff className="w-3 h-3" />
+          </button>
+        )}
         <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/80 to-transparent p-1.5 flex items-center justify-between text-[11px] text-white">
           <span className="truncate font-medium">{stream.participantName}</span>
           {stream.isLocal ? (
@@ -227,6 +242,15 @@ export const StreamTile: React.FC<StreamTileProps> = ({
         />
       )}
 
+      {!stream.isLocal && !stream.videoTrack && (
+        <div className="absolute inset-0 z-10 bg-black/80 flex items-center justify-center">
+          <div className="flex items-center gap-2 bg-black/60 px-3.5 py-1.5 rounded-full border border-white/10 text-xs text-gray-300">
+            <Radio className="w-3.5 h-3.5 text-indigo-400 animate-pulse" />
+            <span>Conectando à transmissão de <strong>{stream.participantName}</strong>...</span>
+          </div>
+        </div>
+      )}
+
       {/* Top Stream Info Badge */}
       <div className="absolute top-2 left-2 sm:top-3 sm:left-3 z-20 flex items-center gap-1.5 sm:gap-2 pointer-events-none">
         <div className="flex items-center gap-1 sm:gap-1.5 bg-red-600/90 backdrop-blur-md px-2 sm:px-2.5 py-0.5 rounded-full text-white text-[10px] sm:text-[11px] font-bold uppercase tracking-wider shadow">
@@ -254,8 +278,21 @@ export const StreamTile: React.FC<StreamTileProps> = ({
       />
 
       {/* Top Right Pin/Spotlight Button */}
-      {onToggleSpotlight && (
-        <div className="absolute top-2 right-2 sm:top-3 sm:right-3 z-20">
+      {(onToggleSpotlight || onStopWatching) && (
+        <div className="absolute top-2 right-2 sm:top-3 sm:right-3 z-20 flex items-center gap-1.5">
+          {onStopWatching && (
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                onStopWatching();
+              }}
+              title="Parar de assistir (libera sua banda)"
+              className="p-1.5 sm:p-2 rounded-xl backdrop-blur-md border bg-black/60 hover:bg-rose-600/80 border-white/15 text-gray-300 hover:text-white transition"
+            >
+              <EyeOff className="w-3.5 h-3.5" />
+            </button>
+          )}
+          {onToggleSpotlight && (
           <button
             onClick={(e) => {
               e.stopPropagation();
@@ -270,6 +307,7 @@ export const StreamTile: React.FC<StreamTileProps> = ({
           >
             <Pin className={`w-3.5 h-3.5 ${isSpotlighted ? 'rotate-45 text-white' : ''}`} />
           </button>
+          )}
         </div>
       )}
 

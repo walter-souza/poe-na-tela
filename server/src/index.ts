@@ -304,6 +304,19 @@ app.get([
   });
 });
 
+// MediaMTX only reports a running byte counter per path; the bitrate is the delta between two polls.
+const pathByteSamples = new Map<string, { bytes: number; at: number }>();
+
+function measureBitrateKbps(pathName: string, item: any): number | undefined {
+  const bytes = Number(item.inboundBytes ?? item.bytesReceived);
+  if (!Number.isFinite(bytes)) return undefined;
+  const now = Date.now();
+  const prev = pathByteSamples.get(pathName);
+  pathByteSamples.set(pathName, { bytes, at: now });
+  if (!prev || now <= prev.at || bytes < prev.bytes) return undefined;
+  return Math.round(((bytes - prev.bytes) * 8) / (now - prev.at));
+}
+
 /**
  * List active OBS (SRT / MediaMTX) streams for a specific room (multi-stream squad support)
  */
@@ -319,6 +332,7 @@ app.get(['/api/rooms/:roomName/streams', '/rooms/:roomName/streams', '/api/room/
     name: string;
     path: string;
     whepUrl: string;
+    bitrateKbps?: number;
   }> = [];
 
   try {
@@ -349,6 +363,7 @@ app.get(['/api/rooms/:roomName/streams', '/rooms/:roomName/streams', '/api/room/
             name: 'Principal',
             path: itemPath,
             whepUrl: cleanWhepUrl,
+            bitrateKbps: measureBitrateKbps(itemPath, item),
           });
         }
         // 2. Sub-path multi-stream (e.g. "jogatina/pedro" ou "jogatina-pedro")
@@ -365,10 +380,14 @@ app.get(['/api/rooms/:roomName/streams', '/rooms/:roomName/streams', '/api/room/
               name: formattedName || rawId,
               path: itemPath,
               whepUrl: cleanWhepUrl,
+              bitrateKbps: measureBitrateKbps(itemPath, item),
             });
           }
         }
       }
+      // Forget paths that went offline so a restarted stream does not diff against stale bytes.
+      const readyPaths = new Set(items.filter((i: any) => i?.ready).map((i: any) => String(i.name).trim()));
+      for (const key of pathByteSamples.keys()) if (!readyPaths.has(key)) pathByteSamples.delete(key);
     }
   } catch {
     // MediaMTX API offline or unreachable, return empty array gracefully
