@@ -238,6 +238,7 @@ function StreamRoom({
     canPlaybackAudio,
     unlockAudio,
     setStreamVolume,
+    setScreenShareWatching,
     streamVolumes,
     setUserVolume,
     userVolumes,
@@ -317,6 +318,7 @@ function StreamRoom({
             onOpenScreenShareConfig={() => setIsScreenShareModalOpen(true)}
             isLocalScreenAudioMuted={isLocalScreenAudioMuted}
             onToggleLocalScreenAudio={toggleLocalScreenAudio}
+            onScreenShareWatchingChange={setScreenShareWatching}
             roomName={session.roomName}
           />
 

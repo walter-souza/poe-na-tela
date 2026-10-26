@@ -68,6 +68,8 @@ export interface ObsStreamItem {
   name: string;
   path: string;
   whepUrl: string;
+  /** Measured by the server between polls; absent until two samples exist. */
+  bitrateKbps?: number;
 }
 
 export function getRoomStreamsUrl(roomName: string): string {

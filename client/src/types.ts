@@ -93,8 +93,12 @@ export interface ScreenShareItem {
   id: string; // participantIdentity
   participantIdentity: string;
   participantName: string;
-  videoTrack: any; // Track from livekit-client
+  videoTrack: any | null; // Track from livekit-client; null until the viewer chooses to watch (remote)
   videoPublication?: any; // TrackPublication from livekit-client (remote: used to request a simulcast layer)
   audioTrack?: any; // Track from livekit-client
   isLocal: boolean;
+  /** Remote streams are only received while the viewer is watching; local ones always are. */
+  isWatching: boolean;
+  /** Published frame size ("1080p", "4K"), known without receiving the stream. */
+  resolution?: string;
 }

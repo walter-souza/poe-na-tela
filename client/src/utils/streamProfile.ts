@@ -123,3 +123,9 @@ export async function buildScreenShareProfile(
     degradationPreference: fps === 60 ? 'maintain-framerate' : 'balanced',
   };
 }
+
+/** Human label for a stream's frame size ("1080p", "4K"), or undefined when the size is unknown. */
+export function formatResolution(size?: { width: number; height: number }): string | undefined {
+  if (!size || !size.height) return undefined;
+  return size.height >= 2160 ? '4K' : `${size.height}p`;
+}

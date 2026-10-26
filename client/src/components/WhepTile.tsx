@@ -8,6 +8,7 @@ import {
   Pin,
   PictureInPicture,
   User,
+  EyeOff,
 } from 'lucide-react';
 import { useWhepStats } from '../hooks/useWhepStats';
 
@@ -15,11 +16,12 @@ interface WhepTileProps {
   whepUrl: string;
   roomName: string;
   streamerName?: string;
-  onStateChange?: (isPlaying: boolean) => void;
   isSpotlighted?: boolean;
   onToggleSpotlight?: () => void;
   isThumbnail?: boolean;
   onSelectThumbnail?: () => void;
+  /** Stops receiving this stream (closes the WHEP connection). */
+  onStopWatching?: () => void;
   volume?: number;
   onVolumeChange?: (volume: number) => void;
   /** Shows the live diagnostics panel (fps, resolution, bitrate, loss, buffer). */
@@ -30,11 +32,11 @@ export const WhepTile: React.FC<WhepTileProps> = ({
   whepUrl,
   roomName,
   streamerName,
-  onStateChange,
   isSpotlighted = false,
   onToggleSpotlight,
   isThumbnail = false,
   onSelectThumbnail,
+  onStopWatching,
   volume = 1,
   onVolumeChange,
   showStats = false,
@@ -54,17 +56,6 @@ export const WhepTile: React.FC<WhepTileProps> = ({
   const [showControls, setShowControls] = useState(false);
 
   const whepStats = useWhepStats(pcRef, showStats && isPlaying);
-
-  // Stable ref for onStateChange to prevent effect re-trigger loops
-  const onStateChangeRef = useRef(onStateChange);
-  useEffect(() => {
-    onStateChangeRef.current = onStateChange;
-  }, [onStateChange]);
-
-  // Notify parent of state change
-  useEffect(() => {
-    onStateChangeRef.current?.(isPlaying);
-  }, [isPlaying]);
 
   // Sync volume with video element
   useEffect(() => {
@@ -347,6 +338,18 @@ export const WhepTile: React.FC<WhepTileProps> = ({
           muted
           className="w-full h-full object-contain bg-black"
         />
+        {onStopWatching && (
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              onStopWatching();
+            }}
+            title="Parar de assistir"
+            className="absolute top-1 right-1 p-1 rounded-lg bg-black/60 hover:bg-rose-600/80 text-gray-300 hover:text-white opacity-0 group-hover:opacity-100 transition"
+          >
+            <EyeOff className="w-3 h-3" />
+          </button>
+        )}
         <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/80 to-transparent p-1.5 flex items-center justify-between text-[11px] text-white">
           <span className="truncate font-medium">{displayName}</span>
           {isSpotlighted ? (
@@ -455,8 +458,21 @@ export const WhepTile: React.FC<WhepTileProps> = ({
       )}
 
       {/* Top Right Pin / Spotlight Button */}
-      {onToggleSpotlight && (
-        <div className="absolute top-2 right-2 sm:top-3 sm:right-3 z-20">
+      {(onToggleSpotlight || onStopWatching) && (
+        <div className="absolute top-2 right-2 sm:top-3 sm:right-3 z-20 flex items-center gap-1.5">
+          {onStopWatching && (
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                onStopWatching();
+              }}
+              title="Parar de assistir (libera sua banda)"
+              className="p-1.5 sm:p-2 rounded-xl backdrop-blur-md border bg-black/60 hover:bg-rose-600/80 border-white/15 text-gray-300 hover:text-white transition"
+            >
+              <EyeOff className="w-3.5 h-3.5" />
+            </button>
+          )}
+          {onToggleSpotlight && (
           <button
             onClick={(e) => {
               e.stopPropagation();
@@ -471,6 +487,7 @@ export const WhepTile: React.FC<WhepTileProps> = ({
           >
             <Pin className={`w-3.5 h-3.5 ${isSpotlighted ? 'rotate-45 text-white' : ''}`} />
           </button>
+          )}
         </div>
       )}
 

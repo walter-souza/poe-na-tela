@@ -11,7 +11,7 @@ import type { StreamQualityConfig, StreamStats, ChatMessage, ReactionEvent, Part
 import { playJoinSound, playLeaveSound } from '../utils/soundEffects';
 import { startKeepAlive, stopKeepAlive } from '../utils/keepAlive';
 import { getAssetUrl, isNoiseSuppressionSupported, NoiseSuppressionProcessor } from '../utils/noiseSuppression';
-import { buildScreenShareProfile, getResolutionSize } from '../utils/streamProfile';
+import { buildScreenShareProfile, formatResolution, getResolutionSize } from '../utils/streamProfile';
 import { CHAT_IMAGE_TOPIC, MAX_CAPTION_LENGTH, MAX_RECEIVED_BYTES, isAcceptedMime, prepareChatImage } from '../utils/chatImage';
 
 export interface UseLiveKitOptions {
@@ -468,6 +468,21 @@ export function useLiveKit({ url, token, onDisconnected }: UseLiveKitOptions) {
     applyBufferToAllReceivers(clamped);
   }, [applyBufferToAllReceivers]);
 
+  // Screen shares are never received until the viewer picks them (bandwidth), while voice and
+  // everything else keeps auto-subscribing: the room joins with autoSubscribe off, so this is the
+  // single place that decides what each remote publication should be doing.
+  const watchedShareIdsRef = useRef<Set<string>>(new Set());
+  const syncSubscriptions = useCallback((room: Room) => {
+    room.remoteParticipants.forEach((p) => {
+      p.trackPublications.forEach((pub) => {
+        const isShare =
+          pub.source === Track.Source.ScreenShare || pub.source === Track.Source.ScreenShareAudio;
+        const wanted = isShare ? watchedShareIdsRef.current.has(p.identity) : true;
+        if (pub.isDesired !== wanted) pub.setSubscribed(wanted);
+      });
+    });
+  }, []);
+
   // Update screen shares list from room participants
   const updateScreenShares = useCallback((room: Room) => {
     const list: ScreenShareItem[] = [];
@@ -485,6 +500,8 @@ export function useLiveKit({ url, token, onDisconnected }: UseLiveKitOptions) {
           videoPublication: localVideoPub,
           audioTrack: localAudioPub?.track,
           isLocal: true,
+          isWatching: true,
+          resolution: formatResolution(localVideoPub.dimensions),
         });
       }
     }
@@ -493,15 +510,18 @@ export function useLiveKit({ url, token, onDisconnected }: UseLiveKitOptions) {
     room.remoteParticipants.forEach((p) => {
       const videoPub = p.getTrackPublication(Track.Source.ScreenShare);
       const audioPub = p.getTrackPublication(Track.Source.ScreenShareAudio);
-      if (videoPub && videoPub.track) {
+      // Listed as soon as it is published, even unsubscribed, so the viewer can choose to watch it.
+      if (videoPub) {
         list.push({
           id: p.identity,
           participantIdentity: p.identity,
           participantName: p.name || p.identity,
-          videoTrack: videoPub.track,
+          videoTrack: videoPub.track ?? null,
           videoPublication: videoPub,
           audioTrack: audioPub?.track,
           isLocal: false,
+          isWatching: watchedShareIdsRef.current.has(p.identity),
+          resolution: formatResolution(videoPub.dimensions),
         });
       }
     });
@@ -510,7 +530,7 @@ export function useLiveKit({ url, token, onDisconnected }: UseLiveKitOptions) {
 
     // Keep remoteScreenTrack / localScreenTrack synced for backwards compatibility
     const local = list.find((s) => s.isLocal);
-    const remote = list.find((s) => !s.isLocal);
+    const remote = list.find((s) => !s.isLocal && s.videoTrack);
     setLocalScreenTrack(local?.videoTrack || null);
     setRemoteScreenTrack(remote?.videoTrack || null);
     if (list.length > 0) {
@@ -931,6 +951,7 @@ export function useLiveKit({ url, token, onDisconnected }: UseLiveKitOptions) {
     const handleConnected = () => {
       if (!isSubscribed) return;
       setConnectionState(ConnectionState.Connected);
+      syncSubscriptions(room);
       updateParticipantList(room);
       updateScreenShares(room);
 
@@ -1001,6 +1022,7 @@ export function useLiveKit({ url, token, onDisconnected }: UseLiveKitOptions) {
     const handleReconnecting = () => setConnectionState(ConnectionState.Reconnecting);
     const handleReconnected = () => {
       setConnectionState(ConnectionState.Connected);
+      syncSubscriptions(room);
       updateParticipantList(room);
       updateScreenShares(room);
       applyBufferToAllReceivers(playoutBufferMsRef.current);
@@ -1152,6 +1174,7 @@ export function useLiveKit({ url, token, onDisconnected }: UseLiveKitOptions) {
       if (!isSubscribed) return;
       // Newcomers cannot know the current state, so repeat it when someone joins.
       if (isDeafenedRef.current) broadcastDeafened(room, true);
+      syncSubscriptions(room);
       updateParticipantList(room);
       updateScreenShares(room);
       const name = participant.name || participant.identity || 'Um usuário';
@@ -1175,6 +1198,7 @@ export function useLiveKit({ url, token, onDisconnected }: UseLiveKitOptions) {
     const handleParticipantDisconnected = (participant: RemoteParticipant) => {
       if (!isSubscribed) return;
       deafenedPeersRef.current.delete(participant.identity);
+      watchedShareIdsRef.current.delete(participant.identity);
       unregisterVadTrack(participant.identity);
       updateParticipantList(room);
       updateScreenShares(room);
@@ -1203,8 +1227,15 @@ export function useLiveKit({ url, token, onDisconnected }: UseLiveKitOptions) {
     room.on(RoomEvent.AudioPlaybackStatusChanged, handleAudioPlaybackStatusChanged);
     room.on(RoomEvent.TrackSubscribed, handleTrackSubscribed);
     room.on(RoomEvent.TrackUnsubscribed, handleTrackUnsubscribed);
-    room.on(RoomEvent.TrackPublished, () => updateScreenShares(room));
-    room.on(RoomEvent.TrackUnpublished, () => updateScreenShares(room));
+    room.on(RoomEvent.TrackPublished, () => {
+      syncSubscriptions(room);
+      updateScreenShares(room);
+    });
+    room.on(RoomEvent.TrackUnpublished, (pub, participant) => {
+      // A stream that ends and comes back is a new stream: the viewer chooses again.
+      if (pub.source === Track.Source.ScreenShare) watchedShareIdsRef.current.delete(participant.identity);
+      updateScreenShares(room);
+    });
     room.on(RoomEvent.LocalTrackPublished, () => updateScreenShares(room));
     room.on(RoomEvent.LocalTrackUnpublished, (pub) => {
       updateScreenShares(room);
@@ -1251,7 +1282,7 @@ export function useLiveKit({ url, token, onDisconnected }: UseLiveKitOptions) {
     });
 
     room
-      .connect(url, token)
+      .connect(url, token, { autoSubscribe: false })
       .then(() => {
         // The microphone starts on by default; if permission is denied it stays muted.
         if (isSubscribed) void setMicEnabled(true);
@@ -1333,6 +1364,16 @@ export function useLiveKit({ url, token, onDisconnected }: UseLiveKitOptions) {
       console.error('Failed to unlock audio playback:', e);
     }
   };
+
+  // Start or stop receiving one participant's screen share (video + its audio).
+  const setScreenShareWatching = useCallback((participantIdentity: string, watching: boolean) => {
+    const room = roomRef.current;
+    if (!room) return;
+    if (watching) watchedShareIdsRef.current.add(participantIdentity);
+    else watchedShareIdsRef.current.delete(participantIdentity);
+    syncSubscriptions(room);
+    updateScreenShares(room);
+  }, [syncSubscriptions, updateScreenShares]);
 
   // Set individual stream audio volume (ONLY affects ScreenShareAudio, keeping Microphone voice intact)
   const setStreamVolume = useCallback((participantIdentity: string, volume: number) => {
@@ -1746,6 +1787,7 @@ export function useLiveKit({ url, token, onDisconnected }: UseLiveKitOptions) {
     unlockAudio,
     setGlobalVolume,
     setStreamVolume,
+    setScreenShareWatching,
     streamVolumes,
     setUserVolume,
     userVolumes,
