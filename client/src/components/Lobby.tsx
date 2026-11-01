@@ -17,7 +17,15 @@ import { PasswordModal } from './PasswordModal';
 import { sanitizeRoomName, sanitizeUserName } from '../utils/sanitize';
 import type { FavoriteRoom, ActiveRoomInfo } from '../types';
 import { getRoomsUrl, getRoomInfoUrl } from '../utils/api';
-import { isNoiseSuppressionSupported, NoiseSuppressionProcessor } from '../utils/noiseSuppression';
+import {
+  isNoiseSuppressionSupported,
+  loadNoiseSettings,
+  NOISE_INTENSITIES,
+  NoiseSuppressionProcessor,
+  saveNoiseSettings,
+  type NoiseIntensity,
+  type NoiseSettings,
+} from '../utils/noiseSuppression';
 
 interface LobbyProps {
   onJoin: (roomName: string, userName: string, isPublisher: boolean, passcode?: string) => void;
@@ -58,6 +66,8 @@ export const Lobby: React.FC<LobbyProps> = ({ onJoin, isLoading, error }) => {
       return false;
     }
   });
+  const [noiseSettings, setNoiseSettings] = useState<NoiseSettings>(loadNoiseSettings);
+  const [calibrationStatus, setCalibrationStatus] = useState<'idle' | 'running' | 'failed'>('idle');
 
   const audioContextRef = useRef<AudioContext | null>(null);
   const analyserRef = useRef<AnalyserNode | null>(null);
@@ -178,9 +188,11 @@ export const Lobby: React.FC<LobbyProps> = ({ onJoin, isLoading, error }) => {
     onJoin(targetRoom, cleanUser, true, pwd.trim() || undefined);
   };
 
-  const startMicTest = async () => {
+  const startMicTest = async (suppress = isNoiseSuppressionEnabled) => {
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const stream = await navigator.mediaDevices.getUserMedia({
+        audio: { echoCancellation: true, noiseSuppression: !suppress, autoGainControl: !suppress },
+      });
       micStreamRef.current = stream;
 
       const audioCtx = new (window.AudioContext || (window as any).webkitAudioContext)();
@@ -190,7 +202,7 @@ export const Lobby: React.FC<LobbyProps> = ({ onJoin, isLoading, error }) => {
       analyser.fftSize = 256;
       analyserRef.current = analyser;
 
-      if (isNoiseSuppressionEnabled && isNoiseSuppressionSupported()) {
+      if (suppress && isNoiseSuppressionSupported()) {
         try {
           const processor = new NoiseSuppressionProcessor();
           processorRef.current = processor;
@@ -260,18 +272,50 @@ export const Lobby: React.FC<LobbyProps> = ({ onJoin, isLoading, error }) => {
     }
     setIsMicTesting(false);
     setMicLevel(0);
+    setCalibrationStatus('idle');
+  };
+
+  const restartMicTest = (suppress = isNoiseSuppressionEnabled) => {
+    if (!isMicTesting) return;
+    stopMicTest();
+    setTimeout(() => {
+      startMicTest(suppress);
+    }, 150);
   };
 
   const toggleNoiseSuppressionInLobby = () => {
     const next = !isNoiseSuppressionEnabled;
     setIsNoiseSuppressionEnabled(next);
     localStorage.setItem('poe-na-tela-noise-suppression', String(next));
-    if (isMicTesting) {
-      stopMicTest();
-      setTimeout(() => {
-        startMicTest();
-      }, 150);
+    restartMicTest(next);
+  };
+
+  const updateNoiseSettings = (next: NoiseSettings) => {
+    setNoiseSettings(next);
+    saveNoiseSettings(next);
+  };
+
+  const selectNoiseIntensity = (intensity: NoiseIntensity) => {
+    if (intensity === noiseSettings.intensity) return;
+    updateNoiseSettings({ ...noiseSettings, intensity });
+    // The denoiser's strength is fixed per processor: the test restarts with the new one.
+    restartMicTest();
+  };
+
+  const calibrateVoice = async () => {
+    const processor = processorRef.current;
+    if (!processor) return;
+    setCalibrationStatus('running');
+    const levelDb = await processor.calibrateVoice();
+    if (processorRef.current !== processor) return;
+    if (levelDb === null) {
+      setCalibrationStatus('failed');
+      return;
     }
+    const rounded = Math.round(levelDb);
+    processor.setVoiceLevel(rounded);
+    updateNoiseSettings({ ...noiseSettings, voiceLevelDb: rounded });
+    setCalibrationStatus('idle');
   };
 
   useEffect(() => {
@@ -408,7 +452,7 @@ export const Lobby: React.FC<LobbyProps> = ({ onJoin, isLoading, error }) => {
                 </span>
                 <button
                   type="button"
-                  onClick={isMicTesting ? stopMicTest : startMicTest}
+                  onClick={() => (isMicTesting ? stopMicTest() : startMicTest())}
                   className="text-indigo-400 hover:text-indigo-300 font-semibold cursor-pointer"
                 >
                   {isMicTesting ? 'Parar Teste' : 'Testar Voz'}
@@ -444,6 +488,49 @@ export const Lobby: React.FC<LobbyProps> = ({ onJoin, isLoading, error }) => {
                   {isNoiseSuppressionEnabled ? 'Ativada' : 'Desativada'}
                 </button>
               </div>
+
+              {isNoiseSuppressionEnabled && (
+                <div className="flex items-center justify-between gap-2 text-[11px]">
+                  <div className="flex rounded-md border border-white/10 overflow-hidden" role="group" aria-label="Intensidade da supressão">
+                    {(Object.keys(NOISE_INTENSITIES) as NoiseIntensity[]).map((key) => (
+                      <button
+                        key={key}
+                        type="button"
+                        onClick={() => selectNoiseIntensity(key)}
+                        aria-pressed={noiseSettings.intensity === key}
+                        className={`px-2 py-0.5 font-semibold transition cursor-pointer ${
+                          noiseSettings.intensity === key
+                            ? 'bg-violet-600/30 text-violet-200'
+                            : 'bg-white/5 text-gray-400 hover:text-white'
+                        }`}
+                      >
+                        {NOISE_INTENSITIES[key].label}
+                      </button>
+                    ))}
+                  </div>
+                  {isMicTesting ? (
+                    <button
+                      type="button"
+                      onClick={calibrateVoice}
+                      disabled={calibrationStatus === 'running'}
+                      title="Fale normalmente por 3 segundos: vozes mais baixas que a sua (ao fundo) passam a ser bloqueadas"
+                      className="text-violet-300 hover:text-violet-200 disabled:text-gray-400 font-semibold cursor-pointer truncate"
+                    >
+                      {calibrationStatus === 'running'
+                        ? 'Fale normalmente...'
+                        : calibrationStatus === 'failed'
+                          ? 'Sem voz detectada, repetir'
+                          : noiseSettings.voiceLevelDb === null
+                            ? 'Calibrar voz'
+                            : 'Recalibrar voz'}
+                    </button>
+                  ) : (
+                    <span className="text-gray-500 truncate">
+                      {noiseSettings.voiceLevelDb === null ? 'Teste a voz para calibrar' : 'Voz calibrada'}
+                    </span>
+                  )}
+                </div>
+              )}
             </div>
 
             {/* Submit Button */}

@@ -238,18 +238,19 @@ export function useLiveKit({ url, token, onDisconnected }: UseLiveKitOptions) {
           }
         }
 
-        // Stacking the browser suppressor before RNNoise attenuates the voice twice.
-        await track.mediaStreamTrack.applyConstraints({ noiseSuppression: false }).catch(() => {});
+        // Browser suppression/AGC before the denoiser double-attenuates the voice and pumps up noise.
+        await track.mediaStreamTrack.applyConstraints({ noiseSuppression: false, autoGainControl: false }).catch(() => {});
 
         const processor = new NoiseSuppressionProcessor();
         activeProcessorRef.current = processor;
         await track.setProcessor(processor);
+        console.info(`Noise suppression active (${processor.engine})`);
       } else {
         if (activeProcessorRef.current || (track as any).processor) {
           await track.stopProcessor();
           activeProcessorRef.current = null;
         }
-        await track.mediaStreamTrack.applyConstraints({ noiseSuppression: true }).catch(() => {});
+        await track.mediaStreamTrack.applyConstraints({ noiseSuppression: true, autoGainControl: true }).catch(() => {});
       }
     } catch (err) {
       console.error('Failed to apply noise suppression to track:', err);
@@ -895,7 +896,7 @@ export function useLiveKit({ url, token, onDisconnected }: UseLiveKitOptions) {
         const pub = await room.localParticipant.setMicrophoneEnabled(enabled, {
           echoCancellation: true,
           noiseSuppression: !isNoiseSuppressionEnabledRef.current,
-          autoGainControl: true,
+          autoGainControl: !isNoiseSuppressionEnabledRef.current,
         });
         setIsMicEnabled(enabled);
         if (enabled) {
