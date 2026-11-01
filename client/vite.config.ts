@@ -6,6 +6,8 @@ import tailwindcss from '@tailwindcss/vite';
 export default defineConfig({
   base: './',
   plugins: [react(), tailwindcss()],
+  // Its worklet and WASM are resolved with `new URL(..., import.meta.url)`, which pre-bundling breaks.
+  optimizeDeps: { exclude: ['denoise-voice-clarity'] },
   server: {
     port: 3000,
     host: true,
