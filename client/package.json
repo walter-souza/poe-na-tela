@@ -14,7 +14,6 @@
     "@types/canvas-confetti": "^1.9.0",
     "canvas-confetti": "^1.9.4",
     "clsx": "^2.1.1",
-    "denoise-voice-clarity": "^0.2.2",
     "livekit-client": "^2.22.3",
     "lucide-react": "^1.48.0",
     "react": "^19.2.8",

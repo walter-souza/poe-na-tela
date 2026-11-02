@@ -238,20 +238,18 @@ export function useLiveKit({ url, token, onDisconnected }: UseLiveKitOptions) {
           }
         }
 
-        // Browser suppression before the denoiser attenuates the voice twice. AGC stays on: the
-        // denoiser treats quiet speech as noise, so it needs the mic normalized first.
-        await track.mediaStreamTrack.applyConstraints({ noiseSuppression: false, autoGainControl: true }).catch(() => {});
+        // Stacking the browser suppressor before RNNoise attenuates the voice twice.
+        await track.mediaStreamTrack.applyConstraints({ noiseSuppression: false }).catch(() => {});
 
         const processor = new NoiseSuppressionProcessor();
         activeProcessorRef.current = processor;
         await track.setProcessor(processor);
-        console.info(`Noise suppression active (${processor.engine})`);
       } else {
         if (activeProcessorRef.current || (track as any).processor) {
           await track.stopProcessor();
           activeProcessorRef.current = null;
         }
-        await track.mediaStreamTrack.applyConstraints({ noiseSuppression: true, autoGainControl: true }).catch(() => {});
+        await track.mediaStreamTrack.applyConstraints({ noiseSuppression: true }).catch(() => {});
       }
     } catch (err) {
       console.error('Failed to apply noise suppression to track:', err);
