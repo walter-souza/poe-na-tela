@@ -42,7 +42,8 @@ export function saveNoiseSettings(settings: NoiseSettings): void {
   } catch {}
 }
 
-// Levels measured on the denoiser output (dBFS): its residual noise sits well below -60, speech above -45.
+// Levels measured on the denoiser output (dBFS) with browser AGC on: speech sits above -45, while
+// loud noise (a fan near the mic) leaves a residual up to about -53 that must stay gated.
 const VOICE_GATE_OPTIONS = {
   minOpenDb: -50,
   floorMarginDb: 10,
@@ -75,8 +76,9 @@ export function isNoiseSuppressionSupported(): boolean {
 
 /**
  * Mic chain: DeepFilterNet3 (falls back to RNNoise) → voice gate → leveler → limiter.
- * Run it with the browser's own noiseSuppression and autoGainControl off: stacking suppressors
- * attenuates the voice twice, and AGC raises the noise between phrases before the denoiser sees it.
+ * Run it with the browser's noiseSuppression off (stacking suppressors attenuates the voice twice)
+ * but autoGainControl on: DeepFilterNet3 erases speech that arrives below ~-40 dBFS as if it were
+ * noise, so quiet mics must be normalized before it. The noise AGC raises, the denoiser removes.
  */
 export class NoiseSuppressionProcessor implements TrackProcessor<Track.Kind.Audio, AudioProcessorOptions> {
   readonly name = 'noise-suppressor';

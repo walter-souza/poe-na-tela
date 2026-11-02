@@ -23,13 +23,15 @@ class VoiceGateProcessor extends AudioWorkletProcessor {
     this.attackCoef = msToCoef(o.attackMs ?? 3);
     this.releaseCoef = msToCoef(o.releaseMs ?? 80);
     this.envTau = (o.envelopeMs ?? 10) / 1000;
-    this.floorRiseDbPerSec = o.floorRiseDbPerSec ?? 1;
+    this.floorEnvTau = (o.floorEnvelopeMs ?? 200) / 1000; // slow, so residual noise ripple doesn't drag the floor down
+    this.floorRiseDbPerSec = o.floorRiseDbPerSec ?? 3;
 
     this.delaySize = msToSamples(o.lookaheadMs ?? 30);
     this.delayLines = [];
     this.writeIndex = 0;
 
     this.envPower = 0;
+    this.floorEnvPower = 0;
     this.floorDb = -70;
     this.isOpen = false;
     this.aboveSamples = 0;
@@ -72,9 +74,11 @@ class VoiceGateProcessor extends AudioWorkletProcessor {
     const alpha = 1 - Math.exp(-frames / (this.envTau * sampleRate));
     this.envPower += (blockPower - this.envPower) * alpha;
     const levelDb = 10 * Math.log10(this.envPower + 1e-12);
+    this.floorEnvPower += (blockPower - this.floorEnvPower) * (1 - Math.exp(-frames / (this.floorEnvTau * sampleRate)));
+    const slowDb = 10 * Math.log10(this.floorEnvPower + 1e-12);
 
     // Noise floor: follows drops immediately, rises slowly (so speech barely moves it).
-    if (levelDb < this.floorDb) this.floorDb = levelDb;
+    if (slowDb < this.floorDb) this.floorDb = slowDb;
     else this.floorDb = Math.min(this.maxFloorDb, this.floorDb + (this.floorRiseDbPerSec * frames) / sampleRate);
 
     const openDb = this.openThresholdDb();
