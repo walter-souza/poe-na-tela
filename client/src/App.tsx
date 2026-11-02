@@ -1,8 +1,9 @@
-import { useState, useEffect, type Dispatch, type SetStateAction } from 'react';
-import { MessageSquare, Tv } from 'lucide-react';
+import { useState, useEffect, useRef, type Dispatch, type SetStateAction } from 'react';
+import { MessageSquare, RefreshCw, Tv } from 'lucide-react';
 import { useLiveKit } from './hooks/useLiveKit';
 import { useNativeStream } from './hooks/useNativeStream';
 import { useHotkeys } from './hooks/useHotkeys';
+import { useAppUpdate } from './hooks/useAppUpdate';
 import { NativeStreamModal } from './components/NativeStreamModal';
 import { NativeStreamStatus } from './components/NativeStreamStatus';
 import { HotkeyModal } from './components/HotkeyModal';
@@ -16,6 +17,11 @@ import { Lobby } from './components/Lobby';
 import { InviteModal } from './components/InviteModal';
 import { getHealthUrl, getTokenUrl } from './utils/api';
 import type { StreamQualityConfig } from './types';
+import { saveResume, takeResume, type JoinArgs, type RoomRestore } from './utils/resumeSession';
+
+// Read once per page load (outside React, so StrictMode's double render can't consume it twice).
+const initialResume = takeResume();
+const UPDATE_COUNTDOWN_S = 10;
 
 export function App() {
   const [session, setSession] = useState<{
@@ -36,6 +42,13 @@ export function App() {
   });
   const [isHUDOpen, setIsHUDOpen] = useState(false);
   const [isScreenShareModalOpen, setIsScreenShareModalOpen] = useState(false);
+
+  // New deploys are applied by reloading the page; inside a room the session is carried across it.
+  const updateAvailable = useAppUpdate();
+  const [isResuming, setIsResuming] = useState(Boolean(initialResume));
+  const [roomRestore, setRoomRestore] = useState<RoomRestore | null>(initialResume);
+  const lastJoinRef = useRef<JoinArgs | null>(null);
+  const resumeStartedRef = useRef(false);
 
   // Maintenance Mode States
   const [isMaintenance, setIsMaintenance] = useState<boolean>(() => {
@@ -120,8 +133,10 @@ export function App() {
           setIsMaintenance(true);
           if (data.error) setMaintenanceMessage(data.error);
         }
-        throw new Error(data.error || 'Falha ao entrar na sala');
+        throw Object.assign(new Error(data.error || 'Falha ao entrar na sala'), { status: res.status });
       }
+
+      lastJoinRef.current = { roomName, userName, isPublisher, passcode };
 
       setSession({
         token: data.token,
@@ -143,8 +158,42 @@ export function App() {
     }
   };
 
+  // Back into the room this tab was in before the update reload. Its old connection can linger in the
+  // room for a few seconds, which the server reports as the name being taken (409), so retry briefly.
+  useEffect(() => {
+    if (!initialResume || resumeStartedRef.current) return;
+    resumeStartedRef.current = true;
+    const { roomName, userName, isPublisher, passcode } = initialResume.join;
+    (async () => {
+      for (let attempt = 0; ; attempt++) {
+        try {
+          await handleJoin(roomName, userName, isPublisher, passcode);
+          break;
+        } catch (err: any) {
+          if (err?.status !== 409 || attempt >= 5) {
+            setRoomRestore(null);
+            break;
+          }
+          await new Promise((resolve) => setTimeout(resolve, 2000));
+        }
+      }
+      setIsResuming(false);
+    })();
+  }, []);
+
+  // Outside a room there is nothing to lose: apply the update right away.
+  useEffect(() => {
+    if (updateAvailable && !session && !isResuming && !isLoading) window.location.reload();
+  }, [updateAvailable, session, isResuming, isLoading]);
+
+  const reloadForUpdate = (room: RoomRestore) => {
+    if (lastJoinRef.current) saveResume({ join: lastJoinRef.current, ...room });
+    window.location.reload();
+  };
+
   const handleLeave = () => {
     window.history.replaceState({}, '', window.location.pathname);
+    setRoomRestore(null);
     setSession(null);
     setInviteRoomName(null);
   };
@@ -169,6 +218,16 @@ export function App() {
         isChecking={isCheckingMaintenance}
         onAdminBypass={handleAdminBypass}
       />
+    );
+  }
+
+  if (isResuming && !session) {
+    return (
+      <div className="min-h-screen min-h-[100dvh] w-screen bg-[#07080d] flex flex-col items-center justify-center gap-3 text-gray-100 select-none">
+        <RefreshCw className="w-6 h-6 text-indigo-400 animate-spin" />
+        <p className="text-sm font-semibold">Aplicativo atualizado</p>
+        <p className="text-xs text-gray-400">Voltando para a sala {initialResume?.join.roomName}…</p>
+      </div>
     );
   }
 
@@ -198,6 +257,9 @@ export function App() {
       setIsHUDOpen={setIsHUDOpen}
       isScreenShareModalOpen={isScreenShareModalOpen}
       setIsScreenShareModalOpen={setIsScreenShareModalOpen}
+      restore={roomRestore}
+      updateAvailable={updateAvailable}
+      onReloadForUpdate={reloadForUpdate}
     />
   );
 }
@@ -217,6 +279,9 @@ interface StreamRoomProps {
   setIsHUDOpen: Dispatch<SetStateAction<boolean>>;
   isScreenShareModalOpen: boolean;
   setIsScreenShareModalOpen: Dispatch<SetStateAction<boolean>>;
+  restore: RoomRestore | null;
+  updateAvailable: boolean;
+  onReloadForUpdate: (room: RoomRestore) => void;
 }
 
 function StreamRoom({
@@ -228,6 +293,9 @@ function StreamRoom({
   setIsHUDOpen,
   isScreenShareModalOpen,
   setIsScreenShareModalOpen,
+  restore,
+  updateAvailable,
+  onReloadForUpdate,
 }: StreamRoomProps) {
   const {
     isScreenSharing,
@@ -263,6 +331,7 @@ function StreamRoom({
     url: session.livekitUrl,
     token: session.token,
     onDisconnected: onLeave,
+    restore,
   });
 
   // No app desktop a transmissão é nativa (GPU + SRT, como o OBS); no navegador segue o WebRTC do LiveKit.
@@ -295,6 +364,28 @@ function StreamRoom({
       setIsScreenShareModalOpen(true);
     }
   };
+
+  // A new deploy reloads the room after a short notice, but never cuts a live broadcast: the browser
+  // only re-shares a screen on a user click, so that tab waits until the broadcast ends.
+  const [updateCountdown, setUpdateCountdown] = useState<number | null>(null);
+  useEffect(() => {
+    if (!updateAvailable || isBroadcasting) {
+      setUpdateCountdown(null);
+      return;
+    }
+    setUpdateCountdown(UPDATE_COUNTDOWN_S);
+    const timer = setInterval(() => setUpdateCountdown((s) => (s === null ? s : Math.max(0, s - 1))), 1000);
+    return () => clearInterval(timer);
+  }, [updateAvailable, isBroadcasting]);
+
+  const applyUpdate = () => {
+    disconnect();
+    onReloadForUpdate({ micEnabled: isMicEnabled, deafened: isDeafened, messages });
+  };
+
+  useEffect(() => {
+    if (updateCountdown === 0) applyUpdate();
+  }, [updateCountdown]);
 
   const handleExitRoom = () => {
     disconnect();
@@ -332,6 +423,23 @@ function StreamRoom({
               </span>
             </div>
           </div>
+
+          {updateAvailable && (
+            <div className="absolute top-12 sm:top-20 inset-x-0 mx-auto w-fit max-w-[calc(100%-1rem)] z-30 flex items-center gap-2 sm:gap-3 px-3 py-2 rounded-2xl bg-[#11131c]/95 border border-indigo-500/40 text-[11px] sm:text-xs text-gray-200 shadow-2xl backdrop-blur-md">
+              <RefreshCw className="w-3.5 h-3.5 text-indigo-400 shrink-0" />
+              <span>
+                {updateCountdown !== null
+                  ? `Nova versão disponível. Atualizando em ${updateCountdown}s…`
+                  : 'Nova versão disponível. Atualiza quando você parar de transmitir.'}
+              </span>
+              <button
+                onClick={applyUpdate}
+                className="shrink-0 px-2.5 py-1 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white font-semibold cursor-pointer"
+              >
+                Atualizar agora
+              </button>
+            </div>
+          )}
 
           {!isChatOpen && (
             <button
