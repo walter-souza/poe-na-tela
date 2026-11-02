@@ -8,6 +8,7 @@ import {
   type RemoteParticipant,
 } from 'livekit-client';
 import type { StreamQualityConfig, StreamStats, ChatMessage, ReactionEvent, ParticipantInfo, ScreenShareItem } from '../types';
+import type { RoomRestore } from '../utils/resumeSession';
 import { playJoinSound, playLeaveSound } from '../utils/soundEffects';
 import { startKeepAlive, stopKeepAlive } from '../utils/keepAlive';
 import { getAssetUrl, isNoiseSuppressionSupported, NoiseSuppressionProcessor } from '../utils/noiseSuppression';
@@ -18,6 +19,8 @@ export interface UseLiveKitOptions {
   url: string;
   token: string;
   onDisconnected?: () => void;
+  /** State to restore after the reload that applied an update (see resumeSession). */
+  restore?: RoomRestore | null;
 }
 
 // Message ids are chosen by the sender so edits and deletes can refer to them; peers only
@@ -26,23 +29,24 @@ const MESSAGE_ID_PATTERN = /^[\w.-]{1,64}$/;
 const newMessageId = () => `${Date.now()}-${Math.random().toString(36).slice(2)}`;
 const acceptMessageId = (id: unknown) => (typeof id === 'string' && MESSAGE_ID_PATTERN.test(id) ? id : newMessageId());
 
-export function useLiveKit({ url, token, onDisconnected }: UseLiveKitOptions) {
+export function useLiveKit({ url, token, onDisconnected, restore }: UseLiveKitOptions) {
   const roomRef = useRef<Room | null>(null);
   const onDisconnectedRef = useRef(onDisconnected);
   onDisconnectedRef.current = onDisconnected;
 
   const isExplicitDisconnectRef = useRef(false);
+  const startMicOnConnectRef = useRef(restore?.micEnabled ?? true);
 
   const [connectionState, setConnectionState] = useState<ConnectionState>(ConnectionState.Disconnected);
   const [isScreenSharing, setIsScreenSharing] = useState<boolean>(false);
   const [isLocalScreenAudioMuted, setIsLocalScreenAudioMuted] = useState<boolean>(false);
   const [isMicEnabled, setIsMicEnabled] = useState<boolean>(false);
-  const [isDeafened, setIsDeafened] = useState<boolean>(false);
-  const isDeafenedRef = useRef<boolean>(false);
+  const [isDeafened, setIsDeafened] = useState<boolean>(restore?.deafened ?? false);
+  const isDeafenedRef = useRef<boolean>(restore?.deafened ?? false);
   // Who has their audio turned off; shared over the data channel since LiveKit has no such flag.
   const deafenedPeersRef = useRef<Set<string>>(new Set());
   const [canPlaybackAudio, setCanPlaybackAudio] = useState<boolean>(true);
-  const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const [messages, setMessages] = useState<ChatMessage[]>(restore?.messages ?? []);
   const messagesRef = useRef<ChatMessage[]>([]);
   messagesRef.current = messages;
   // blob: URLs of chat images, released when the room is left.
@@ -1284,8 +1288,11 @@ export function useLiveKit({ url, token, onDisconnected }: UseLiveKitOptions) {
     room
       .connect(url, token, { autoSubscribe: false })
       .then(() => {
-        // The microphone starts on by default; if permission is denied it stays muted.
-        if (isSubscribed) void setMicEnabled(true);
+        // The microphone starts on by default (or as it was before an update reload); if permission
+        // is denied it stays muted.
+        if (!isSubscribed) return;
+        if (startMicOnConnectRef.current) void setMicEnabled(true);
+        if (isDeafenedRef.current) broadcastDeafened(room, true);
       })
       .catch((err: any) => {
         if (!isSubscribed) return;
