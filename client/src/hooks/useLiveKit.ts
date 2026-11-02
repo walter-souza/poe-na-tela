@@ -238,8 +238,9 @@ export function useLiveKit({ url, token, onDisconnected }: UseLiveKitOptions) {
           }
         }
 
-        // Browser suppression/AGC before the denoiser double-attenuates the voice and pumps up noise.
-        await track.mediaStreamTrack.applyConstraints({ noiseSuppression: false, autoGainControl: false }).catch(() => {});
+        // Browser suppression before the denoiser attenuates the voice twice. AGC stays on: the
+        // denoiser treats quiet speech as noise, so it needs the mic normalized first.
+        await track.mediaStreamTrack.applyConstraints({ noiseSuppression: false, autoGainControl: true }).catch(() => {});
 
         const processor = new NoiseSuppressionProcessor();
         activeProcessorRef.current = processor;
@@ -896,7 +897,7 @@ export function useLiveKit({ url, token, onDisconnected }: UseLiveKitOptions) {
         const pub = await room.localParticipant.setMicrophoneEnabled(enabled, {
           echoCancellation: true,
           noiseSuppression: !isNoiseSuppressionEnabledRef.current,
-          autoGainControl: !isNoiseSuppressionEnabledRef.current,
+          autoGainControl: true,
         });
         setIsMicEnabled(enabled);
         if (enabled) {

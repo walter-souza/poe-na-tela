@@ -191,7 +191,7 @@ export const Lobby: React.FC<LobbyProps> = ({ onJoin, isLoading, error }) => {
   const startMicTest = async (suppress = isNoiseSuppressionEnabled) => {
     try {
       const stream = await navigator.mediaDevices.getUserMedia({
-        audio: { echoCancellation: true, noiseSuppression: !suppress, autoGainControl: !suppress },
+        audio: { echoCancellation: true, noiseSuppression: !suppress, autoGainControl: true },
       });
       micStreamRef.current = stream;
 
