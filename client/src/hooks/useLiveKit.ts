@@ -242,12 +242,13 @@ export function useLiveKit({ url, token, onDisconnected, restore }: UseLiveKitOp
           }
         }
 
-        // Stacking the browser suppressor before RNNoise attenuates the voice twice.
+        // Stacking the browser suppressor before ours attenuates the voice twice.
         await track.mediaStreamTrack.applyConstraints({ noiseSuppression: false }).catch(() => {});
 
         const processor = new NoiseSuppressionProcessor();
         activeProcessorRef.current = processor;
         await track.setProcessor(processor);
+        console.info(`Noise suppression active (${processor.engine})`);
       } else {
         if (activeProcessorRef.current || (track as any).processor) {
           await track.stopProcessor();
