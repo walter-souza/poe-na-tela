@@ -17,7 +17,9 @@ import {
   Tv,
   HelpCircle,
   Keyboard,
+  Clapperboard,
 } from 'lucide-react';
+import type { ClipStatus } from '../hooks/useClip';
 import { getObsSrtUrl } from '../utils/api';
 import { ObsGuideModal } from './ObsGuideModal';
 
@@ -39,6 +41,8 @@ interface ControlsBarProps {
   onOpenScreenShareConfig: () => void;
   onToggleChat: () => void;
   onToggleHUD: () => void;
+  onClip: () => void;
+  clipStatus: ClipStatus;
   onLeave: () => void;
 }
 
@@ -59,6 +63,8 @@ export const ControlsBar: React.FC<ControlsBarProps> = ({
   onOpenScreenShareConfig,
   onToggleChat,
   onToggleHUD,
+  onClip,
+  clipStatus,
   onLeave,
 }) => {
   const [copied, setCopied] = useState(false);
@@ -214,6 +220,24 @@ export const ControlsBar: React.FC<ControlsBarProps> = ({
 
       {/* Right Controls */}
       <div className="flex items-center gap-1.5 sm:gap-2">
+        {/* Clipar os últimos segundos (stream em destaque + vozes) */}
+        <button
+          onClick={onClip}
+          title="Clipar os últimos 30s (stream em destaque + vozes da sala) e baixar"
+          className={`flex items-center gap-1.5 p-2 sm:px-3 sm:py-2.5 rounded-2xl border text-xs font-semibold transition ${
+            clipStatus === 'saved'
+              ? 'bg-emerald-600/30 border-emerald-500/50 text-emerald-300'
+              : clipStatus === 'empty'
+                ? 'bg-amber-600/20 border-amber-500/40 text-amber-300'
+                : 'bg-white/5 hover:bg-white/10 border-white/10 text-gray-300 hover:text-white'
+          }`}
+        >
+          {clipStatus === 'saved' ? <Check className="w-4 h-4" /> : <Clapperboard className="w-4 h-4 text-rose-400" />}
+          <span className="hidden lg:inline">
+            {clipStatus === 'saved' ? 'Clipe salvo!' : clipStatus === 'empty' ? 'Nada para clipar' : 'Clipar'}
+          </span>
+        </button>
+
         {/* Convidar Amigos */}
         <button
           onClick={handleCopyInvite}
