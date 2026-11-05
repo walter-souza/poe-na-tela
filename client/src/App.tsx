@@ -4,6 +4,7 @@ import { useLiveKit } from './hooks/useLiveKit';
 import { useNativeStream } from './hooks/useNativeStream';
 import { useHotkeys } from './hooks/useHotkeys';
 import { useAppUpdate } from './hooks/useAppUpdate';
+import { useClip } from './hooks/useClip';
 import { NativeStreamModal } from './components/NativeStreamModal';
 import { NativeStreamStatus } from './components/NativeStreamStatus';
 import { HotkeyModal } from './components/HotkeyModal';
@@ -298,6 +299,7 @@ function StreamRoom({
   onReloadForUpdate,
 }: StreamRoomProps) {
   const {
+    room,
     isScreenSharing,
     isLocalScreenAudioMuted,
     isMicEnabled,
@@ -333,6 +335,8 @@ function StreamRoom({
     onDisconnected: onLeave,
     restore,
   });
+
+  const { saveClip, clipStatus } = useClip(room, session.roomName);
 
   // No app desktop a transmissão é nativa (GPU + SRT, como o OBS); no navegador segue o WebRTC do LiveKit.
   const native = useNativeStream();
@@ -493,6 +497,8 @@ function StreamRoom({
         onOpenScreenShareConfig={() => setIsScreenShareModalOpen(true)}
         onToggleChat={() => setIsChatOpen(!isChatOpen)}
         onToggleHUD={() => setIsHUDOpen(!isHUDOpen)}
+        onClip={saveClip}
+        clipStatus={clipStatus}
         onLeave={handleExitRoom}
       />
 
