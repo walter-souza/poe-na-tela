@@ -64,6 +64,87 @@ function findCluster(buf: Uint8Array, from: number): number {
   return -1;
 }
 
+
+const INFO_ID = [0x15, 0x49, 0xa9, 0x66];
+
+/** Lê um tamanho EBML em `buf[at]`: { length: bytes do campo, value }. */
+function readSize(buf: Uint8Array, at: number): { length: number; value: number } {
+  const length = Math.clz32(buf[at]) - 23;
+  let value = buf[at] & (0xff >> length);
+  for (let i = 1; i < length; i++) value = value * 256 + buf[at + i];
+  return { length, value };
+}
+
+/** Campo de tamanho EBML de 8 bytes (aceita qualquer valor; evita mudar o comprimento ao reescrever). */
+function size8(value: number): Uint8Array {
+  const out = new Uint8Array(8);
+  out[0] = 0x01;
+  for (let i = 7; i >= 1; i--) {
+    out[i] = value % 256;
+    value = Math.floor(value / 256);
+  }
+  return out;
+}
+
+/** Timecode (em ms) do Cluster que começa em `buf[0]`, e onde seus bytes estão. */
+function clusterTimecode(buf: Uint8Array): { at: number; length: number; value: number } | null {
+  const size = readSize(buf, 4);
+  const at = 4 + size.length; // E7 <tamanho> <valor>
+  if (buf[at] !== 0xe7) return null;
+  const len = readSize(buf, at + 1);
+  const dataAt = at + 1 + len.length;
+  let value = 0;
+  for (let i = 0; i < len.value; i++) value = value * 256 + buf[dataAt + i];
+  return { at: dataAt, length: len.value, value };
+}
+
+/**
+ * O MediaRecorder grava os tempos desde o início da gravação e não escreve a duração. Para o clipe
+ * começar em 0:00 e os players mostrarem a duração: desloca o Timecode de cada Cluster (mantendo o
+ * mesmo comprimento em bytes, só com zeros à esquerda) e acrescenta Duration ao Info do cabeçalho.
+ */
+function fixWebm(header: Uint8Array, clusters: Uint8Array[]): Uint8Array[] {
+  const copies = clusters.map((c) => c.slice());
+  const tcs = copies.map(clusterTimecode);
+  if (tcs.some((t) => t === null)) return [header, ...clusters];
+  const base = tcs[0]!.value;
+  tcs.forEach((t, i) => {
+    let v = Math.max(0, t!.value - base);
+    for (let b = t!.length - 1; b >= 0; b--) {
+      copies[i][t!.at + b] = v % 256;
+      v = Math.floor(v / 256);
+    }
+  });
+  const last = tcs[tcs.length - 1]!.value - base;
+  const prev = tcs.length > 1 ? tcs[tcs.length - 2]!.value - base : 0;
+  const durationMs = last + (tcs.length > 1 ? last - prev : 1000);
+
+  // Info: [ID 4][tamanho][corpo]; só mexe nele se o corpo estiver inteiro no cabeçalho.
+  let infoAt = -1;
+  for (let i = 0; i <= header.length - 5; i++) {
+    if (INFO_ID.every((b, k) => header[i + k] === b)) {
+      infoAt = i;
+      break;
+    }
+  }
+  if (infoAt < 0) return [header, ...copies];
+  const size = readSize(header, infoAt + 4);
+  const bodyAt = infoAt + 4 + size.length;
+  const bodyEnd = bodyAt + size.value;
+  if (bodyEnd > header.length) return [header, ...copies];
+  const duration = new Uint8Array(11); // 44 89 88 <float64>
+  duration.set([0x44, 0x89, 0x88]);
+  new DataView(duration.buffer).setFloat64(3, durationMs);
+  const newHeader = concat([
+    header.slice(0, infoAt + 4),
+    size8(size.value + duration.length),
+    header.slice(bodyAt, bodyEnd),
+    duration,
+    header.slice(bodyEnd),
+  ]);
+  return [newHeader, ...copies];
+}
+
 export class ClipRecorder {
   private readonly getSources: () => ClipSources;
   private ctx: AudioContext | null = null;
@@ -113,7 +194,8 @@ export class ClipRecorder {
   /** Monta o clipe com o que está no buffer; null se ainda não há um Cluster completo. */
   buildClip(): Blob | null {
     if (!this.header || this.clusters.length === 0) return null;
-    return new Blob([this.header as BlobPart, ...this.clusters.map((c) => c.data as BlobPart)], { type: this.mimeType });
+    const parts = fixWebm(this.header, this.clusters.map((c) => c.data));
+    return new Blob(parts as BlobPart[], { type: this.mimeType });
   }
 
   /** Mantém a gravação alinhada com o que está na tela: troca de vídeo reinicia, áudio é mixado ao vivo. */
@@ -235,7 +317,10 @@ export class ClipRecorder {
   }
 }
 
-/** Escolhe o que gravar a partir do que está na tela: o vídeo maior e todas as vozes e áudios de stream. */
+/**
+ * Escolhe o que gravar: o vídeo maior na tela mais as faixas de áudio passadas (vozes e áudio das streams;
+ * os <audio> do LiveKit não ficam no DOM, então vêm da sala). Streams WHEP trazem o áudio junto do vídeo.
+ */
 export function collectClipSources(extraAudio: Array<MediaStreamTrack | null | undefined> = []): ClipSources {
   let bestVideo: MediaStreamTrack | null = null;
   let bestVideoElement: HTMLVideoElement | null = null;
@@ -258,10 +343,6 @@ export function collectClipSources(extraAudio: Array<MediaStreamTrack | null | u
   const add = (t: MediaStreamTrack | null | undefined) => {
     if (t && t.readyState === 'live') audio.set(t.id, t);
   };
-  document.querySelectorAll('audio[data-participant]').forEach((el) => {
-    const stream = (el as HTMLAudioElement).srcObject;
-    if (stream instanceof MediaStream) stream.getAudioTracks().forEach(add);
-  });
   // Streams que chegam com o áudio no mesmo MediaStream do vídeo (OBS/WHEP).
   const featured = bestVideoElement as HTMLVideoElement | null;
   if (featured?.srcObject instanceof MediaStream) featured.srcObject.getAudioTracks().forEach(add);

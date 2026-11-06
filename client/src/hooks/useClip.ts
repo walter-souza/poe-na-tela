@@ -15,11 +15,19 @@ export function useClip(room: Room | null, roomName: string) {
   const statusTimer = useRef<number | null>(null);
 
   useEffect(() => {
-    const recorder = new ClipRecorder(() =>
-      collectClipSources([
-        roomRef.current?.localParticipant.getTrackPublication(Track.Source.Microphone)?.track?.mediaStreamTrack,
-      ]),
-    );
+    const recorder = new ClipRecorder(() => {
+      const room = roomRef.current;
+      const tracks: Array<MediaStreamTrack | undefined> = [
+        room?.localParticipant.getTrackPublication(Track.Source.Microphone)?.track?.mediaStreamTrack,
+      ];
+      room?.remoteParticipants.forEach((p) => {
+        tracks.push(
+          p.getTrackPublication(Track.Source.Microphone)?.track?.mediaStreamTrack,
+          p.getTrackPublication(Track.Source.ScreenShareAudio)?.track?.mediaStreamTrack,
+        );
+      });
+      return collectClipSources(tracks);
+    });
     recorderRef.current = recorder;
     recorder.start();
     return () => {
