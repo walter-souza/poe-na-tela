@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { RoomEvent, Track, type Room } from 'livekit-client';
+import { ConnectionState, RoomEvent, Track, type Room } from 'livekit-client';
 import { ClipRecorder, collectClipSources, downloadClip } from '../utils/clipRecorder';
 import { getClipUrl, getRoomClipUrl, getRoomClipsUrl } from '../utils/api';
 
@@ -81,16 +81,19 @@ export function useClip(room: Room | null, session: ClipSession) {
       setEnabled(next);
       // Sem clipe ligado na sala, um preview aberto não faz mais sentido.
       if (!next) discardClip();
-      // Avisa todos ao entrar numa sala com clipe ligado e a cada mudança depois disso.
-      if (announced.current !== next && (announced.current !== null || next)) {
-        showNotice(
-          next
-            ? 'Clipe ligado nesta sala: as vozes de todos ficam num buffer de 60s no servidor. Quem não concordar pode sair da sala.'
-            : 'Clipe desligado: o buffer de vozes foi descartado.',
-        );
+      // Avisa as mudanças feitas com a pessoa já na sala; o estado ao entrar não gera aviso (o botão já o mostra).
+      if (room.state === ConnectionState.Connected) {
+        if (announced.current !== null && announced.current !== next) {
+          showNotice(
+            next
+              ? 'Clipe ligado nesta sala: as vozes de todos ficam num buffer de 60s no servidor. Quem não concordar pode sair da sala.'
+              : 'Clipe desligado: o buffer de vozes foi descartado.',
+          );
+        }
+        announced.current = next;
       }
-      announced.current = next;
     };
+    announced.current = null;
     sync();
     room.on(RoomEvent.Connected, sync);
     room.on(RoomEvent.RoomMetadataChanged, sync);
