@@ -17,8 +17,6 @@ export interface ClipPreview {
 interface ClipSession {
   token: string;
   roomName: string;
-  userName: string;
-  hostIdentity?: string;
 }
 
 /** O clipe é uma configuração da sala (metadado `{"clip":true}`), definida pelo anfitrião. */
@@ -34,14 +32,13 @@ function isClipEnabled(metadata: string | undefined): boolean {
 const NOTICE_MS = 9000;
 
 /**
- * Clipe da sala. Ligado pelo anfitrião, vale para todos: as vozes de todos ficam num buffer de memória
+ * Clipe da sala. Ligado por qualquer participante, vale para todos: as vozes de todos ficam num buffer de memória
  * no servidor (60s) e cada cliente guarda localmente o vídeo da stream. Ao clipar, o vídeo sobe para o
  * servidor, que mistura as vozes e devolve um clipe para preview antes de baixar. Desligado, nada é gravado.
  */
 export function useClip(room: Room | null, session: ClipSession) {
-  const { token, roomName, userName, hostIdentity } = session;
+  const { token, roomName } = session;
   const [enabled, setEnabled] = useState(false);
-  const [canToggle, setCanToggle] = useState(false);
   const [status, setStatus] = useState<ClipStatus>('idle');
   const [notice, setNotice] = useState<string | null>(null);
   const [preview, setPreview] = useState<ClipPreview | null>(null);
@@ -93,23 +90,15 @@ export function useClip(room: Room | null, session: ClipSession) {
         );
       }
       announced.current = next;
-      // Sem anfitrião definido ou fora da sala, qualquer um pode alterar (mesma regra do servidor).
-      setCanToggle(
-        !hostIdentity || hostIdentity === userName || !room.remoteParticipants.has(hostIdentity),
-      );
     };
     sync();
     room.on(RoomEvent.Connected, sync);
     room.on(RoomEvent.RoomMetadataChanged, sync);
-    room.on(RoomEvent.ParticipantConnected, sync);
-    room.on(RoomEvent.ParticipantDisconnected, sync);
     return () => {
       room.off(RoomEvent.Connected, sync);
       room.off(RoomEvent.RoomMetadataChanged, sync);
-      room.off(RoomEvent.ParticipantConnected, sync);
-      room.off(RoomEvent.ParticipantDisconnected, sync);
     };
-  }, [room, hostIdentity, userName, showNotice, discardClip]);
+  }, [room, showNotice, discardClip]);
 
   // Buffer local do vídeo e do áudio da stream: existe somente enquanto o clipe está ligado na sala.
   // As vozes não entram aqui: o servidor mistura as de todos (microfones) no clipe.
@@ -215,7 +204,6 @@ export function useClip(room: Room | null, session: ClipSession) {
     saveClip,
     clipStatus: status,
     clipEnabled: enabled,
-    canToggleClip: canToggle,
     toggleClip,
     /** Aviso temporário (mudança da configuração da sala, erro ou clipe salvo sem vozes). */
     clipNotice: notice,
