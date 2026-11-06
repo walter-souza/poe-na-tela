@@ -45,7 +45,6 @@ interface ControlsBarProps {
   clipStatus: ClipStatus;
   /** Configuração da sala: ligada vale para todos os participantes. */
   clipEnabled: boolean;
-  canToggleClip: boolean;
   onToggleClip: () => void;
   /** Aviso temporário sobre a configuração do clipe (mudança ou erro). */
   clipNotice: string | null;
@@ -72,7 +71,6 @@ export const ControlsBar: React.FC<ControlsBarProps> = ({
   onClip,
   clipStatus,
   clipEnabled,
-  canToggleClip,
   onToggleClip,
   clipNotice,
   onLeave,
@@ -238,15 +236,14 @@ export const ControlsBar: React.FC<ControlsBarProps> = ({
 
       {/* Right Controls */}
       <div className="flex items-center gap-1.5 sm:gap-2">
-        {/* Clipe: configuração da sala (vale para todos). Só o anfitrião liga/desliga; todos veem o indicador. */}
+        {/* Clipe: configuração da sala (vale para todos). Qualquer participante liga/desliga. */}
         <button
-          onClick={canToggleClip ? onToggleClip : undefined}
-          disabled={!canToggleClip}
+          onClick={onToggleClip}
           aria-pressed={clipEnabled}
           title={
             clipEnabled
-              ? `Clipe LIGADO na sala: as vozes de todos ficam num buffer de memória de 60s no servidor (nada vai para disco) e o vídeo da stream fica só em cada dispositivo. ${canToggleClip ? 'Clique para desligar (o buffer é descartado).' : 'Só o anfitrião pode desligar.'}`
-              : `Clipe desligado: nada é gravado. ${canToggleClip ? 'Clique para ligar para todos na sala.' : 'Só o anfitrião pode ligar.'}`
+              ? `Clipe LIGADO na sala: as vozes de todos ficam num buffer de memória de 60s no servidor (nada vai para disco) e o vídeo da stream fica só em cada dispositivo. Clique para desligar (o buffer é descartado).`
+              : `Clipe desligado: nada é gravado. Clique para ligar para todos na sala.`
           }
           className={`flex items-center gap-1.5 p-2 sm:px-3 sm:py-2.5 rounded-2xl border text-xs font-semibold transition disabled:cursor-default ${
             clipEnabled
@@ -256,7 +253,7 @@ export const ControlsBar: React.FC<ControlsBarProps> = ({
         >
           <span className={`w-1.5 h-1.5 rounded-full ${clipEnabled ? 'bg-rose-400 animate-pulse' : 'bg-gray-500'}`} />
           <span className="hidden lg:inline">
-            {clipEnabled ? 'Clipe ligado' : canToggleClip ? 'Ligar clipe' : 'Clipe desligado'}
+            {clipEnabled ? 'Clipe ligado' : 'Ligar clipe'}
           </span>
         </button>
 

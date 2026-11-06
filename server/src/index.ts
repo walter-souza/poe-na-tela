@@ -227,7 +227,6 @@ app.post(['/api/token', '/token'], async (req: Request, res: Response): Promise<
       livekitUrl: LIVEKIT_URL,
       roomName: sanitizedRoom,
       identity: sanitizedParticipant,
-      hostIdentity: roomStore.get(sanitizedRoom)?.hostIdentity,
       isPublisher: Boolean(isPublisher),
     });
   } catch (err: any) {
@@ -425,7 +424,7 @@ app.get(['/api/rooms/:roomName/streams', '/rooms/:roomName/streams', '/api/room/
 
 /**
  * Liga/desliga o clipe da sala. A configuração vale para todos os participantes: ligado, as vozes de
- * todos entram no buffer de memória do servidor. Só o anfitrião muda (ou qualquer um, se ele não estiver na sala).
+ * todos entram no buffer de memória do servidor. Qualquer participante pode mudar.
  */
 app.post(['/api/rooms/:roomName/clip', '/rooms/:roomName/clip'], async (req: Request, res: Response): Promise<void> => {
   const roomName = sanitizeRoomName(req.params.roomName);
@@ -436,11 +435,9 @@ app.post(['/api/rooms/:roomName/clip', '/rooms/:roomName/clip'], async (req: Req
     return;
   }
 
-  let identity: string | undefined;
   try {
     const claims = await new TokenVerifier(LIVEKIT_API_KEY, LIVEKIT_API_SECRET).verify(bearer);
     if (claims.video?.room !== roomName) throw new Error('sala diferente');
-    identity = claims.sub;
   } catch {
     res.status(401).json({ error: 'Sessão inválida para esta sala.' });
     return;
@@ -451,14 +448,6 @@ app.post(['/api/rooms/:roomName/clip', '/rooms/:roomName/clip'], async (req: Req
     if (!room) {
       res.status(404).json({ error: 'Sala não encontrada.' });
       return;
-    }
-    const host = roomStore.get(roomName)?.hostIdentity;
-    if (host && host !== identity) {
-      const participants = await listParticipantsWithTimeout(roomName);
-      if (participants.some((p) => p.identity === host)) {
-        res.status(403).json({ error: 'Só o anfitrião da sala pode ligar ou desligar o clipe.' });
-        return;
-      }
     }
     await roomService.updateRoomMetadata(roomName, withClipFlag(room.metadata, enabled));
     res.json({ clipEnabled: enabled });

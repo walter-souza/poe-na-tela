@@ -31,7 +31,6 @@ export function App() {
     livekitUrl: string;
     roomName: string;
     userName: string;
-    hostIdentity?: string;
     isPublisher: boolean;
   } | null>(null);
 
@@ -146,7 +145,6 @@ export function App() {
         livekitUrl: data.livekitUrl,
         roomName: data.roomName,
         userName: data.identity,
-        hostIdentity: data.hostIdentity,
         isPublisher: data.isPublisher,
       });
 
@@ -274,7 +272,6 @@ interface StreamRoomProps {
     livekitUrl: string;
     roomName: string;
     userName: string;
-    hostIdentity?: string;
     isPublisher: boolean;
   };
   onLeave: () => void;
@@ -340,7 +337,7 @@ function StreamRoom({
     restore,
   });
 
-  const { saveClip, clipStatus, clipEnabled, canToggleClip, toggleClip, clipNotice, clipPreview, discardClip } = useClip(room, session);
+  const { saveClip, clipStatus, clipEnabled, toggleClip, clipNotice, clipPreview, discardClip } = useClip(room, session);
 
   // No app desktop a transmissão é nativa (GPU + SRT, como o OBS); no navegador segue o WebRTC do LiveKit.
   const native = useNativeStream();
@@ -504,7 +501,6 @@ function StreamRoom({
         onClip={saveClip}
         clipStatus={clipStatus}
         clipEnabled={clipEnabled}
-        canToggleClip={canToggleClip}
         onToggleClip={toggleClip}
         clipNotice={clipNotice}
         onLeave={handleExitRoom}
