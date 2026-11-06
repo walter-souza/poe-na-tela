@@ -7,7 +7,9 @@ if (typeof globalThis.crypto === 'undefined' || !globalThis.crypto.getRandomValu
 import express, { Request, Response } from 'express';
 import cors from 'cors';
 import dotenv from 'dotenv';
-import { AccessToken, RoomServiceClient } from 'livekit-server-sdk';
+import { AccessToken, RoomServiceClient, TokenVerifier } from 'livekit-server-sdk';
+import { createClipRouter } from './clips.js';
+import { CLIP_BOT_IDENTITY, ClipBufferManager, encodeWav, isClipEnabled, WINDOW_MS, withClipFlag } from './clipBuffer.js';
 
 dotenv.config();
 
@@ -116,7 +118,7 @@ app.post(['/api/token', '/token'], async (req: Request, res: Response): Promise<
     const sanitizedRoom = sanitizeRoomName(roomName as string);
     const sanitizedParticipant = sanitizeUserName(participantName as string);
 
-    if (!sanitizedRoom || !sanitizedParticipant) {
+    if (!sanitizedRoom || !sanitizedParticipant || sanitizedParticipant === CLIP_BOT_IDENTITY) {
       res.status(400).json({ error: 'Nome da sala e nome do participante são obrigatórios e válidos.' });
       return;
     }
@@ -125,13 +127,25 @@ app.post(['/api/token', '/token'], async (req: Request, res: Response): Promise<
 
     // 1. Check if room is currently active in LiveKit
     let isActiveInLiveKit = false;
+    let liveRoomMetadata: string | undefined;
     try {
       const existingLiveRooms = await roomService.listRooms([sanitizedRoom]);
-      if (existingLiveRooms && existingLiveRooms.length > 0 && existingLiveRooms[0].numParticipants > 0) {
-        isActiveInLiveKit = true;
+      if (existingLiveRooms && existingLiveRooms.length > 0) {
+        liveRoomMetadata = existingLiveRooms[0].metadata;
+        if (existingLiveRooms[0].numParticipants > 0) isActiveInLiveKit = true;
       }
     } catch {
       // Fallback to roomStore
+    }
+    if (!isActiveInLiveKit) {
+      // O numParticipants do listRooms demora vários segundos para refletir quem entrou; listParticipants é imediato.
+      // Sem isso, quem entra logo depois do primeiro seria tratado como criador (anfitrião/senha da sala).
+      try {
+        const present = await listParticipantsWithTimeout(sanitizedRoom);
+        isActiveInLiveKit = present.some((p) => p.identity !== CLIP_BOT_IDENTITY);
+      } catch {
+        // sala inexistente ou LiveKit indisponível: segue como sala nova
+      }
     }
 
     // 2. Check if a participant with this name is already in the room
@@ -180,6 +194,10 @@ app.post(['/api/token', '/token'], async (req: Request, res: Response): Promise<
       }
     } else {
       // Room is brand new
+      if (isClipEnabled(liveRoomMetadata)) {
+        // A sala vazia pode sobreviver um tempo no LiveKit: o clipe de uma sessão não vale para a seguinte.
+        roomService.updateRoomMetadata(sanitizedRoom, withClipFlag(liveRoomMetadata, false)).catch(() => {});
+      }
       roomStore.set(sanitizedRoom, {
         name: sanitizedRoom,
         passcode: cleanPasscode,
@@ -209,6 +227,7 @@ app.post(['/api/token', '/token'], async (req: Request, res: Response): Promise<
       livekitUrl: LIVEKIT_URL,
       roomName: sanitizedRoom,
       identity: sanitizedParticipant,
+      hostIdentity: roomStore.get(sanitizedRoom)?.hostIdentity,
       isPublisher: Boolean(isPublisher),
     });
   } catch (err: any) {
@@ -262,7 +281,8 @@ app.get(['/api/rooms', '/rooms'], async (_req: Request, res: Response) => {
       name: r.name,
       numParticipants: r.numParticipants,
       creationTime: Number(r.creationTime),
-      hasPasscode: roomStore.has(r.name) && Boolean(roomStore.get(r.name)?.passcode)
+      hasPasscode: roomStore.has(r.name) && Boolean(roomStore.get(r.name)?.passcode),
+      clipEnabled: isClipEnabled(r.metadata),
     }));
     res.json({ rooms: result });
   } catch (err: any) {
@@ -283,12 +303,14 @@ app.get([
   const roomName = sanitizeRoomName(req.params.roomName);
   let numParticipants = 0;
   let isActive = false;
+  let clipEnabled = false;
 
   try {
     const rooms = await listRoomsWithTimeout([roomName]);
     if (rooms && rooms.length > 0 && rooms[0].numParticipants > 0) {
       isActive = true;
       numParticipants = rooms[0].numParticipants;
+      clipEnabled = isClipEnabled(rooms[0].metadata);
     } else {
       roomStore.delete(roomName);
     }
@@ -301,6 +323,7 @@ app.get([
     hasPasscode: isActive && Boolean(config?.passcode),
     isActive,
     numParticipants,
+    clipEnabled,
   });
 });
 
@@ -399,6 +422,87 @@ app.get(['/api/rooms/:roomName/streams', '/rooms/:roomName/streams', '/api/room/
     count: streams.length,
   });
 });
+
+/**
+ * Liga/desliga o clipe da sala. A configuração vale para todos os participantes: ligado, as vozes de
+ * todos entram no buffer de memória do servidor. Só o anfitrião muda (ou qualquer um, se ele não estiver na sala).
+ */
+app.post(['/api/rooms/:roomName/clip', '/rooms/:roomName/clip'], async (req: Request, res: Response): Promise<void> => {
+  const roomName = sanitizeRoomName(req.params.roomName);
+  const bearer = /^Bearer (.+)$/.exec(req.header('authorization') || '')?.[1];
+  const enabled = req.body?.enabled;
+  if (!roomName || !bearer || typeof enabled !== 'boolean') {
+    res.status(400).json({ error: 'Requisição inválida.' });
+    return;
+  }
+
+  let identity: string | undefined;
+  try {
+    const claims = await new TokenVerifier(LIVEKIT_API_KEY, LIVEKIT_API_SECRET).verify(bearer);
+    if (claims.video?.room !== roomName) throw new Error('sala diferente');
+    identity = claims.sub;
+  } catch {
+    res.status(401).json({ error: 'Sessão inválida para esta sala.' });
+    return;
+  }
+
+  try {
+    const [room] = await listRoomsWithTimeout([roomName]);
+    if (!room) {
+      res.status(404).json({ error: 'Sala não encontrada.' });
+      return;
+    }
+    const host = roomStore.get(roomName)?.hostIdentity;
+    if (host && host !== identity) {
+      const participants = await listParticipantsWithTimeout(roomName);
+      if (participants.some((p) => p.identity === host)) {
+        res.status(403).json({ error: 'Só o anfitrião da sala pode ligar ou desligar o clipe.' });
+        return;
+      }
+    }
+    await roomService.updateRoomMetadata(roomName, withClipFlag(room.metadata, enabled));
+    res.json({ clipEnabled: enabled });
+  } catch (err: any) {
+    console.error('Falha ao alterar o clipe da sala:', err?.message || err);
+    res.status(500).json({ error: 'Não foi possível alterar o clipe da sala.' });
+  }
+});
+
+// Buffer de vozes para clipes (só RAM, só em salas com o clipe ligado). CLIP_BUFFER=0 desliga.
+const clipBuffers = new ClipBufferManager({
+  roomService,
+  livekitUrl: LIVEKIT_URL,
+  apiKey: LIVEKIT_API_KEY,
+  apiSecret: LIVEKIT_API_SECRET,
+});
+if (process.env.CLIP_BUFFER !== '0') void clipBuffers.start();
+
+// Clipes prontos (vídeo do cliente + vozes do buffer) para preview e download.
+app.use(
+  createClipRouter({
+    roomService,
+    clipBuffers,
+    apiKey: LIVEKIT_API_KEY,
+    apiSecret: LIVEKIT_API_SECRET,
+    sanitizeRoomName,
+  }),
+);
+
+// Rotas de depuração do buffer: expõem áudio da sala sem autenticação, então só existem com CLIP_DEBUG=1.
+if (process.env.CLIP_DEBUG === '1') {
+  app.get('/api/debug/clip-buffers', (_req: Request, res: Response) => {
+    res.json(clipBuffers.status());
+  });
+  app.get('/api/debug/rooms/:roomName/voices.wav', (req: Request, res: Response) => {
+    const rec = clipBuffers.get(sanitizeRoomName(req.params.roomName));
+    if (!rec) {
+      res.status(404).json({ error: 'Sem buffer ativo para esta sala (ninguém ativou o clipe).' });
+      return;
+    }
+    const seconds = Math.max(1, Math.min(WINDOW_MS / 1000, Number(req.query.seconds) || 30));
+    res.type('audio/wav').send(encodeWav(rec.mix(seconds)));
+  });
+}
 
 app.listen(PORT, () => {
   console.log(`🚀 Põe na Tela — Servidor rodando em http://localhost:${PORT}`);

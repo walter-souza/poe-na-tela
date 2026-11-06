@@ -28,6 +28,24 @@ export function getTokenUrl(): string {
   return base.endsWith('/api') ? `${base}/token` : `${base}/api/token`;
 }
 
+export function getRoomClipUrl(roomName: string): string {
+  const base = getApiBaseUrl();
+  const endpoint = base.endsWith('/api') ? `${base}/rooms` : `${base}/api/rooms`;
+  return `${endpoint}/${encodeURIComponent(roomName)}/clip`;
+}
+
+/** Registro (POST) e envio (PUT /:id) de clipes da sala. */
+export function getRoomClipsUrl(roomName: string): string {
+  return `${getRoomClipUrl(roomName)}s`;
+}
+
+/** Preview/download (GET) e descarte (DELETE) de um clipe pronto. */
+export function getClipUrl(clipId: string): string {
+  const base = getApiBaseUrl();
+  const endpoint = base.endsWith('/api') ? `${base}/clips` : `${base}/api/clips`;
+  return `${endpoint}/${encodeURIComponent(clipId)}`;
+}
+
 export function getHealthUrl(): string {
   const base = getApiBaseUrl();
   return base.endsWith('/api') ? `${base}/health` : `${base}/api/health`;
