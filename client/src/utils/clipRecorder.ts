@@ -24,7 +24,8 @@ interface Cluster {
 }
 
 export interface ClipSources {
-  video: MediaStreamTrack | null;
+  /** Vídeos na tela; o primeiro é o destaque (o que "Clipar" salva). */
+  videos: MediaStreamTrack[];
   audio: MediaStreamTrack[];
 }
 
@@ -145,50 +146,28 @@ function fixWebm(header: Uint8Array, clusters: Uint8Array[]): Uint8Array[] {
   return [newHeader, ...copies];
 }
 
-export class ClipRecorder {
-  private readonly getSources: () => ClipSources;
-  private ctx: AudioContext | null = null;
-  private destination: MediaStreamAudioDestinationNode | null = null;
-  private audioNodes = new Map<string, MediaStreamAudioSourceNode>();
-  private recorder: MediaRecorder | null = null;
-  private videoTrack: MediaStreamTrack | null = null;
-  private mimeType = '';
-  private syncTimer: number | null = null;
-  private disposed = false;
+/** Quantos vídeos são gravados ao mesmo tempo (os maiores na tela); vale também para o áudio das streams. */
+const MAX_VIDEOS = 3;
+/** Chave da gravação só de áudio, usada quando não há nenhum vídeo na tela. */
+const AUDIO_ONLY = 'audio';
 
+/**
+ * Buffer de uma gravação: um MediaRecorder dedicado a um vídeo (ou só áudio) e os últimos Clusters dele.
+ * Cada vídeo tem o seu para que trocar o destaque não perca o que já foi gravado dele.
+ */
+class TrackBuffer {
+  private recorder: MediaRecorder | null = null;
+  private mimeType = '';
   private header: Uint8Array | null = null;
   private clusters: Cluster[] = [];
   /** Bytes recebidos ainda não separados em Clusters completos. */
   private pending: Uint8Array = new Uint8Array(0);
   private headerDone = false;
+  /** Se a gravação inclui a mixagem de áudio (só entra quando o AudioContext está rodando). */
+  withAudio = false;
 
-  constructor(getSources: () => ClipSources) {
-    this.getSources = getSources;
-  }
-
-  start() {
-    if (typeof MediaRecorder === 'undefined') return;
-    this.sync();
-    this.syncTimer = window.setInterval(() => this.sync(), SYNC_MS);
-  }
-
-  stop() {
-    this.disposed = true;
-    if (this.syncTimer !== null) window.clearInterval(this.syncTimer);
-    this.stopRecorder();
-    this.audioNodes.forEach((n) => n.disconnect());
-    this.audioNodes.clear();
-    void this.ctx?.close().catch(() => {});
-    this.ctx = null;
-    this.destination = null;
-    this.clusters = [];
-  }
-
-  /** Segundos de gravação disponíveis agora (0 se ainda não há nada para salvar). */
-  get bufferedSeconds(): number {
-    if (!this.header || this.clusters.length === 0) return 0;
-    const now = performance.now();
-    return Math.min(CLIP_SECONDS, (now - this.clusters[0].endedAt) / 1000);
+  get running(): boolean {
+    return this.recorder !== null && this.recorder.state !== 'inactive';
   }
 
   /** Há quanto tempo (ms) termina o vídeo guardado: o último Cluster só fecha no quadro-chave seguinte. */
@@ -197,68 +176,10 @@ export class ClipRecorder {
     return last ? Math.max(0, performance.now() - last.endedAt) : 0;
   }
 
-  /** Monta o clipe com o que está no buffer; null se ainda não há um Cluster completo. */
-  buildClip(): Blob | null {
-    if (!this.header || this.clusters.length === 0) return null;
-    const parts = fixWebm(this.header, this.clusters.map((c) => c.data));
-    return new Blob(parts as BlobPart[], { type: this.mimeType });
-  }
-
-  /** Mantém a gravação alinhada com o que está na tela: troca de vídeo reinicia, áudio é mixado ao vivo. */
-  private sync() {
-    if (this.disposed) return;
-    const { video, audio } = this.getSources();
-
-    this.syncAudio(audio);
-
-    const hasMedia = video !== null || audio.length > 0;
-    if (!hasMedia) {
-      this.stopRecorder();
-      this.resetBuffer();
-      return;
-    }
-    const videoChanged = this.videoTrack?.id !== video?.id;
-    if (!this.recorder || this.recorder.state === 'inactive' || videoChanged) {
-      this.startRecorder(video);
-    }
-  }
-
-  private syncAudio(tracks: MediaStreamTrack[]) {
-    if (tracks.length === 0 && this.audioNodes.size === 0) return;
-    if (!this.ctx || this.ctx.state === 'closed') {
-      this.ctx = new AudioContext({ sampleRate: 48000 });
-      this.destination = this.ctx.createMediaStreamDestination();
-      this.audioNodes.clear();
-    }
-    if (this.ctx.state === 'suspended') void this.ctx.resume().catch(() => {});
-
-    const wanted = new Map(tracks.filter((t) => t.readyState === 'live').map((t) => [t.id, t]));
-    for (const [id, node] of this.audioNodes) {
-      if (!wanted.has(id)) {
-        node.disconnect();
-        this.audioNodes.delete(id);
-      }
-    }
-    for (const [id, track] of wanted) {
-      if (this.audioNodes.has(id)) continue;
-      const node = this.ctx.createMediaStreamSource(new MediaStream([track]));
-      node.connect(this.destination!);
-      this.audioNodes.set(id, node);
-    }
-  }
-
-  private startRecorder(video: MediaStreamTrack | null) {
-    this.stopRecorder();
-    this.resetBuffer();
+  start(video: MediaStreamTrack | null, audio: MediaStreamTrack | undefined) {
     const mimeType = pickMimeType(video !== null);
-    if (!mimeType) return;
-
-    const tracks: MediaStreamTrack[] = [];
-    if (video) tracks.push(video);
-    const audioTrack = this.destination?.stream.getAudioTracks()[0];
-    if (audioTrack) tracks.push(audioTrack);
-    if (tracks.length === 0) return;
-
+    const tracks = [video, audio].filter((t): t is MediaStreamTrack => !!t);
+    if (!mimeType || tracks.length === 0) return;
     try {
       const recorder = new MediaRecorder(new MediaStream(tracks), {
         mimeType,
@@ -273,30 +194,33 @@ export class ClipRecorder {
       };
       recorder.start(SLICE_MS);
       this.recorder = recorder;
-      this.videoTrack = video;
       this.mimeType = mimeType;
+      this.withAudio = !!audio;
     } catch (err) {
       console.warn('[Clip] Falha ao iniciar a gravação:', err);
       this.recorder = null;
     }
   }
 
-  private stopRecorder() {
+  stop() {
     const recorder = this.recorder;
     this.recorder = null;
-    this.videoTrack = null;
     if (recorder && recorder.state !== 'inactive') {
       try {
         recorder.stop();
       } catch {}
     }
-  }
-
-  private resetBuffer() {
     this.header = null;
     this.clusters = [];
     this.pending = new Uint8Array(0);
     this.headerDone = false;
+  }
+
+  /** Monta o clipe com o que está no buffer; null se ainda não há um Cluster completo. */
+  build(): Blob | null {
+    if (!this.header || this.clusters.length === 0) return null;
+    const parts = fixWebm(this.header, this.clusters.map((c) => c.data));
+    return new Blob(parts as BlobPart[], { type: this.mimeType });
   }
 
   /** Separa o fluxo em cabeçalho + Clusters completos; o último Cluster fica pendente até o próximo abrir. */
@@ -323,38 +247,154 @@ export class ClipRecorder {
   }
 }
 
+export class ClipRecorder {
+  /** Recebe a chave do destaque atual, para a escolha ficar estável entre uma sincronização e outra. */
+  private readonly getSources: (featuredKey: string | null) => ClipSources;
+  private ctx: AudioContext | null = null;
+  private destination: MediaStreamAudioDestinationNode | null = null;
+  private audioNodes = new Map<string, MediaStreamAudioSourceNode>();
+  private buffers = new Map<string, TrackBuffer>();
+  /** Gravação que "Clipar" salva: o vídeo em destaque. */
+  private featuredKey: string | null = null;
+  private syncTimer: number | null = null;
+  private disposed = false;
+
+  constructor(getSources: (featuredKey: string | null) => ClipSources) {
+    this.getSources = getSources;
+  }
+
+  start() {
+    if (typeof MediaRecorder === 'undefined') return;
+    this.sync();
+    this.syncTimer = window.setInterval(() => this.sync(), SYNC_MS);
+  }
+
+  stop() {
+    this.disposed = true;
+    if (this.syncTimer !== null) window.clearInterval(this.syncTimer);
+    this.buffers.forEach((b) => b.stop());
+    this.buffers.clear();
+    this.featuredKey = null;
+    this.audioNodes.forEach((n) => n.disconnect());
+    this.audioNodes.clear();
+    void this.ctx?.close().catch(() => {});
+    this.ctx = null;
+    this.destination = null;
+  }
+
+  private get featured(): TrackBuffer | undefined {
+    return this.featuredKey ? this.buffers.get(this.featuredKey) : undefined;
+  }
+
+  /** Há quanto tempo (ms) termina o vídeo guardado do destaque. */
+  get lagMs(): number {
+    return this.featured?.lagMs ?? 0;
+  }
+
+  /** Monta o clipe do vídeo em destaque; null se ainda não há um Cluster completo dele. */
+  buildClip(): Blob | null {
+    return this.featured?.build() ?? null;
+  }
+
+  /**
+   * Mantém uma gravação por vídeo na tela (os maiores): o que já foi gravado de cada um sobrevive à troca
+   * de destaque. O áudio é mixado ao vivo e entra em todas.
+   */
+  private sync() {
+    if (this.disposed) return;
+    const { videos, audio } = this.getSources(this.featuredKey);
+
+    this.syncAudio(audio);
+
+    const wanted = new Map<string, MediaStreamTrack | null>(videos.map((v) => [v.id, v]));
+    if (wanted.size === 0 && audio.length > 0) wanted.set(AUDIO_ONLY, null);
+
+    for (const [key, buffer] of this.buffers) {
+      if (!wanted.has(key) || !buffer.running) {
+        buffer.stop();
+        this.buffers.delete(key);
+      }
+    }
+    // Com o AudioContext suspenso a trilha de áudio fica muda e o MediaRecorder não escreve nada: grava só
+    // o vídeo até o contexto rodar e então recomeça com o áudio.
+    const audioTrack = this.ctx?.state === 'running' ? this.destination?.stream.getAudioTracks()[0] : undefined;
+    for (const [key, video] of wanted) {
+      const current = this.buffers.get(key);
+      if (current && (current.withAudio || !audioTrack)) continue;
+      current?.stop();
+      const buffer = new TrackBuffer();
+      buffer.start(video, audioTrack);
+      this.buffers.set(key, buffer);
+    }
+    this.featuredKey = wanted.keys().next().value ?? null;
+  }
+
+  private syncAudio(tracks: MediaStreamTrack[]) {
+    if (!this.ctx || this.ctx.state === 'closed') {
+      this.ctx = new AudioContext({ sampleRate: 48000 });
+      this.destination = this.ctx.createMediaStreamDestination();
+      // Sem nenhuma entrada o destino não emite amostras e o MediaRecorder não escreve nada: uma fonte muda o mantém ativo.
+      const silence = this.ctx.createConstantSource();
+      silence.offset.value = 0;
+      silence.connect(this.destination);
+      silence.start();
+      this.audioNodes.clear();
+    }
+    if (this.ctx.state === 'suspended') void this.ctx.resume().catch(() => {});
+
+    const wanted = new Map(tracks.filter((t) => t.readyState === 'live').map((t) => [t.id, t]));
+    for (const [id, node] of this.audioNodes) {
+      if (!wanted.has(id)) {
+        node.disconnect();
+        this.audioNodes.delete(id);
+      }
+    }
+    for (const [id, track] of wanted) {
+      if (this.audioNodes.has(id)) continue;
+      const node = this.ctx.createMediaStreamSource(new MediaStream([track]));
+      node.connect(this.destination!);
+      this.audioNodes.set(id, node);
+    }
+  }
+}
+
 /**
- * Escolhe o que gravar: o vídeo maior na tela mais as faixas de áudio passadas (vozes e áudio das streams;
- * os <audio> do LiveKit não ficam no DOM, então vêm da sala). Streams WHEP trazem o áudio junto do vídeo.
+ * Escolhe o que gravar: os maiores vídeos visíveis na tela (o primeiro é o destaque) mais as faixas de
+ * áudio passadas (vozes e áudio das streams; os <audio> do LiveKit não ficam no DOM, então vêm da sala).
+ * Streams WHEP trazem o áudio junto do vídeo. O destaque anterior é mantido enquanto for quase tão
+ * grande quanto o maior, para empates e pequenas variações de layout não trocarem a escolha.
  */
-export function collectClipSources(extraAudio: Array<MediaStreamTrack | null | undefined> = []): ClipSources {
-  let bestVideo: MediaStreamTrack | null = null;
-  let bestVideoElement: HTMLVideoElement | null = null;
-  let bestArea = 0;
+export function collectClipSources(
+  extraAudio: Array<MediaStreamTrack | null | undefined> = [],
+  featuredKey: string | null = null,
+): ClipSources {
+  const seen = new Set<string>();
+  const found: Array<{ track: MediaStreamTrack; stream: MediaStream; area: number }> = [];
   document.querySelectorAll('video').forEach((el) => {
     const stream = el.srcObject;
     if (!(stream instanceof MediaStream)) return;
     const track = stream.getVideoTracks().find((t) => t.readyState === 'live');
-    if (!track) return;
+    if (!track || seen.has(track.id)) return;
     const rect = el.getBoundingClientRect();
-    const area = rect.width * rect.height;
-    if (area > bestArea) {
-      bestArea = area;
-      bestVideo = track;
-      bestVideoElement = el;
-    }
+    const width = Math.min(rect.right, window.innerWidth) - Math.max(rect.left, 0);
+    const height = Math.min(rect.bottom, window.innerHeight) - Math.max(rect.top, 0);
+    if (width <= 0 || height <= 0) return; // fora da tela: nada para ver, nada para clipar
+    seen.add(track.id);
+    found.push({ track, stream, area: width * height });
   });
+  found.sort((a, b) => b.area - a.area);
+  const kept = found.findIndex((f) => f.track.id === featuredKey);
+  if (kept > 0 && found[kept].area >= found[0].area * 0.8) found.unshift(...found.splice(kept, 1));
+  const top = found.slice(0, MAX_VIDEOS);
 
   const audio = new Map<string, MediaStreamTrack>();
   const add = (t: MediaStreamTrack | null | undefined) => {
     if (t && t.readyState === 'live') audio.set(t.id, t);
   };
-  // Streams que chegam com o áudio no mesmo MediaStream do vídeo (OBS/WHEP).
-  const featured = bestVideoElement as HTMLVideoElement | null;
-  if (featured?.srcObject instanceof MediaStream) featured.srcObject.getAudioTracks().forEach(add);
+  top.forEach((f) => f.stream.getAudioTracks().forEach(add));
   extraAudio.forEach(add);
 
-  return { video: bestVideo, audio: [...audio.values()] };
+  return { videos: top.map((f) => f.track), audio: [...audio.values()] };
 }
 
 export function downloadClip(blob: Blob, roomName: string) {
