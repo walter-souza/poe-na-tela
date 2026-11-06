@@ -43,6 +43,12 @@ interface ControlsBarProps {
   onToggleHUD: () => void;
   onClip: () => void;
   clipStatus: ClipStatus;
+  /** Configuração da sala: ligada vale para todos os participantes. */
+  clipEnabled: boolean;
+  canToggleClip: boolean;
+  onToggleClip: () => void;
+  /** Aviso temporário sobre a configuração do clipe (mudança ou erro). */
+  clipNotice: string | null;
   onLeave: () => void;
 }
 
@@ -65,6 +71,10 @@ export const ControlsBar: React.FC<ControlsBarProps> = ({
   onToggleHUD,
   onClip,
   clipStatus,
+  clipEnabled,
+  canToggleClip,
+  onToggleClip,
+  clipNotice,
   onLeave,
 }) => {
   const [copied, setCopied] = useState(false);
@@ -85,7 +95,15 @@ export const ControlsBar: React.FC<ControlsBarProps> = ({
     setTimeout(() => setCopiedObs(false), 2000);
   };
   return (
-    <div className="h-16 md:h-20 bg-[#0d0f17] border-t border-white/10 px-2 sm:px-4 md:px-6 flex items-center justify-between shadow-2xl select-none safe-area-bottom">
+    <div className="relative h-16 md:h-20 bg-[#0d0f17] border-t border-white/10 px-2 sm:px-4 md:px-6 flex items-center justify-between shadow-2xl select-none safe-area-bottom">
+      {clipNotice && (
+        <div
+          role="status"
+          className="absolute bottom-full right-2 sm:right-4 mb-2 max-w-sm rounded-xl border border-rose-500/40 bg-[#1a0d12]/95 px-3 py-2 text-xs text-rose-100 shadow-xl"
+        >
+          {clipNotice}
+        </div>
+      )}
       {/* Left Info / App branding (Visible on tablet/desktop) */}
       <div className="hidden md:flex items-center gap-3">
         <div className="w-9 h-9 rounded-xl bg-gradient-to-tr from-indigo-600 to-violet-500 flex items-center justify-center text-white shadow-lg shadow-indigo-500/20">
@@ -220,23 +238,57 @@ export const ControlsBar: React.FC<ControlsBarProps> = ({
 
       {/* Right Controls */}
       <div className="flex items-center gap-1.5 sm:gap-2">
-        {/* Clipar os últimos segundos (stream em destaque + vozes) */}
+        {/* Clipe: configuração da sala (vale para todos). Só o anfitrião liga/desliga; todos veem o indicador. */}
         <button
-          onClick={onClip}
-          title="Clipar os últimos 30s (stream em destaque + vozes da sala) e baixar"
-          className={`flex items-center gap-1.5 p-2 sm:px-3 sm:py-2.5 rounded-2xl border text-xs font-semibold transition ${
-            clipStatus === 'saved'
-              ? 'bg-emerald-600/30 border-emerald-500/50 text-emerald-300'
-              : clipStatus === 'empty'
-                ? 'bg-amber-600/20 border-amber-500/40 text-amber-300'
-                : 'bg-white/5 hover:bg-white/10 border-white/10 text-gray-300 hover:text-white'
+          onClick={canToggleClip ? onToggleClip : undefined}
+          disabled={!canToggleClip}
+          aria-pressed={clipEnabled}
+          title={
+            clipEnabled
+              ? `Clipe LIGADO na sala: as vozes de todos ficam num buffer de memória de 60s no servidor (nada vai para disco) e o vídeo da stream fica só em cada dispositivo. ${canToggleClip ? 'Clique para desligar (o buffer é descartado).' : 'Só o anfitrião pode desligar.'}`
+              : `Clipe desligado: nada é gravado. ${canToggleClip ? 'Clique para ligar para todos na sala.' : 'Só o anfitrião pode ligar.'}`
+          }
+          className={`flex items-center gap-1.5 p-2 sm:px-3 sm:py-2.5 rounded-2xl border text-xs font-semibold transition disabled:cursor-default ${
+            clipEnabled
+              ? 'bg-rose-600/20 border-rose-500/40 text-rose-200 enabled:hover:bg-rose-600/30'
+              : 'bg-white/5 border-white/10 text-gray-400 enabled:hover:bg-white/10 enabled:hover:text-white'
           }`}
         >
-          {clipStatus === 'saved' ? <Check className="w-4 h-4" /> : <Clapperboard className="w-4 h-4 text-rose-400" />}
+          <span className={`w-1.5 h-1.5 rounded-full ${clipEnabled ? 'bg-rose-400 animate-pulse' : 'bg-gray-500'}`} />
           <span className="hidden lg:inline">
-            {clipStatus === 'saved' ? 'Clipe salvo!' : clipStatus === 'empty' ? 'Nada para clipar' : 'Clipar'}
+            {clipEnabled ? 'Clipe ligado' : canToggleClip ? 'Ligar clipe' : 'Clipe desligado'}
           </span>
         </button>
+
+        {clipEnabled && (
+          <button
+            onClick={onClip}
+            disabled={clipStatus === 'processing'}
+            title="Clipar os últimos 30s (stream em destaque + vozes da sala) e ver antes de baixar"
+            className={`flex items-center gap-1.5 p-2 sm:px-3 sm:py-2.5 rounded-2xl border text-xs font-semibold transition disabled:cursor-wait ${
+              clipStatus === 'local'
+                ? 'bg-emerald-600/30 border-emerald-500/50 text-emerald-300'
+                : clipStatus === 'empty'
+                  ? 'bg-amber-600/20 border-amber-500/40 text-amber-300'
+                  : 'bg-white/5 enabled:hover:bg-white/10 border-white/10 text-gray-300 enabled:hover:text-white'
+            }`}
+          >
+            {clipStatus === 'local' ? (
+              <Check className="w-4 h-4" />
+            ) : (
+              <Clapperboard className={`w-4 h-4 text-rose-400 ${clipStatus === 'processing' ? 'animate-pulse' : ''}`} />
+            )}
+            <span className="hidden lg:inline">
+              {clipStatus === 'processing'
+                ? 'Montando…'
+                : clipStatus === 'local'
+                  ? 'Salvo sem vozes'
+                  : clipStatus === 'empty'
+                    ? 'Nada para clipar'
+                    : 'Clipar'}
+            </span>
+          </button>
+        )}
 
         {/* Convidar Amigos */}
         <button

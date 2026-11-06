@@ -191,6 +191,12 @@ export class ClipRecorder {
     return Math.min(CLIP_SECONDS, (now - this.clusters[0].endedAt) / 1000);
   }
 
+  /** Há quanto tempo (ms) termina o vídeo guardado: o último Cluster só fecha no quadro-chave seguinte. */
+  get lagMs(): number {
+    const last = this.clusters[this.clusters.length - 1];
+    return last ? Math.max(0, performance.now() - last.endedAt) : 0;
+  }
+
   /** Monta o clipe com o que está no buffer; null se ainda não há um Cluster completo. */
   buildClip(): Blob | null {
     if (!this.header || this.clusters.length === 0) return null;

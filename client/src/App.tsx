@@ -11,6 +11,7 @@ import { HotkeyModal } from './components/HotkeyModal';
 import { isDesktop } from './utils/desktop';
 import { VideoPlayer } from './components/VideoPlayer';
 import { ControlsBar } from './components/ControlsBar';
+import { ClipPreviewModal } from './components/ClipPreviewModal';
 import { ChatPanel } from './components/ChatPanel';
 import { ScreenShareModal } from './components/ScreenShareModal';
 import { MaintenanceScreen } from './components/MaintenanceScreen';
@@ -30,6 +31,7 @@ export function App() {
     livekitUrl: string;
     roomName: string;
     userName: string;
+    hostIdentity?: string;
     isPublisher: boolean;
   } | null>(null);
 
@@ -144,6 +146,7 @@ export function App() {
         livekitUrl: data.livekitUrl,
         roomName: data.roomName,
         userName: data.identity,
+        hostIdentity: data.hostIdentity,
         isPublisher: data.isPublisher,
       });
 
@@ -271,6 +274,7 @@ interface StreamRoomProps {
     livekitUrl: string;
     roomName: string;
     userName: string;
+    hostIdentity?: string;
     isPublisher: boolean;
   };
   onLeave: () => void;
@@ -336,7 +340,7 @@ function StreamRoom({
     restore,
   });
 
-  const { saveClip, clipStatus } = useClip(room, session.roomName);
+  const { saveClip, clipStatus, clipEnabled, canToggleClip, toggleClip, clipNotice, clipPreview, discardClip } = useClip(room, session);
 
   // No app desktop a transmissão é nativa (GPU + SRT, como o OBS); no navegador segue o WebRTC do LiveKit.
   const native = useNativeStream();
@@ -499,8 +503,14 @@ function StreamRoom({
         onToggleHUD={() => setIsHUDOpen(!isHUDOpen)}
         onClip={saveClip}
         clipStatus={clipStatus}
+        clipEnabled={clipEnabled}
+        canToggleClip={canToggleClip}
+        onToggleClip={toggleClip}
+        clipNotice={clipNotice}
         onLeave={handleExitRoom}
       />
+
+      {clipPreview && <ClipPreviewModal clip={clipPreview} onDiscard={discardClip} />}
 
       {isDesktop ? (
         <>

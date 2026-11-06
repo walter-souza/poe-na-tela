@@ -158,6 +158,14 @@ export const Lobby: React.FC<LobbyProps> = ({ onJoin, isLoading, error }) => {
           setPasswordPromptRoom(sanitized);
           return;
         }
+        if (
+          info.clipEnabled &&
+          !window.confirm(
+            'Esta sala está com o CLIPE ligado: as vozes de quem está na sala ficam num buffer de memória de 60s no servidor e podem ir para clipes. Entrar mesmo assim?',
+          )
+        ) {
+          return;
+        }
       }
     } catch {}
 
