@@ -247,11 +247,11 @@ export const ControlsBar: React.FC<ControlsBarProps> = ({
           }
           className={`flex items-center gap-1.5 p-2 sm:px-3 sm:py-2.5 rounded-2xl border text-xs font-semibold transition disabled:cursor-default ${
             clipEnabled
-              ? 'bg-rose-600/20 border-rose-500/40 text-rose-200 enabled:hover:bg-rose-600/30'
+              ? 'bg-white/10 border-white/15 text-gray-200 enabled:hover:bg-white/15'
               : 'bg-white/5 border-white/10 text-gray-400 enabled:hover:bg-white/10 enabled:hover:text-white'
           }`}
         >
-          <span className={`w-1.5 h-1.5 rounded-full ${clipEnabled ? 'bg-rose-400 animate-pulse' : 'bg-gray-500'}`} />
+          <span className={`w-1.5 h-1.5 rounded-full ${clipEnabled ? 'bg-emerald-400' : 'bg-gray-500'}`} />
           <span className="hidden lg:inline">
             {clipEnabled ? 'Clipe ligado' : 'Ligar clipe'}
           </span>
@@ -273,7 +273,7 @@ export const ControlsBar: React.FC<ControlsBarProps> = ({
             {clipStatus === 'local' ? (
               <Check className="w-4 h-4" />
             ) : (
-              <Clapperboard className={`w-4 h-4 text-rose-400 ${clipStatus === 'processing' ? 'animate-pulse' : ''}`} />
+              <Clapperboard className={`w-4 h-4 text-gray-300 ${clipStatus === 'processing' ? 'animate-pulse' : ''}`} />
             )}
             <span className="hidden lg:inline">
               {clipStatus === 'processing'
