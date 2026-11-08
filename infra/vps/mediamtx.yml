@@ -12,7 +12,8 @@ apiAddress: 127.0.0.1:9997
 # Autorização delegada ao backend de produção (POST /api/mediamtx/auth):
 #   - publicar: só em <sala>/<usuario>, com a chave SRT que o app entrega a esse participante;
 #   - assistir (WHEP): token LiveKit de quem está na sala agora (Authorization: Bearer).
-# O backend de dev (:3002) precisa usar o mesmo LIVEKIT_API_SECRET para as chaves dele valerem aqui.
+# OBS só funciona na produção: o backend de dev (:3002) usa outro LIVEKIT_API_SECRET, então as chaves
+# SRT e os tokens dele são recusados aqui (decisão intencional; chamadas e telas via LiveKit seguem no dev).
 authMethod: http
 authHTTPAddress: http://127.0.0.1:3001/api/mediamtx/auth
 authHTTPExclude:
