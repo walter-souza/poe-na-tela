@@ -13,3 +13,7 @@ livekit.194.61.238.98.sslip.io {
 stream.194.61.238.98.sslip.io {
     reverse_proxy localhost:8889
 }
+
+livekit-dev.194.61.238.98.sslip.io {
+    reverse_proxy localhost:7980
+}
