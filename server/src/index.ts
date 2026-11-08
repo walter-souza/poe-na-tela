@@ -27,8 +27,10 @@ function requiredEnv(name: string): string {
 
 const app = express();
 const PORT = process.env.PORT || 3001;
-// Atrás do Caddy (mesma máquina): o IP real do cliente vem do X-Forwarded-For do proxy local.
-app.set('trust proxy', 'loopback');
+// Cliente -> Vercel (rewrite de /api) -> Caddy -> backend: o IP real é o que a Vercel registrou no
+// X-Forwarded-For, dois saltos antes. Quem chamar a API direto consegue forjar esse valor, por isso a
+// força bruta de senha também é limitada por sala (tokenRoomLimiter), que não depende do IP.
+app.set('trust proxy', 2);
 
 const LIVEKIT_URL = process.env.LIVEKIT_URL || 'ws://127.0.0.1:7880';
 const LIVEKIT_INTERNAL_URL =
@@ -58,8 +60,21 @@ const ADMIN_BYPASS_TOKEN = (() => {
 const isValidBypass = (candidate: unknown) =>
   Boolean(ADMIN_BYPASS_TOKEN) && typeof candidate === 'string' && safeEqual(candidate, ADMIN_BYPASS_TOKEN);
 
+/**
+ * Só o próprio app chama a API: o site na Vercel (produção e previews, via rewrite de /api), o app
+ * desktop (Tauri) e o Vite local. Requisições sem Origin (MediaMTX, curl) não dependem de CORS.
+ */
+const ALLOWED_ORIGINS: (string | RegExp)[] = [
+  'https://poe-na-tela.vercel.app',
+  /^https:\/\/poe-na-tela-[a-z0-9-]+-walter-souzas-projects\.vercel\.app$/,
+  'tauri://localhost',
+  'http://tauri.localhost',
+  'https://tauri.localhost',
+  /^http:\/\/(localhost|127\.0\.0\.1):\d+$/,
+];
+
 app.use(cors({
-  origin: '*',
+  origin: ALLOWED_ORIGINS,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization'],
 }));
@@ -112,6 +127,17 @@ const tokenLimiter = rateLimit({
   message: { error: 'Muitas tentativas. Aguarde um minuto e tente de novo.' },
 });
 
+// Tentativas que falharam (senha errada, nome em uso...) por sala, venham de onde vierem.
+const tokenRoomLimiter = rateLimit({
+  windowMs: 5 * 60_000,
+  limit: 30,
+  skipSuccessfulRequests: true,
+  keyGenerator: (req) => `room:${sanitizeRoomName(String(req.body?.roomName ?? ''))}`,
+  standardHeaders: 'draft-7',
+  legacyHeaders: false,
+  message: { error: 'Muitas tentativas nesta sala. Aguarde alguns minutos e tente de novo.' },
+});
+
 /**
  * Unicode-safe sanitization for room names.
  */
@@ -154,7 +180,7 @@ app.get(['/api/health', '/api/status', '/health', '/status'], (_req: Request, re
 /**
  * Generate a secure JWT AccessToken to join a LiveKit room
  */
-app.post(['/api/token', '/token'], tokenLimiter, async (req: Request, res: Response): Promise<void> => {
+app.post(['/api/token', '/token'], tokenLimiter, tokenRoomLimiter, async (req: Request, res: Response): Promise<void> => {
   try {
     const { roomName, participantName, isPublisher, passcode, bypassToken } = req.body;
 

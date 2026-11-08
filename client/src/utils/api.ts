@@ -11,10 +11,12 @@ export function getApiBaseUrl(): string {
   if (typeof window !== 'undefined' && (window.location.protocol === 'file:')) {
     return 'http://127.0.0.1:3001';
   }
-  // No app desktop (Tauri) não há proxy '/api': usa o backend de produção quando VITE_API_URL não foi definida.
+  // No app desktop (Tauri) não há proxy local: usa o da Vercel, que encaminha para o backend de produção
+  // (client/vercel.json) sem expor o IP da VPS.
   if (isDesktop && !import.meta.env.DEV) {
-    return 'https://api.194.61.238.98.sslip.io';
+    return 'https://poe-na-tela.vercel.app/api';
   }
+  // Web: mesma origem. Na Vercel, /api é reescrito para o backend (produção ou dev, conforme o domínio).
   return '/api';
 }
 
