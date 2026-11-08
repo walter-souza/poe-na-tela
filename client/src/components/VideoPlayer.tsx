@@ -51,6 +51,8 @@ interface VideoPlayerProps {
   /** Starts or stops receiving a remote WebRTC screen share. */
   onScreenShareWatchingChange?: (participantIdentity: string, watching: boolean) => void;
   roomName?: string;
+  /** Token LiveKit da sessão: autoriza a lista e a reprodução dos streams do OBS. */
+  token: string;
   stats?: StreamStats | null;
 }
 
@@ -68,6 +70,7 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
   onToggleLocalScreenAudio,
   onScreenShareWatchingChange,
   roomName,
+  token,
   stats = null,
 }) => {
   const [layoutMode, setLayoutMode] = useState<StreamLayoutMode>('grid');
@@ -92,7 +95,7 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
     let isMounted = true;
 
     const poll = async () => {
-      const list = await fetchRoomStreams(roomName);
+      const list = await fetchRoomStreams(roomName, token);
       if (isMounted) {
         setObsStreams((prev) => {
           const key = (l: ObsStreamItem[]) =>
@@ -108,7 +111,7 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
       isMounted = false;
       clearInterval(interval);
     };
-  }, [roomName]);
+  }, [roomName, token]);
 
   // Every live stream (WebRTC and OBS) in one list, flagged by whether the viewer receives it.
   const unifiedStreams = useMemo<UnifiedStreamItem[]>(() => {
@@ -294,6 +297,7 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
       <WhepTile
         key={item.id}
         whepUrl={item.obsStream.whepUrl}
+        authToken={token}
         roomName={roomName || 'Sala'}
         streamerName={item.name}
         volume={streamVolumes[item.volumeId] ?? 1}

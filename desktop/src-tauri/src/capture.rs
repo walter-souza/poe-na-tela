@@ -69,6 +69,15 @@ struct CaptureStats {
     speed: f32,
 }
 
+/// Servidores SRT aceitos: o de produção (ou POE_SRT_HOST no build) e, em builds de dev, a máquina local.
+fn allowed_srt_hosts() -> Vec<&'static str> {
+    let mut hosts = vec![option_env!("POE_SRT_HOST").unwrap_or("194.61.238.98:8890")];
+    if cfg!(debug_assertions) {
+        hosts.extend(["127.0.0.1:8890", "localhost:8890"]);
+    }
+    hosts
+}
+
 impl CaptureConfig {
     fn validate(&self) -> Result<(), String> {
         if !ENCODERS.contains(&self.encoder.as_str()) {
@@ -86,8 +95,16 @@ impl CaptureConfig {
         if !(500..=50_000).contains(&self.bitrate_kbps) {
             return Err("Bitrate fora do intervalo (500–50000 kbps)".into());
         }
-        if !self.srt_url.starts_with("srt://") {
-            return Err("A URL de destino precisa começar com srt://".into());
+        let host = self
+            .srt_url
+            .strip_prefix("srt://")
+            .ok_or("A URL de destino precisa começar com srt://")?
+            .split(['?', '/'])
+            .next()
+            .unwrap_or_default();
+        // Só o servidor do app: um script injetado na webview não pode mandar a tela para outro lugar.
+        if !allowed_srt_hosts().contains(&host) {
+            return Err(format!("Servidor de destino não permitido: {host}"));
         }
         Ok(())
     }
@@ -369,7 +386,7 @@ mod tests {
             width: 1920,
             height: 1080,
             bitrate_kbps: 6000,
-            srt_url: "srt://host:8890?streamid=publish:sala/user&latency=250000".into(),
+            srt_url: "srt://194.61.238.98:8890?streamid=publish:sala/user:poe:chave&latency=250000".into(),
             system_audio: true,
         }
     }
@@ -380,6 +397,8 @@ mod tests {
         assert!(cfg("libx264", Source::Monitor { index: 0 }).validate().is_err());
         let mut c = cfg("h264_nvenc", Source::Monitor { index: 0 });
         c.srt_url = "file:///etc/passwd".into();
+        assert!(c.validate().is_err());
+        c.srt_url = "srt://atacante.example:8890?streamid=publish:x".into();
         assert!(c.validate().is_err());
         c = cfg("h264_nvenc", Source::Monitor { index: 0 });
         c.height = 1081;

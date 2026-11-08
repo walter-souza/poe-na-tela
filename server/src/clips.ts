@@ -1,12 +1,13 @@
 import { raw, Router, type NextFunction, type Request, type Response } from 'express';
-import { TokenVerifier, type RoomServiceClient } from 'livekit-server-sdk';
+import type { RoomServiceClient } from 'livekit-server-sdk';
 import ffmpegStatic from 'ffmpeg-static';
 import { spawn } from 'node:child_process';
 import { randomBytes } from 'node:crypto';
 import { mkdir, rm, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { encodeWav, isClipEnabled, type ClipBufferManager } from './clipBuffer.js';
+import type { RoomAuth } from './auth.js';
+import { encodeWav, isClipEnabled, withClipFlag, type ClipBufferManager } from './clipBuffer.js';
 
 /**
  * Clipes prontos para preview/download.
@@ -20,7 +21,9 @@ const CLIP_DIR = process.env.CLIP_DIR || join(tmpdir(), 'poe-clips');
 const TTL_MS = (Number(process.env.CLIP_TTL_MIN) || 30) * 60_000;
 const MAX_UPLOAD = '120mb';
 const MAX_PER_USER = 3;
-const MAX_TOTAL = 30;
+const MAX_TOTAL = 12;
+/** Cada envio fica inteiro na RAM até terminar: poucos ao mesmo tempo para não derrubar o processo. */
+const MAX_CONCURRENT_UPLOADS = 2;
 const MAX_SECONDS = 60;
 const FFMPEG_TIMEOUT_MS = 120_000;
 /**
@@ -87,15 +90,14 @@ function parseProbe(stderr: string) {
 export interface ClipRouterDeps {
   roomService: RoomServiceClient;
   clipBuffers: ClipBufferManager;
-  apiKey: string;
-  apiSecret: string;
-  sanitizeRoomName: (name: string) => string;
+  roomAuth: RoomAuth;
 }
 
 export function createClipRouter(deps: ClipRouterDeps): Router {
   const router = Router();
   const clips = new Map<string, ClipRecord>();
-  const verifier = new TokenVerifier(deps.apiKey, deps.apiSecret);
+  const authenticate = deps.roomAuth.requireMember;
+  let uploadsInFlight = 0;
 
   const dirOf = (id: string) => join(CLIP_DIR, id);
 
@@ -113,21 +115,30 @@ export function createClipRouter(deps: ClipRouterDeps): Router {
     for (const rec of clips.values()) if (rec.createdAt < cutoff) void remove(rec.id);
   }, 60_000).unref();
 
-  /** Exige o token LiveKit da própria sala (Authorization: Bearer). */
-  async function authenticate(req: Request, res: Response, next: NextFunction) {
-    const roomName = deps.sanitizeRoomName(req.params.roomName);
-    const bearer = /^Bearer (.+)$/.exec(req.header('authorization') || '')?.[1];
-    try {
-      if (!roomName || !bearer) throw new Error('sem credenciais');
-      const claims = await verifier.verify(bearer);
-      if (claims.video?.room !== roomName || !claims.sub) throw new Error('sala diferente');
-      res.locals.identity = claims.sub;
-      res.locals.roomName = roomName;
-      next();
-    } catch {
-      res.status(401).json({ error: 'Sessão inválida para esta sala.' });
+  /**
+   * Liga/desliga o clipe da sala. Vale para todos: ligado, as vozes de todos entram no buffer de memória
+   * do servidor. Qualquer participante presente pode mudar.
+   */
+  router.post(['/api/rooms/:roomName/clip', '/rooms/:roomName/clip'], authenticate, async (req: Request, res: Response) => {
+    const { roomName } = res.locals as { roomName: string };
+    const enabled = req.body?.enabled;
+    if (typeof enabled !== 'boolean') {
+      res.status(400).json({ error: 'Requisição inválida.' });
+      return;
     }
-  }
+    try {
+      const [room] = await deps.roomService.listRooms([roomName]);
+      if (!room) {
+        res.status(404).json({ error: 'Sala não encontrada.' });
+        return;
+      }
+      await deps.roomService.updateRoomMetadata(roomName, withClipFlag(room.metadata, enabled));
+      res.json({ clipEnabled: enabled });
+    } catch (err: any) {
+      console.error('Falha ao alterar o clipe da sala:', err?.message || err);
+      res.status(500).json({ error: 'Não foi possível alterar o clipe da sala.' });
+    }
+  });
 
   // 1) Registra o instante do clique; o vídeo é enviado em seguida.
   router.post('/api/rooms/:roomName/clips', authenticate, async (req: Request, res: Response) => {
@@ -153,6 +164,15 @@ export function createClipRouter(deps: ClipRouterDeps): Router {
   router.put(
     '/api/rooms/:roomName/clips/:id',
     authenticate,
+    (_req: Request, res: Response, next: NextFunction) => {
+      if (uploadsInFlight >= MAX_CONCURRENT_UPLOADS) {
+        res.status(429).json({ error: 'Servidor ocupado montando outros clipes. Tente de novo em instantes.' });
+        return;
+      }
+      uploadsInFlight++;
+      res.once('close', () => uploadsInFlight--);
+      next();
+    },
     raw({ type: () => true, limit: MAX_UPLOAD }),
     async (req: Request, res: Response) => {
       const { identity, roomName } = res.locals as { identity: string; roomName: string };
@@ -190,7 +210,10 @@ export function createClipRouter(deps: ClipRouterDeps): Router {
     const outFile = join(dir, 'clip.webm');
     await writeFile(inFile, video);
 
-    const probe = parseProbe((await runFfmpeg(['-i', inFile])).stderr);
+    // O arquivo vem do usuário: força o demuxer WebM/Matroska e só o protocolo file. Sem isso o ffmpeg
+    // escolhe o formato pelo conteúdo, e uma "playlist" HLS/concat o faria ler arquivos locais ou URLs.
+    const untrustedInput = ['-f', 'matroska', '-protocol_whitelist', 'file', '-i', inFile];
+    const probe = parseProbe((await runFfmpeg(untrustedInput)).stderr);
     if (!probe.hasVideo && !probe.hasAudio) throw new Error('arquivo de vídeo inválido');
     const seconds = Math.min(MAX_SECONDS, Math.max(1, probe.seconds ?? 30));
 
@@ -198,7 +221,7 @@ export function createClipRouter(deps: ClipRouterDeps): Router {
     const voices = recorder ? recorder.mix(seconds, rec.endMs - VOICE_DELAY_MS) : new Int16Array(Math.round(seconds * 48000));
     await writeFile(voiceFile, encodeWav(voices));
 
-    const args = ['-y', '-i', inFile, '-i', voiceFile];
+    const args = ['-y', ...untrustedInput, '-i', voiceFile];
     if (probe.hasAudio) {
       // Áudio da stream + vozes. Sem normalização: cada fonte mantém o volume com que foi capturada.
       args.push('-filter_complex', '[0:a][1:a]amix=inputs=2:duration=longest:normalize=0,alimiter=limit=0.95[a]', '-map', '[a]');
