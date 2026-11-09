@@ -30,7 +30,7 @@ jobs:
           script_stop: true
           script: |
             echo "🚀 Verificando serviços de infraestrutura (LiveKit + SSL)..."
-            cd ~/app-stack && docker compose up -d
+            cd /root/poe-na-tela-dev/app-stack && docker compose up -d
 
             echo "🚀 Iniciando deploy do Backend (producao)..."
             cd ~/poe-na-tela/server
