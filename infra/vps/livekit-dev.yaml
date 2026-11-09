@@ -1,0 +1,19 @@
+# LiveKit dedicado ao backend de dev (container poe-livekit-dev): salas, chaves e bot de clipe
+# separados da produção. As chaves vêm de LIVEKIT_DEV_KEYS (.env da stack). Veja setup-livekit-dev.sh.
+port: 7980
+# Sinalização só local: o Caddy faz o TLS em livekit-dev.<IP>.sslip.io.
+bind_addresses:
+  - "127.0.0.1"
+
+rtc:
+  tcp_port: 7981
+  udp_port: 7982
+  use_external_ip: true
+
+# Sem TURN no dev: economiza portas e certificado; quem estiver atrás de CGNAT usa a produção.
+turn:
+  enabled: false
+
+logging:
+  json: false
+  level: info

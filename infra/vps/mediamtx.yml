@@ -1,6 +1,6 @@
 # MediaMTX: recebe streams do OBS por SRT e entrega aos espectadores por WebRTC (WHEP).
 # Contrato com o app:
-#   - OBS publica em srt://<IP>:8890?streamid=publish:<sala>[/<usuario>]
+#   - OBS publica em srt://<IP>:8890?streamid=publish:<sala>/<usuario>:poe:<chave SRT>
 #   - Espectadores leem em https://stream.<IP>.sslip.io/<sala>[/<usuario>]/whep (Caddy -> :8889)
 #   - O backend lista streams em http://127.0.0.1:9997/v3/paths/list
 logLevel: info
@@ -8,6 +8,18 @@ logLevel: info
 # Só a API local (usada pelo backend). Não expor.
 api: yes
 apiAddress: 127.0.0.1:9997
+
+# Autorização delegada ao backend de produção (POST /api/mediamtx/auth):
+#   - publicar: só em <sala>/<usuario>, com a chave SRT que o app entrega a esse participante;
+#   - assistir (WHEP): token LiveKit de quem está na sala agora (Authorization: Bearer).
+# OBS só funciona na produção: o backend de dev (:3002) usa outro LIVEKIT_API_SECRET, então as chaves
+# SRT e os tokens dele são recusados aqui (decisão intencional; chamadas e telas via LiveKit seguem no dev).
+authMethod: http
+authHTTPAddress: http://127.0.0.1:3001/api/mediamtx/auth
+authHTTPExclude:
+  - action: api
+  - action: metrics
+  - action: pprof
 
 # OBS -> SRT
 srt: yes

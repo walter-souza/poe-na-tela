@@ -14,6 +14,8 @@ import { useWhepStats } from '../hooks/useWhepStats';
 
 interface WhepTileProps {
   whepUrl: string;
+  /** Token LiveKit: o MediaMTX só entrega o stream a quem está na sala. */
+  authToken: string;
   roomName: string;
   streamerName?: string;
   isSpotlighted?: boolean;
@@ -30,6 +32,7 @@ interface WhepTileProps {
 
 export const WhepTile: React.FC<WhepTileProps> = ({
   whepUrl,
+  authToken,
   roomName,
   streamerName,
   isSpotlighted = false,
@@ -205,7 +208,7 @@ export const WhepTile: React.FC<WhepTileProps> = ({
 
       const res = await fetch(whepUrl, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/sdp' },
+        headers: { 'Content-Type': 'application/sdp', Authorization: `Bearer ${authToken}` },
         body: pc.localDescription?.sdp,
       });
 

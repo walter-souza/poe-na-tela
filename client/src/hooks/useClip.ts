@@ -107,12 +107,12 @@ export function useClip(room: Room | null, session: ClipSession) {
   // As vozes não entram aqui: o servidor mistura as de todos (microfones) no clipe.
   useEffect(() => {
     if (!enabled) return;
-    const recorder = new ClipRecorder(() => {
+    const recorder = new ClipRecorder((featuredKey) => {
       const tracks: Array<MediaStreamTrack | undefined> = [];
       roomRef.current?.remoteParticipants.forEach((p) => {
         tracks.push(p.getTrackPublication(Track.Source.ScreenShareAudio)?.track?.mediaStreamTrack);
       });
-      return collectClipSources(tracks);
+      return collectClipSources(tracks, featuredKey);
     });
     recorderRef.current = recorder;
     recorder.start();

@@ -11,10 +11,12 @@ export function getApiBaseUrl(): string {
   if (typeof window !== 'undefined' && (window.location.protocol === 'file:')) {
     return 'http://127.0.0.1:3001';
   }
-  // No app desktop (Tauri) não há proxy '/api': usa o backend de produção quando VITE_API_URL não foi definida.
+  // No app desktop (Tauri) não há proxy local: usa o da Vercel, que encaminha para o backend de produção
+  // (client/vercel.json) sem expor o IP da VPS.
   if (isDesktop && !import.meta.env.DEV) {
-    return 'https://api.194.61.238.98.sslip.io';
+    return 'https://poe-na-tela.vercel.app/api';
   }
+  // Web: mesma origem. Na Vercel, /api é reescrito para o backend (produção ou dev, conforme o domínio).
   return '/api';
 }
 
@@ -70,15 +72,14 @@ export const OBS_SRT_LATENCY_US = 250000;
 
 /**
  * Returns the ready-to-use SRT streaming URL for OBS Studio.
- * When userName is provided, builds a squad multi-stream streamid (e.g. srt://host:8890?streamid=publish:sala/usuario).
+ * Builds the squad multi-stream streamid with the participant's publish key (srt://host:8890?streamid=publish:sala/usuario:poe:<chave>).
  */
-export function getObsSrtUrl(roomName: string, userName?: string): string {
+export function getObsSrtUrl(roomName: string, userName: string | undefined, streamKey: string): string {
   const srtHost = import.meta.env.VITE_SRT_HOST || '194.61.238.98:8890';
-  const cleanRoom = roomName.trim();
-  const cleanUser = userName ? userName.trim() : '';
-  const path = cleanUser ? `${cleanRoom}/${cleanUser}` : cleanRoom;
+  const path = `${roomName.trim()}/${(userName ?? '').trim()}`;
+  // O MediaMTX só aceita publicar em sala/usuario com a chave que o backend deu a esse participante.
   // Latency (µs): 250 ms absorbs the ~2-3% loss seen on home uplinks; MediaMTX's 120 ms default drops late packets.
-  return `srt://${srtHost}?streamid=publish:${path}&latency=${OBS_SRT_LATENCY_US}`;
+  return `srt://${srtHost}?streamid=publish:${path}:poe:${streamKey}&latency=${OBS_SRT_LATENCY_US}`;
 }
 
 export interface ObsStreamItem {
@@ -96,9 +97,9 @@ export function getRoomStreamsUrl(roomName: string): string {
   return `${endpoint}/${encodeURIComponent(roomName)}/streams`;
 }
 
-export async function fetchRoomStreams(roomName: string): Promise<ObsStreamItem[]> {
+export async function fetchRoomStreams(roomName: string, token: string): Promise<ObsStreamItem[]> {
   try {
-    const res = await fetch(getRoomStreamsUrl(roomName));
+    const res = await fetch(getRoomStreamsUrl(roomName), { headers: { Authorization: `Bearer ${token}` } });
     if (res.ok) {
       const data = await res.json();
       if (Array.isArray(data.streams)) {

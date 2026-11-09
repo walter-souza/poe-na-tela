@@ -7,21 +7,37 @@ if (typeof globalThis.crypto === 'undefined' || !globalThis.crypto.getRandomValu
 import express, { Request, Response } from 'express';
 import cors from 'cors';
 import dotenv from 'dotenv';
-import { AccessToken, RoomServiceClient, TokenVerifier } from 'livekit-server-sdk';
+import { rateLimit } from 'express-rate-limit';
+import { AccessToken, RoomServiceClient } from 'livekit-server-sdk';
+import { createRoomAuth, hashPasscode, safeEqual, streamKeyFor, verifyPasscode } from './auth.js';
 import { createClipRouter } from './clips.js';
-import { CLIP_BOT_IDENTITY, ClipBufferManager, encodeWav, isClipEnabled, WINDOW_MS, withClipFlag } from './clipBuffer.js';
+import { CLIP_BOT_IDENTITY, ClipBufferManager, encodeWav, isClipEnabled, WINDOW_MS } from './clipBuffer.js';
 
 dotenv.config();
 
+/** Sem fallback: com um segredo padrão, qualquer um assinaria tokens válidos. */
+function requiredEnv(name: string): string {
+  const value = process.env[name]?.trim();
+  if (!value) {
+    console.error(`❌ Variável de ambiente obrigatória ausente: ${name} (veja server/.env.example).`);
+    process.exit(1);
+  }
+  return value;
+}
+
 const app = express();
 const PORT = process.env.PORT || 3001;
+// Cliente -> Vercel (rewrite de /api) -> Caddy -> backend: o IP real é o que a Vercel registrou no
+// X-Forwarded-For, dois saltos antes. Quem chamar a API direto consegue forjar esse valor, por isso a
+// força bruta de senha também é limitada por sala (tokenRoomLimiter), que não depende do IP.
+app.set('trust proxy', 2);
 
 const LIVEKIT_URL = process.env.LIVEKIT_URL || 'ws://127.0.0.1:7880';
 const LIVEKIT_INTERNAL_URL =
   process.env.LIVEKIT_INTERNAL_URL ||
   LIVEKIT_URL.replace(/^ws:\/\//i, 'http://').replace(/^wss:\/\//i, 'https://');
-const LIVEKIT_API_KEY = process.env.LIVEKIT_API_KEY || 'devkey';
-const LIVEKIT_API_SECRET = process.env.LIVEKIT_API_SECRET || 'secret';
+const LIVEKIT_API_KEY = requiredEnv('LIVEKIT_API_KEY');
+const LIVEKIT_API_SECRET = requiredEnv('LIVEKIT_API_SECRET');
 const MEDIAMTX_API_URL = process.env.MEDIAMTX_API_URL || 'http://127.0.0.1:9997';
 const STREAM_BASE_URL = (process.env.STREAM_URL || process.env.VITE_STREAM_URL || 'https://stream.194.61.238.98.sslip.io').replace(/\/$/, '');
 
@@ -31,29 +47,96 @@ const isMaintenanceMode = () =>
 const getMaintenanceMessage = () =>
   process.env.MAINTENANCE_MESSAGE ||
   'Estamos realizando melhorias e otimizações de infraestrutura. O Põe na Tela voltará em breve!';
-const ADMIN_BYPASS_TOKEN = process.env.ADMIN_BYPASS_TOKEN || 'admin_preview';
+/** Token de acesso durante a manutenção. Ausente ou curto demais (adivinhável), o acesso fica desligado. */
+const MIN_BYPASS_LENGTH = 16;
+const ADMIN_BYPASS_TOKEN = (() => {
+  const token = process.env.ADMIN_BYPASS_TOKEN?.trim() || '';
+  if (token && token.length < MIN_BYPASS_LENGTH) {
+    console.warn(`⚠️ ADMIN_BYPASS_TOKEN com menos de ${MIN_BYPASS_LENGTH} caracteres: acesso de manutenção desligado.`);
+    return '';
+  }
+  return token;
+})();
+const isValidBypass = (candidate: unknown) =>
+  Boolean(ADMIN_BYPASS_TOKEN) && typeof candidate === 'string' && safeEqual(candidate, ADMIN_BYPASS_TOKEN);
+
+/**
+ * Só o próprio app chama a API: o site na Vercel (produção e previews, via rewrite de /api), o app
+ * desktop (Tauri) e o Vite local. Requisições sem Origin (MediaMTX, curl) não dependem de CORS.
+ */
+const ALLOWED_ORIGINS: (string | RegExp)[] = [
+  'https://poe-na-tela.vercel.app',
+  /^https:\/\/poe-na-tela-[a-z0-9-]+-walter-souzas-projects\.vercel\.app$/,
+  'tauri://localhost',
+  'http://tauri.localhost',
+  'https://tauri.localhost',
+  /^http:\/\/(localhost|127\.0\.0\.1):\d+$/,
+];
 
 app.use(cors({
-  origin: '*',
+  origin: ALLOWED_ORIGINS,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization'],
 }));
 app.use(express.json());
-
-// In-memory room store for passcodes and custom room settings
-interface RoomConfig {
-  name: string;
-  passcode?: string;
-  hostIdentity?: string;
-  createdAt: number;
-}
-const roomStore = new Map<string, RoomConfig>();
 
 const roomService = new RoomServiceClient(
   LIVEKIT_INTERNAL_URL,
   LIVEKIT_API_KEY,
   LIVEKIT_API_SECRET
 );
+
+/**
+ * Estado da sessão guardado nos metadados da sala no LiveKit (sobrevive a reinícios do backend e some
+ * junto com a sala): `pass` é o hash da senha, `claimedAt` marca quem acabou de criar a sessão.
+ */
+interface RoomMeta {
+  clip?: boolean;
+  pass?: string;
+  claimedAt?: number;
+}
+
+function parseRoomMeta(metadata: string | undefined): RoomMeta {
+  try {
+    const parsed = metadata ? JSON.parse(metadata) : {};
+    return parsed && typeof parsed === 'object' ? parsed : {};
+  } catch {
+    return {};
+  }
+}
+
+/**
+ * O criador recebe o token antes de conectar, e o LiveKit leva alguns segundos para mostrá-lo na sala.
+ * Nessa janela a sessão já é dele: quem chega depois precisa da senha que ele definiu.
+ */
+const CLAIM_GRACE_MS = 60_000;
+
+const roomAuth = createRoomAuth({
+  roomService,
+  apiKey: LIVEKIT_API_KEY,
+  apiSecret: LIVEKIT_API_SECRET,
+  sanitizeRoomName,
+});
+
+// Força bruta da senha da sala e enxurrada de tokens.
+const tokenLimiter = rateLimit({
+  windowMs: 60_000,
+  limit: 15,
+  standardHeaders: 'draft-7',
+  legacyHeaders: false,
+  message: { error: 'Muitas tentativas. Aguarde um minuto e tente de novo.' },
+});
+
+// Tentativas que falharam (senha errada, nome em uso...) por sala, venham de onde vierem.
+const tokenRoomLimiter = rateLimit({
+  windowMs: 5 * 60_000,
+  limit: 30,
+  skipSuccessfulRequests: true,
+  keyGenerator: (req) => `room:${sanitizeRoomName(String(req.body?.roomName ?? ''))}`,
+  standardHeaders: 'draft-7',
+  legacyHeaders: false,
+  message: { error: 'Muitas tentativas nesta sala. Aguarde alguns minutos e tente de novo.' },
+});
 
 /**
  * Unicode-safe sanitization for room names.
@@ -97,16 +180,13 @@ app.get(['/api/health', '/api/status', '/health', '/status'], (_req: Request, re
 /**
  * Generate a secure JWT AccessToken to join a LiveKit room
  */
-app.post(['/api/token', '/token'], async (req: Request, res: Response): Promise<void> => {
+app.post(['/api/token', '/token'], tokenLimiter, tokenRoomLimiter, async (req: Request, res: Response): Promise<void> => {
   try {
     const { roomName, participantName, isPublisher, passcode, bypassToken } = req.body;
 
     // Check maintenance mode
     if (isMaintenanceMode()) {
-      const isBypassValid =
-        bypassToken &&
-        (bypassToken === ADMIN_BYPASS_TOKEN || bypassToken === 'admin_preview');
-      if (!isBypassValid) {
+      if (!isValidBypass(bypassToken)) {
         res.status(503).json({
           error: getMaintenanceMessage(),
           maintenance: true,
@@ -123,56 +203,34 @@ app.post(['/api/token', '/token'], async (req: Request, res: Response): Promise<
       return;
     }
 
-    const cleanPasscode = typeof passcode === 'string' && passcode.trim() ? passcode.trim() : undefined;
+    const cleanPasscode = typeof passcode === 'string' && passcode.trim() ? passcode.trim().slice(0, 128) : undefined;
 
-    // 1. Check if room is currently active in LiveKit
-    let isActiveInLiveKit = false;
-    let liveRoomMetadata: string | undefined;
+    // Falha fechada: sem confirmar o estado da sala no LiveKit não dá para saber se há senha nem quem está nela.
+    let liveRoom: any;
+    let participants: any[] = [];
     try {
-      const existingLiveRooms = await roomService.listRooms([sanitizedRoom]);
-      if (existingLiveRooms && existingLiveRooms.length > 0) {
-        liveRoomMetadata = existingLiveRooms[0].metadata;
-        if (existingLiveRooms[0].numParticipants > 0) isActiveInLiveKit = true;
-      }
-    } catch {
-      // Fallback to roomStore
-    }
-    if (!isActiveInLiveKit) {
-      // O numParticipants do listRooms demora vários segundos para refletir quem entrou; listParticipants é imediato.
-      // Sem isso, quem entra logo depois do primeiro seria tratado como criador (anfitrião/senha da sala).
-      try {
-        const present = await listParticipantsWithTimeout(sanitizedRoom);
-        isActiveInLiveKit = present.some((p) => p.identity !== CLIP_BOT_IDENTITY);
-      } catch {
-        // sala inexistente ou LiveKit indisponível: segue como sala nova
-      }
+      [liveRoom] = await listRoomsWithTimeout([sanitizedRoom]);
+      // numParticipants demora segundos para refletir quem entrou; listParticipants é imediato.
+      if (liveRoom) participants = await listParticipantsWithTimeout(sanitizedRoom);
+    } catch (err: any) {
+      console.warn('Não foi possível verificar a sala no LiveKit:', err?.message || err);
+      res.status(503).json({ error: 'Servidor de chamadas indisponível. Tente de novo em instantes.' });
+      return;
     }
 
-    // 2. Check if a participant with this name is already in the room
-    if (isActiveInLiveKit) {
-      try {
-        const participants = await listParticipantsWithTimeout(sanitizedRoom);
-        const nameLower = sanitizedParticipant.toLowerCase();
-        const isNameTaken = participants.some(
-          (p) => (p.identity && p.identity.toLowerCase() === nameLower) || (p.name && p.name.toLowerCase() === nameLower)
-        );
+    const meta = parseRoomMeta(liveRoom?.metadata);
+    const humans = participants.filter((p) => p.identity !== CLIP_BOT_IDENTITY);
+    const inSession = humans.length > 0 || (typeof meta.claimedAt === 'number' && Date.now() - meta.claimedAt < CLAIM_GRACE_MS);
 
-        if (isNameTaken) {
-          res.status(409).json({
-            error: `O nome "${sanitizedParticipant}" já está em uso nesta sala. Por favor, escolha outro nome para entrar.`,
-          });
-          return;
-        }
-      } catch (err: any) {
-        console.warn('Could not verify existing participants in room:', err?.message || err);
+    if (inSession) {
+      const nameLower = sanitizedParticipant.toLowerCase();
+      if (humans.some((p) => p.identity?.toLowerCase() === nameLower || p.name?.toLowerCase() === nameLower)) {
+        res.status(409).json({
+          error: `O nome "${sanitizedParticipant}" já está em uso nesta sala. Por favor, escolha outro nome para entrar.`,
+        });
+        return;
       }
-    }
-
-    const existingConfig = roomStore.get(sanitizedRoom);
-
-    if (isActiveInLiveKit && existingConfig) {
-      // Room is actively in session
-      if (existingConfig.passcode) {
+      if (meta.pass) {
         if (!cleanPasscode) {
           res.status(403).json({
             error: 'Esta sala é protegida por senha. Por favor, insira a senha para entrar.',
@@ -180,30 +238,32 @@ app.post(['/api/token', '/token'], async (req: Request, res: Response): Promise<
           });
           return;
         }
-        if (existingConfig.passcode !== cleanPasscode) {
+        if (!(await verifyPasscode(cleanPasscode, meta.pass))) {
           res.status(403).json({ error: 'Senha incorreta para esta sala.' });
           return;
         }
-      } else {
-        if (cleanPasscode) {
-          res.status(403).json({
-            error: 'Esta sala já está ativa e é pública (não possui senha). Deixe o campo de senha em branco para entrar.',
-          });
-          return;
-        }
+      } else if (cleanPasscode) {
+        res.status(403).json({
+          error: 'Esta sala já está ativa e é pública (não possui senha). Deixe o campo de senha em branco para entrar.',
+        });
+        return;
       }
     } else {
-      // Room is brand new
-      if (isClipEnabled(liveRoomMetadata)) {
-        // A sala vazia pode sobreviver um tempo no LiveKit: o clipe de uma sessão não vale para a seguinte.
-        roomService.updateRoomMetadata(sanitizedRoom, withClipFlag(liveRoomMetadata, false)).catch(() => {});
+      // Sessão nova: quem chega define a senha. A sala vazia pode sobreviver um tempo no LiveKit, então
+      // o estado da sessão anterior (senha, clipe) é descartado por inteiro.
+      const nextMeta: RoomMeta = {
+        clip: false,
+        claimedAt: Date.now(),
+        ...(cleanPasscode ? { pass: await hashPasscode(cleanPasscode) } : {}),
+      };
+      try {
+        if (!liveRoom) await roomService.createRoom({ name: sanitizedRoom });
+        await roomService.updateRoomMetadata(sanitizedRoom, JSON.stringify(nextMeta));
+      } catch (err: any) {
+        console.warn('Não foi possível registrar a sala no LiveKit:', err?.message || err);
+        res.status(503).json({ error: 'Servidor de chamadas indisponível. Tente de novo em instantes.' });
+        return;
       }
-      roomStore.set(sanitizedRoom, {
-        name: sanitizedRoom,
-        passcode: cleanPasscode,
-        hostIdentity: sanitizedParticipant,
-        createdAt: Date.now(),
-      });
     }
 
     const at = new AccessToken(LIVEKIT_API_KEY, LIVEKIT_API_SECRET, {
@@ -228,10 +288,12 @@ app.post(['/api/token', '/token'], async (req: Request, res: Response): Promise<
       roomName: sanitizedRoom,
       identity: sanitizedParticipant,
       isPublisher: Boolean(isPublisher),
+      // Senha SRT do OBS/app desktop: só publica no caminho do próprio participante (sala/nome).
+      streamKey: streamKeyFor(LIVEKIT_API_SECRET, `${sanitizedRoom}/${sanitizedParticipant}`),
     });
   } catch (err: any) {
     console.error('Error generating token:', err);
-    res.status(500).json({ error: 'Falha ao gerar token de acesso', details: err.message });
+    res.status(500).json({ error: 'Falha ao gerar token de acesso' });
   }
 });
 
@@ -267,20 +329,12 @@ app.get(['/api/rooms', '/rooms'], async (_req: Request, res: Response) => {
   try {
     const rooms = await listRoomsWithTimeout();
     const activeLiveRooms = Array.isArray(rooms) ? rooms.filter(r => r.numParticipants > 0) : [];
-    const activeNames = new Set(activeLiveRooms.map(r => r.name));
-
-    // Clean up dead rooms from memory store
-    for (const [name] of roomStore.entries()) {
-      if (!activeNames.has(name)) {
-        roomStore.delete(name);
-      }
-    }
 
     const result = activeLiveRooms.map(r => ({
       name: r.name,
       numParticipants: r.numParticipants,
       creationTime: Number(r.creationTime),
-      hasPasscode: roomStore.has(r.name) && Boolean(roomStore.get(r.name)?.passcode),
+      hasPasscode: Boolean(parseRoomMeta(r.metadata).pass),
       clipEnabled: isClipEnabled(r.metadata),
     }));
     res.json({ rooms: result });
@@ -303,6 +357,7 @@ app.get([
   let numParticipants = 0;
   let isActive = false;
   let clipEnabled = false;
+  let hasPasscode = false;
 
   try {
     const rooms = await listRoomsWithTimeout([roomName]);
@@ -310,16 +365,13 @@ app.get([
       isActive = true;
       numParticipants = rooms[0].numParticipants;
       clipEnabled = isClipEnabled(rooms[0].metadata);
-    } else {
-      roomStore.delete(roomName);
+      hasPasscode = Boolean(parseRoomMeta(rooms[0].metadata).pass);
     }
   } catch {}
 
-  const config = roomStore.get(roomName);
-
   res.json({
     roomName,
-    hasPasscode: isActive && Boolean(config?.passcode),
+    hasPasscode,
     isActive,
     numParticipants,
     clipEnabled,
@@ -342,12 +394,8 @@ function measureBitrateKbps(pathName: string, item: any): number | undefined {
 /**
  * List active OBS (SRT / MediaMTX) streams for a specific room (multi-stream squad support)
  */
-app.get(['/api/rooms/:roomName/streams', '/rooms/:roomName/streams', '/api/room/:roomName/streams', '/room/:roomName/streams'], async (req: Request, res: Response): Promise<void> => {
-  const roomName = sanitizeRoomName(req.params.roomName);
-  if (!roomName) {
-    res.status(400).json({ error: 'Nome de sala inválido.', streams: [] });
-    return;
-  }
+app.get(['/api/rooms/:roomName/streams', '/rooms/:roomName/streams', '/api/room/:roomName/streams', '/room/:roomName/streams'], roomAuth.requireMember, async (_req: Request, res: Response): Promise<void> => {
+  const { roomName } = res.locals as { roomName: string };
 
   const streams: Array<{
     id: string;
@@ -388,8 +436,8 @@ app.get(['/api/rooms/:roomName/streams', '/rooms/:roomName/streams', '/api/room/
             bitrateKbps: measureBitrateKbps(itemPath, item),
           });
         }
-        // 2. Sub-path multi-stream (e.g. "jogatina/pedro" ou "jogatina-pedro")
-        else if (lowerPath.startsWith(`${lowerRoom}/`) || lowerPath.startsWith(`${lowerRoom}-`)) {
+        // 2. Sub-path multi-stream (e.g. "jogatina/pedro"). Só "/": com "-", a sala "jogo" listaria a sala "jogo-secreto".
+        else if (lowerPath.startsWith(`${lowerRoom}/`)) {
           const rawId = itemPath.slice(roomName.length + 1);
 
           if (rawId) {
@@ -423,38 +471,32 @@ app.get(['/api/rooms/:roomName/streams', '/rooms/:roomName/streams', '/api/room/
 });
 
 /**
- * Liga/desliga o clipe da sala. A configuração vale para todos os participantes: ligado, as vozes de
- * todos entram no buffer de memória do servidor. Qualquer participante pode mudar.
+ * Autorização do MediaMTX (authMethod: http). Só o MediaMTX local chama esta rota.
+ *  - publish: só no caminho `sala/nome`, com a chave SRT entregue a esse participante em /api/token;
+ *  - read (WHEP): token LiveKit de quem está na sala agora (Authorization: Bearer no navegador).
+ * Qualquer resposta diferente de 200 nega o acesso.
  */
-app.post(['/api/rooms/:roomName/clip', '/rooms/:roomName/clip'], async (req: Request, res: Response): Promise<void> => {
-  const roomName = sanitizeRoomName(req.params.roomName);
-  const bearer = /^Bearer (.+)$/.exec(req.header('authorization') || '')?.[1];
-  const enabled = req.body?.enabled;
-  if (!roomName || !bearer || typeof enabled !== 'boolean') {
-    res.status(400).json({ error: 'Requisição inválida.' });
+app.post('/api/mediamtx/auth', async (req: Request, res: Response): Promise<void> => {
+  const remote = req.socket.remoteAddress || '';
+  if (!['127.0.0.1', '::1', '::ffff:127.0.0.1'].includes(remote) || req.header('x-forwarded-for')) {
+    res.sendStatus(403);
     return;
   }
+  const { action, path, password, token } = req.body ?? {};
+  const segments = typeof path === 'string' ? path.split('/') : [];
+  const room = segments[0] ?? '';
 
-  try {
-    const claims = await new TokenVerifier(LIVEKIT_API_KEY, LIVEKIT_API_SECRET).verify(bearer);
-    if (claims.video?.room !== roomName) throw new Error('sala diferente');
-  } catch {
-    res.status(401).json({ error: 'Sessão inválida para esta sala.' });
+  if (action === 'publish') {
+    const ok = segments.length === 2 && typeof password === 'string' && safeEqual(password, streamKeyFor(LIVEKIT_API_SECRET, path));
+    res.sendStatus(ok ? 200 : 401);
     return;
   }
-
-  try {
-    const [room] = await listRoomsWithTimeout([roomName]);
-    if (!room) {
-      res.status(404).json({ error: 'Sala não encontrada.' });
-      return;
-    }
-    await roomService.updateRoomMetadata(roomName, withClipFlag(room.metadata, enabled));
-    res.json({ clipEnabled: enabled });
-  } catch (err: any) {
-    console.error('Falha ao alterar o clipe da sala:', err?.message || err);
-    res.status(500).json({ error: 'Não foi possível alterar o clipe da sala.' });
+  if (action === 'read') {
+    const ok = Boolean(room) && room === sanitizeRoomName(room) && Boolean(await roomAuth.memberIdentity(token, room));
+    res.sendStatus(ok ? 200 : 401);
+    return;
   }
+  res.sendStatus(401);
 });
 
 // Buffer de vozes para clipes (só RAM, só em salas com o clipe ligado). CLIP_BUFFER=0 desliga.
@@ -468,13 +510,7 @@ if (process.env.CLIP_BUFFER !== '0') void clipBuffers.start();
 
 // Clipes prontos (vídeo do cliente + vozes do buffer) para preview e download.
 app.use(
-  createClipRouter({
-    roomService,
-    clipBuffers,
-    apiKey: LIVEKIT_API_KEY,
-    apiSecret: LIVEKIT_API_SECRET,
-    sanitizeRoomName,
-  }),
+  createClipRouter({ roomService, clipBuffers, roomAuth }),
 );
 
 // Rotas de depuração do buffer: expõem áudio da sala sem autenticação, então só existem com CLIP_DEBUG=1.
@@ -493,7 +529,8 @@ if (process.env.CLIP_DEBUG === '1') {
   });
 }
 
-app.listen(PORT, () => {
+// Só escuta na máquina local (o Caddy faz o TLS); HOST=0.0.0.0 para expor direto (ex.: Docker).
+app.listen(Number(PORT), process.env.HOST || '127.0.0.1', () => {
   console.log(`🚀 Põe na Tela — Servidor rodando em http://localhost:${PORT}`);
   console.log(`📡 Conectado ao LiveKit em: ${LIVEKIT_URL}`);
   if (isMaintenanceMode()) {

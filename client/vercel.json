@@ -1,0 +1,14 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "rewrites": [
+    {
+      "source": "/api/:path*",
+      "has": [{ "type": "host", "value": "poe-na-tela.vercel.app" }],
+      "destination": "https://api.194.61.238.98.sslip.io/api/:path*"
+    },
+    {
+      "source": "/api/:path*",
+      "destination": "https://api-dev.194.61.238.98.sslip.io/api/:path*"
+    }
+  ]
+}

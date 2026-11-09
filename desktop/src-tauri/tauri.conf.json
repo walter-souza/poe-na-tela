@@ -20,7 +20,9 @@
         "minHeight": 600
       }
     ],
-    "security": { "csp": null }
+    "security": {
+      "csp": "default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; media-src 'self' blob: https: http:; connect-src 'self' ipc: http://ipc.localhost https: wss: http://127.0.0.1:* ws://127.0.0.1:* http://localhost:* ws://localhost:*; frame-src https://www.youtube-nocookie.com; worker-src 'self' blob:; object-src 'none'; base-uri 'self'; form-action 'none'"
+    }
   },
   "bundle": {
     "active": true,

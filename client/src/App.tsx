@@ -32,6 +32,8 @@ export function App() {
     roomName: string;
     userName: string;
     isPublisher: boolean;
+    /** Senha SRT do caminho sala/nome deste participante (OBS e app desktop). */
+    streamKey: string;
   } | null>(null);
 
   const [isLoading, setIsLoading] = useState(false);
@@ -146,6 +148,7 @@ export function App() {
         roomName: data.roomName,
         userName: data.identity,
         isPublisher: data.isPublisher,
+        streamKey: data.streamKey,
       });
 
       // Clean URL search params so the address bar stays clean (without ?room=...)
@@ -273,6 +276,8 @@ interface StreamRoomProps {
     roomName: string;
     userName: string;
     isPublisher: boolean;
+    /** Senha SRT do caminho sala/nome deste participante (OBS e app desktop). */
+    streamKey: string;
   };
   onLeave: () => void;
   isChatOpen: boolean;
@@ -416,6 +421,7 @@ function StreamRoom({
             onToggleLocalScreenAudio={toggleLocalScreenAudio}
             onScreenShareWatchingChange={setScreenShareWatching}
             roomName={session.roomName}
+            token={session.token}
           />
 
           {/* Centered Room Name at top */}
@@ -490,6 +496,7 @@ function StreamRoom({
         isHUDOpen={isHUDOpen}
         roomName={session.roomName}
         userName={session.userName}
+        streamKey={session.streamKey}
         onToggleMic={toggleMic}
         onOpenHotkeySettings={isDesktop ? () => setIsHotkeyModalOpen(true) : undefined}
         onToggleDeafen={toggleDeafen}
@@ -514,6 +521,7 @@ function StreamRoom({
             isOpen={isScreenShareModalOpen}
             roomName={session.roomName}
             userName={session.userName}
+            streamKey={session.streamKey}
             onClose={() => setIsScreenShareModalOpen(false)}
             onStart={(config) => void native.start(config)}
           />

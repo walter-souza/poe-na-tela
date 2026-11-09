@@ -32,6 +32,8 @@ interface ControlsBarProps {
   isHUDOpen: boolean;
   roomName: string;
   userName?: string;
+  /** Senha SRT do participante, embutida no link do OBS. */
+  streamKey: string;
   onToggleMic: () => void;
   /** Só existe no app desktop (atalho global de microfone). */
   onOpenHotkeySettings?: () => void;
@@ -60,6 +62,7 @@ export const ControlsBar: React.FC<ControlsBarProps> = ({
   isHUDOpen,
   roomName,
   userName,
+  streamKey,
   onToggleMic,
   onOpenHotkeySettings,
   onToggleDeafen,
@@ -87,7 +90,7 @@ export const ControlsBar: React.FC<ControlsBarProps> = ({
   };
 
   const handleCopyObsLink = () => {
-    const obsUrl = getObsSrtUrl(roomName, userName);
+    const obsUrl = getObsSrtUrl(roomName, userName, streamKey);
     navigator.clipboard.writeText(obsUrl);
     setCopiedObs(true);
     setTimeout(() => setCopiedObs(false), 2000);
@@ -338,7 +341,7 @@ export const ControlsBar: React.FC<ControlsBarProps> = ({
       <ObsGuideModal
         isOpen={isObsGuideOpen}
         onClose={() => setIsObsGuideOpen(false)}
-        obsUrl={getObsSrtUrl(roomName, userName)}
+        obsUrl={getObsSrtUrl(roomName, userName, streamKey)}
       />
     </div>
   );

@@ -17,6 +17,7 @@ interface NativeStreamModalProps {
   isOpen: boolean;
   roomName: string;
   userName: string;
+  streamKey: string;
   onClose: () => void;
   onStart: (config: NativeCaptureConfig) => void;
 }
@@ -41,6 +42,7 @@ export const NativeStreamModal: React.FC<NativeStreamModalProps> = ({
   isOpen,
   roomName,
   userName,
+  streamKey,
   onClose,
   onStart,
 }) => {
@@ -93,7 +95,7 @@ export const NativeStreamModal: React.FC<NativeStreamModalProps> = ({
       width,
       height,
       bitrateKbps: bitrate,
-      srtUrl: getObsSrtUrl(roomName, userName),
+      srtUrl: getObsSrtUrl(roomName, userName, streamKey),
       systemAudio,
     });
     onClose();

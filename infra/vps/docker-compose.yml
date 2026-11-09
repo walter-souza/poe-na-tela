@@ -28,3 +28,16 @@ services:
       WEBHOOK_SECRET: ${WEBHOOK_SECRET:?defina WEBHOOK_SECRET no .env}
     volumes:
       - ./mediamtx.yml:/mediamtx.yml:ro
+
+  # LiveKit dedicado ao backend de dev: salas, chaves e bot de clipe separados da produção.
+  # Instalado por setup-livekit-dev.sh (gera LIVEKIT_DEV_KEYS no .env).
+  livekit-dev:
+    image: livekit/livekit-server:v1.13.9
+    container_name: poe-livekit-dev
+    restart: unless-stopped
+    command: --config /etc/livekit.yaml
+    network_mode: host
+    environment:
+      LIVEKIT_KEYS: ${LIVEKIT_DEV_KEYS:?defina LIVEKIT_DEV_KEYS no .env}
+    volumes:
+      - ./livekit-dev.yaml:/etc/livekit.yaml:ro
