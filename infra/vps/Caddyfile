@@ -1,19 +1,36 @@
+# Headers de segurança dos domínios do Põe na Tela (API, mídia e sinalização).
+(poe_security) {
+    header {
+        Strict-Transport-Security "max-age=31536000"
+        X-Content-Type-Options "nosniff"
+        X-Frame-Options "DENY"
+        Referrer-Policy "no-referrer"
+        Permissions-Policy "camera=(), microphone=(), geolocation=()"
+        -Server
+    }
+}
+
 api-dev.194.61.238.98.sslip.io {
+    import poe_security
     reverse_proxy localhost:3002
 }
 
 api.194.61.238.98.sslip.io {
+    import poe_security
     reverse_proxy localhost:3001
 }
 
 livekit.194.61.238.98.sslip.io {
+    import poe_security
     reverse_proxy localhost:7880
 }
 
 stream.194.61.238.98.sslip.io {
+    import poe_security
     reverse_proxy localhost:8889
 }
 
 livekit-dev.194.61.238.98.sslip.io {
+    import poe_security
     reverse_proxy localhost:7980
 }
