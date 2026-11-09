@@ -32,6 +32,10 @@ export function streamKeyFor(secret: string, path: string): string {
   return createHmac('sha256', secret).update(`publish:${path}`).digest('hex').slice(0, 32);
 }
 
+export function bearerToken(req: Request): string | undefined {
+  return /^Bearer (.+)$/.exec(req.header('authorization') || '')?.[1];
+}
+
 export interface RoomAuthDeps {
   roomService: RoomServiceClient;
   apiKey: string;
@@ -48,13 +52,23 @@ export type RoomAuth = ReturnType<typeof createRoomAuth>;
 export function createRoomAuth(deps: RoomAuthDeps) {
   const verifier = new TokenVerifier(deps.apiKey, deps.apiSecret);
 
-  async function memberIdentity(token: string | undefined, roomName: string): Promise<string | null> {
+  /** Identidade de um token LiveKit válido para a sala (sem exigir presença). */
+  async function tokenIdentity(token: string | undefined, roomName: string): Promise<string | null> {
     if (!token || !roomName) return null;
     try {
       const claims = await verifier.verify(token);
-      if (claims.video?.room !== roomName || !claims.sub) return null;
+      return claims.video?.room === roomName && claims.sub ? claims.sub : null;
+    } catch {
+      return null;
+    }
+  }
+
+  async function memberIdentity(token: string | undefined, roomName: string): Promise<string | null> {
+    const identity = await tokenIdentity(token, roomName);
+    if (!identity) return null;
+    try {
       const participants = await deps.roomService.listParticipants(roomName);
-      return participants.some((p) => p.identity === claims.sub) ? claims.sub : null;
+      return participants.some((p) => p.identity === identity) ? identity : null;
     } catch {
       return null;
     }
@@ -63,8 +77,7 @@ export function createRoomAuth(deps: RoomAuthDeps) {
   /** Middleware: exige `Authorization: Bearer <token>` de um participante presente em `:roomName`. */
   async function requireMember(req: Request, res: Response, next: NextFunction) {
     const roomName = deps.sanitizeRoomName(req.params.roomName);
-    const bearer = /^Bearer (.+)$/.exec(req.header('authorization') || '')?.[1];
-    const identity = await memberIdentity(bearer, roomName);
+    const identity = await memberIdentity(bearerToken(req), roomName);
     if (!identity) {
       res.status(401).json({ error: 'Sessão inválida para esta sala.' });
       return;
@@ -74,5 +87,5 @@ export function createRoomAuth(deps: RoomAuthDeps) {
     next();
   }
 
-  return { memberIdentity, requireMember };
+  return { tokenIdentity, memberIdentity, requireMember };
 }
