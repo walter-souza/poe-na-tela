@@ -51,6 +51,10 @@ export function useClip(room: Room | null, session: ClipSession) {
   const announced = useRef<boolean | null>(null);
   const busy = useRef(false);
   const previewRef = useRef<ClipPreview | null>(null);
+  const tokenRef = useRef(token);
+  useEffect(() => {
+    tokenRef.current = token;
+  }, [token]);
   useEffect(() => {
     previewRef.current = preview;
   }, [preview]);
@@ -70,7 +74,7 @@ export function useClip(room: Room | null, session: ClipSession) {
   const discardClip = useCallback(() => {
     const current = previewRef.current;
     setPreview(null);
-    if (current) void fetch(getClipUrl(current.id), { method: 'DELETE' }).catch(() => {});
+    if (current) void fetch(getClipUrl(current.id), { method: 'DELETE', headers: { Authorization: `Bearer ${tokenRef.current}` } }).catch(() => {});
   }, []);
 
   // Acompanha a configuração da sala e quem pode alterá-la.
@@ -131,7 +135,13 @@ export function useClip(room: Room | null, session: ClipSession) {
       if (t.status !== null) window.clearTimeout(t.status);
       if (t.notice !== null) window.clearTimeout(t.notice);
       const pending = previewRef.current;
-      if (pending) void fetch(getClipUrl(pending.id), { method: 'DELETE', keepalive: true }).catch(() => {});
+      if (pending) {
+        void fetch(getClipUrl(pending.id), {
+          method: 'DELETE',
+          keepalive: true,
+          headers: { Authorization: `Bearer ${tokenRef.current}` },
+        }).catch(() => {});
+      }
     };
   }, []);
 

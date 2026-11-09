@@ -6,7 +6,7 @@ import { randomBytes } from 'node:crypto';
 import { mkdir, rm, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import type { RoomAuth } from './auth.js';
+import { bearerToken, type RoomAuth } from './auth.js';
 import { encodeWav, isClipEnabled, withClipFlag, type ClipBufferManager } from './clipBuffer.js';
 
 /**
@@ -255,8 +255,19 @@ export function createClipRouter(deps: ClipRouterDeps): Router {
     res.sendFile(rec.file, { dotfiles: 'allow', headers: { 'Content-Type': 'video/webm', 'Cache-Control': 'private, no-store' } });
   });
 
+  // Descarte: só quem criou o clipe (token da sala do clipe; não precisa estar presente, pois descarta ao sair).
   router.delete('/api/clips/:id', async (req: Request, res: Response) => {
-    if (ID_PATTERN.test(req.params.id)) await remove(req.params.id);
+    const rec = ID_PATTERN.test(req.params.id) ? clips.get(req.params.id) : undefined;
+    if (!rec) {
+      res.json({ ok: true });
+      return;
+    }
+    const identity = await deps.roomAuth.tokenIdentity(bearerToken(req), rec.room);
+    if (identity !== rec.creator) {
+      res.status(401).json({ error: 'Só quem criou o clipe pode descartá-lo.' });
+      return;
+    }
+    await remove(rec.id);
     res.json({ ok: true });
   });
 
