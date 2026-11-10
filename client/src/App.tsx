@@ -61,16 +61,10 @@ export function App() {
   const [maintenanceMessage, setMaintenanceMessage] = useState<string>('');
   const [isCheckingMaintenance, setIsCheckingMaintenance] = useState(false);
 
-  // Admin bypass token check (URL query param ?bypass=... or ?admin=... or sessionStorage)
-  const [adminBypassToken, setAdminBypassToken] = useState<string | null>(() => {
-    const params = new URLSearchParams(window.location.search);
-    const urlBypass = params.get('bypass') || params.get('admin');
-    if (urlBypass) {
-      sessionStorage.setItem('admin_bypass_token', urlBypass);
-      return urlBypass;
-    }
-    return sessionStorage.getItem('admin_bypass_token') || null;
-  });
+  // Token de manutenção: só pelo formulário da tela de manutenção (na URL ficaria no histórico e nos logs).
+  const [adminBypassToken, setAdminBypassToken] = useState<string | null>(
+    () => sessionStorage.getItem('admin_bypass_token') || null,
+  );
 
   // Check health and maintenance mode from API
   const checkMaintenanceStatus = async () => {
