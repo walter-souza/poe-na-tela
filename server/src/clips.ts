@@ -7,7 +7,10 @@ import { mkdir, rm, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { bearerToken, type RoomAuth } from './auth.js';
-import { encodeWav, isClipEnabled, withClipFlag, type ClipBufferManager } from './clipBuffer.js';
+import { encodeWav, isClipEnabled, WINDOW_MS, withClipFlag, type ClipBufferManager } from './clipBuffer.js';
+// Também garante o .env carregado antes das leituras de process.env abaixo.
+import { CLIP_DEBUG } from './config.js';
+import { sanitizeRoomName } from './room.js';
 
 /**
  * Clipes prontos para preview/download.
@@ -270,6 +273,22 @@ export function createClipRouter(deps: ClipRouterDeps): Router {
     await remove(rec.id);
     res.json({ ok: true });
   });
+
+  // Depuração do buffer: expõe áudio da sala sem autenticação, então só existe com CLIP_DEBUG=1.
+  if (CLIP_DEBUG) {
+    router.get('/api/debug/clip-buffers', (_req: Request, res: Response) => {
+      res.json(deps.clipBuffers.status());
+    });
+    router.get('/api/debug/rooms/:roomName/voices.wav', (req: Request, res: Response) => {
+      const rec = deps.clipBuffers.get(sanitizeRoomName(req.params.roomName));
+      if (!rec) {
+        res.status(404).json({ error: 'Sem buffer ativo para esta sala (ninguém ativou o clipe).' });
+        return;
+      }
+      const seconds = Math.max(1, Math.min(WINDOW_MS / 1000, Number(req.query.seconds) || 30));
+      res.type('audio/wav').send(encodeWav(rec.mix(seconds)));
+    });
+  }
 
   return router;
 }
