@@ -7,13 +7,19 @@ import {
   ConnectionState,
   type RemoteParticipant,
 } from 'livekit-client';
-import type { StreamQualityConfig, StreamStats, ChatMessage, ReactionEvent, ParticipantInfo, ScreenShareItem } from '../types';
+import type { ParticipantInfo } from '../types';
 import type { RoomRestore } from '../utils/resumeSession';
 import { playJoinSound, playLeaveSound } from '../utils/soundEffects';
-import { startKeepAlive, stopKeepAlive } from '../utils/keepAlive';
-import { getAssetUrl, isNoiseSuppressionSupported, NoiseSuppressionProcessor } from '../utils/noiseSuppression';
-import { buildScreenShareProfile, formatResolution, getResolutionSize } from '../utils/streamProfile';
-import { CHAT_IMAGE_TOPIC, MAX_CAPTION_LENGTH, MAX_RECEIVED_BYTES, isAcceptedMime, prepareChatImage } from '../utils/chatImage';
+import { stopKeepAlive } from '../utils/keepAlive';
+import { isNoiseSuppressionSupported } from '../utils/noiseSuppression';
+import { CHAT_IMAGE_TOPIC } from '../utils/chatImage';
+import { VoiceActivityDetector } from '../utils/voiceActivity';
+import { useChat } from './useChat';
+import { useNoiseSuppression } from './useNoiseSuppression';
+import { usePlayoutBuffer } from './usePlayoutBuffer';
+import { useRoomAudio } from './useRoomAudio';
+import { useScreenShare } from './useScreenShare';
+import { useStreamStats } from './useStreamStats';
 
 export interface UseLiveKitOptions {
   url: string;
@@ -23,12 +29,10 @@ export interface UseLiveKitOptions {
   restore?: RoomRestore | null;
 }
 
-// Message ids are chosen by the sender so edits and deletes can refer to them; peers only
-// accept short, plain ids and fall back to a local one otherwise.
-const MESSAGE_ID_PATTERN = /^[\w.-]{1,64}$/;
-const newMessageId = () => `${Date.now()}-${Math.random().toString(36).slice(2)}`;
-const acceptMessageId = (id: unknown) => (typeof id === 'string' && MESSAGE_ID_PATTERN.test(id) ? id : newMessageId());
-
+/**
+ * One LiveKit room session: connection, participants and microphone. Audio, chat, screen shares,
+ * stats and playout buffer live in their own hooks; this one wires them to the room events.
+ */
 export function useLiveKit({ url, token, onDisconnected, restore }: UseLiveKitOptions) {
   const roomRef = useRef<Room | null>(null);
   const onDisconnectedRef = useRef(onDisconnected);
@@ -38,518 +42,36 @@ export function useLiveKit({ url, token, onDisconnected, restore }: UseLiveKitOp
   const startMicOnConnectRef = useRef(restore?.micEnabled ?? true);
 
   const [connectionState, setConnectionState] = useState<ConnectionState>(ConnectionState.Disconnected);
-  const [isScreenSharing, setIsScreenSharing] = useState<boolean>(false);
-  const [isLocalScreenAudioMuted, setIsLocalScreenAudioMuted] = useState<boolean>(false);
   const [isMicEnabled, setIsMicEnabled] = useState<boolean>(false);
-  const [isDeafened, setIsDeafened] = useState<boolean>(restore?.deafened ?? false);
-  const isDeafenedRef = useRef<boolean>(restore?.deafened ?? false);
+  const [canPlaybackAudio, setCanPlaybackAudio] = useState<boolean>(true);
+  const [participants, setParticipants] = useState<ParticipantInfo[]>([]);
   // Who has their audio turned off; shared over the data channel since LiveKit has no such flag.
   const deafenedPeersRef = useRef<Set<string>>(new Set());
-  const [canPlaybackAudio, setCanPlaybackAudio] = useState<boolean>(true);
-  const [messages, setMessages] = useState<ChatMessage[]>(restore?.messages ?? []);
-  const messagesRef = useRef<ChatMessage[]>([]);
-  messagesRef.current = messages;
-  // blob: URLs of chat images, released when the room is left.
-  const chatImageUrlsRef = useRef<string[]>([]);
-  const [participants, setParticipants] = useState<ParticipantInfo[]>([]);
-  const [screenShares, setScreenShares] = useState<ScreenShareItem[]>([]);
-  const [streamVolumes, setStreamVolumes] = useState<Record<string, number>>({});
-  const streamVolumesRef = useRef<Record<string, number>>({});
-  streamVolumesRef.current = streamVolumes;
 
-  const USER_VOLUMES_STORAGE_KEY = 'poe-na-tela-user-volumes';
-  const [userVolumes, setUserVolumes] = useState<Record<string, number>>(() => {
-    try {
-      const saved = localStorage.getItem(USER_VOLUMES_STORAGE_KEY);
-      if (saved) {
-        const parsed = JSON.parse(saved);
-        if (parsed && typeof parsed === 'object') {
-          const sanitized: Record<string, number> = {};
-          for (const [k, v] of Object.entries(parsed)) {
-            const num = Number(v);
-            if (!isNaN(num) && isFinite(num)) {
-              sanitized[k] = Math.max(0, Math.min(2, num));
-            }
-          }
-          return sanitized;
-        }
-      }
-    } catch {}
-    return {};
-  });
-  const userVolumesRef = useRef<Record<string, number>>({});
-  userVolumesRef.current = userVolumes;
+  const audio = useRoomAudio(roomRef, restore?.deafened ?? false);
+  const noise = useNoiseSuppression(roomRef);
+  const screen = useScreenShare(roomRef);
+  const chat = useChat(roomRef, restore?.messages ?? [], screen.isScreenSharing);
+  const playout = usePlayoutBuffer(roomRef);
+  const streamStats = useStreamStats(roomRef, playout);
 
-  // Dedicated Web Audio Boost Context for 101% - 200% voice amplification
-  const boostAudioContextRef = useRef<AudioContext | null>(null);
-  interface AudioBooster {
-    source: MediaStreamAudioSourceNode;
-    leveler: AudioWorkletNode;
-    gain: GainNode;
-    limiter: AudioWorkletNode;
-    stream: MediaStream;
-  }
-  const audioBoostersRef = useRef<Map<string, AudioBooster>>(new Map());
-  // Boosters waiting for the worklet module: identity -> latest requested volume.
-  const pendingBoostersRef = useRef<Map<string, number>>(new Map());
-  const boostWorkletRef = useRef<{ ctx: AudioContext; ready: Promise<void> } | null>(null);
+  const { isDeafenedRef, attachRemoteAudio, detachRemoteAudio, disposeAll: disposeAudio } = audio;
+  const { isEnabledRef: isNoiseSuppressionEnabledRef, apply: applyNoiseSuppression, destroy: destroyNoiseSuppression } = noise;
+  const { syncSubscriptions, updateScreenShares, unwatch, reset: resetScreenShares } = screen;
+  const { addSystemMessage, handleData: handleChatData, createImageHandler, releaseImages } = chat;
+  const { applyToTrack: applyPlayoutBuffer, applyToAll: applyPlayoutBufferToAll, playoutBufferMsRef } = playout;
+  const { start: startStats, stop: stopStats } = streamStats;
 
-  const disposeBooster = useCallback((participantIdentity: string) => {
-    pendingBoostersRef.current.delete(participantIdentity);
-    const booster = audioBoostersRef.current.get(participantIdentity);
-    if (!booster) return;
-    try {
-      booster.source.disconnect();
-      booster.leveler.disconnect();
-      booster.gain.disconnect();
-      booster.limiter.disconnect();
-    } catch {}
-    audioBoostersRef.current.delete(participantIdentity);
-  }, []);
+  const vadRef = useRef<VoiceActivityDetector | null>(null);
 
-  const getBoostAudioContext = useCallback((): AudioContext => {
-    if (!boostAudioContextRef.current || boostAudioContextRef.current.state === 'closed') {
-      const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
-      boostAudioContextRef.current = new AudioCtx({ sampleRate: 48000 });
-      boostWorkletRef.current = null;
-    }
-    if (boostAudioContextRef.current.state === 'suspended') {
-      boostAudioContextRef.current.resume().catch(() => {});
-    }
-    return boostAudioContextRef.current;
-  }, []);
-
-  // Real-time Client-Side Voice Activity Detection (VAD) via Web Audio API (< 20ms response)
-  interface VadNode {
-    source: MediaStreamAudioSourceNode;
-    analyser: AnalyserNode;
-    buffer: Uint8Array<ArrayBuffer>;
-    track: MediaStreamTrack;
-  }
-
-  const vadContextRef = useRef<AudioContext | null>(null);
-  const vadNodesRef = useRef<Map<string, VadNode>>(new Map());
-  const vadSpeakingMapRef = useRef<Map<string, boolean>>(new Map());
-  const vadLastSpokeAtRef = useRef<Map<string, number>>(new Map());
-  const vadIntervalRef = useRef<number | null>(null);
-
-  const getVadAudioContext = useCallback((): AudioContext => {
-    if (!vadContextRef.current || vadContextRef.current.state === 'closed') {
-      const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
-      vadContextRef.current = new AudioCtx({ sampleRate: 48000 });
-    }
-    if (vadContextRef.current.state === 'suspended') {
-      vadContextRef.current.resume().catch(() => {});
-    }
-    return vadContextRef.current;
-  }, []);
-
-  const unregisterVadTrack = useCallback((identity?: string) => {
-    if (!identity) return;
-    const node = vadNodesRef.current.get(identity);
-    if (node) {
-      try {
-        node.source.disconnect();
-        node.analyser.disconnect();
-      } catch {}
-      vadNodesRef.current.delete(identity);
-    }
-    vadSpeakingMapRef.current.delete(identity);
-    vadLastSpokeAtRef.current.delete(identity);
-  }, []);
-
-  const registerVadTrack = useCallback((identity: string, mediaTrack: MediaStreamTrack) => {
-    if (!identity || !mediaTrack || mediaTrack.readyState === 'ended') return;
-
-    const existing = vadNodesRef.current.get(identity);
-    if (existing && existing.track === mediaTrack) return;
-
-    unregisterVadTrack(identity);
-
-    try {
-      const ctx = getVadAudioContext();
-      const stream = new MediaStream([mediaTrack]);
-      const source = ctx.createMediaStreamSource(stream);
-      const analyser = ctx.createAnalyser();
-      analyser.fftSize = 64; // 32 frequency bins for minimal compute overhead
-      analyser.smoothingTimeConstant = 0.2; // fast attack response
-      analyser.minDecibels = -70;
-      analyser.maxDecibels = -10;
-      source.connect(analyser); // NOT connected to destination to avoid loopback/echo
-
-      const buffer = new Uint8Array(analyser.frequencyBinCount);
-      vadNodesRef.current.set(identity, { source, analyser, buffer, track: mediaTrack });
-    } catch (err) {
-      console.warn(`[VAD] Failed to register track for ${identity}:`, err);
-    }
-  }, [getVadAudioContext, unregisterVadTrack]);
-
-  const [remoteScreenTrack, setRemoteScreenTrack] = useState<Track | null>(null);
-  const [localScreenTrack, setLocalScreenTrack] = useState<Track | null>(null);
-  const [stats, setStats] = useState<StreamStats | null>(null);
-  const [reaction, setReaction] = useState<ReactionEvent | null>(null);
-  const [hostName, setHostName] = useState<string>('');
-
-  // Noise Suppression (RNNoise AI) - opt-in (desativado por padrão para voz 100% natural)
-  const NOISE_SUPPRESSION_KEY = 'poe-na-tela-noise-suppression';
-  const [isNoiseSuppressionEnabled, setIsNoiseSuppressionEnabledState] = useState<boolean>(() => {
-    try {
-      const saved = localStorage.getItem(NOISE_SUPPRESSION_KEY);
-      return saved === 'true';
-    } catch {
-      return false;
-    }
-  });
-  const isNoiseSuppressionEnabledRef = useRef<boolean>(false);
-  isNoiseSuppressionEnabledRef.current = isNoiseSuppressionEnabled;
-  const activeProcessorRef = useRef<NoiseSuppressionProcessor | null>(null);
-
-  // WebRTC Playout / Jitter Buffer: começa baixo (latência) e sobe só quando as stats mostram freezes/jitter.
-  const DEFAULT_STREAM_BUFFER_MS = 200;
-  const MIN_STREAM_BUFFER_MS = 100;
-  const MAX_STREAM_BUFFER_MS = 500;
-  const MAX_VOICE_BUFFER_MS = 150;
-  const [playoutBufferMs, setPlayoutBufferMsState] = useState<number>(DEFAULT_STREAM_BUFFER_MS);
-  const playoutBufferMsRef = useRef<number>(DEFAULT_STREAM_BUFFER_MS);
-
-  const statsIntervalRef = useRef<number | null>(null);
-  const prevStatsRef = useRef<{ bytes: number; frames: number; timestamp: number; freezes: number; dropped: number } | null>(null);
-  const calmSamplesRef = useRef<number>(0);
-  const badSamplesRef = useRef<number>(0);
-  const prevCountersRef = useRef<{ nack: number; pli: number }>({ nack: 0, pli: 0 });
-  const prevBufferRef = useRef<{ delay: number; count: number } | null>(null);
-  const currentVolumeRef = useRef<number>(1);
-
-  const applyNoiseSuppression = useCallback(async (track: LocalAudioTrack, enable: boolean) => {
-    try {
-      if (enable) {
-        if (!isNoiseSuppressionSupported()) {
-          console.warn('Noise suppression is not supported in this browser environment');
-          return;
-        }
-
-        const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
-        if (AudioCtx) {
-          const currentCtx = (track as any).audioContext;
-          if (!currentCtx || currentCtx.state === 'closed') {
-            const newCtx = new AudioCtx({ sampleRate: 48000 });
-            if (newCtx.state === 'suspended') {
-              await newCtx.resume().catch(() => {});
-            }
-            track.setAudioContext(newCtx);
-          } else if (currentCtx.state === 'suspended') {
-            await currentCtx.resume().catch(() => {});
-          }
-        }
-
-        // Stacking the browser suppressor before ours attenuates the voice twice.
-        await track.mediaStreamTrack.applyConstraints({ noiseSuppression: false }).catch(() => {});
-
-        const processor = new NoiseSuppressionProcessor();
-        activeProcessorRef.current = processor;
-        await track.setProcessor(processor);
-        console.info(`Noise suppression active (${processor.engine})`);
-      } else {
-        if (activeProcessorRef.current || (track as any).processor) {
-          await track.stopProcessor();
-          activeProcessorRef.current = null;
-        }
-        await track.mediaStreamTrack.applyConstraints({ noiseSuppression: true }).catch(() => {});
-      }
-    } catch (err) {
-      console.error('Failed to apply noise suppression to track:', err);
-      activeProcessorRef.current = null;
-    }
-  }, []);
-
-  // Helper to apply volume (both native 0-100% and WebAudio boost 101-200%)
-  const applyParticipantVolume = useCallback(
-    (participantIdentity: string, volume: number, track?: Track) => {
-      const clamped = Math.max(0, Math.min(2, volume));
-      const nativeVol = Math.min(1, clamped);
-      const room = roomRef.current;
-
-      // 1. LiveKit track & participant native volume (ALWAYS clamped to <= 1.0 to prevent IndexSizeError)
-      if (track && 'setVolume' in track) {
-        try {
-          (track as any).setVolume(nativeVol);
-        } catch {}
-      }
-
-      if (room) {
-        const participant = room.remoteParticipants.get(participantIdentity);
-        if (participant) {
-          try {
-            participant.setVolume(nativeVol, Track.Source.Microphone);
-          } catch {}
-          participant.audioTrackPublications.forEach((pub) => {
-            if (pub.source === Track.Source.Microphone && pub.track && 'setVolume' in pub.track) {
-              try {
-                (pub.track as any).setVolume(nativeVol);
-              } catch {}
-            }
-          });
-        }
-      }
-
-      // 2. Audio elements & Web Audio booster
-      const audioElements = document.querySelectorAll(
-        `audio[data-participant="${participantIdentity}"][data-source="microphone"]`
-      ) as NodeListOf<HTMLAudioElement>;
-
-      if (clamped > 1.0 && !isDeafenedRef.current) {
-        const muteNativeElements = () =>
-          audioElements.forEach((el) => {
-            try {
-              el.volume = 0;
-              el.muted = true;
-            } catch {}
-          });
-        // Level and gain follow the slider: the auto-leveler fades in over 100% -> 200%.
-        const applyBoost = (booster: AudioBooster, ctx: AudioContext, vol: number) => {
-          booster.gain.gain.setTargetAtTime(vol, ctx.currentTime, 0.05);
-          booster.leveler.parameters.get('amount')?.setTargetAtTime(vol - 1, ctx.currentTime, 0.05);
-        };
-
-        try {
-          const ctx = getBoostAudioContext();
-          const existing = audioBoostersRef.current.get(participantIdentity);
-          if (existing) {
-            // Boosted (>100%): mute the native element so there is no echo/double audio
-            muteNativeElements();
-            applyBoost(existing, ctx, clamped);
-            return;
-          }
-
-          // Find media track for booster
-          let mediaTrack = (track as any)?.mediaStreamTrack;
-          if (!mediaTrack && room) {
-            const participant = room.remoteParticipants.get(participantIdentity);
-            const micPub = participant?.getTrackPublication(Track.Source.Microphone);
-            mediaTrack = micPub?.track?.mediaStreamTrack;
-          }
-          if (!mediaTrack) {
-            muteNativeElements();
-            return;
-          }
-
-          // The worklet module loads asynchronously; keep the native element playing until the
-          // booster is wired, and remember only the latest requested volume meanwhile.
-          const alreadyPending = pendingBoostersRef.current.has(participantIdentity);
-          pendingBoostersRef.current.set(participantIdentity, clamped);
-          if (alreadyPending) return;
-
-          if (!boostWorkletRef.current || boostWorkletRef.current.ctx !== ctx) {
-            boostWorkletRef.current = {
-              ctx,
-              ready: ctx.audioWorklet.addModule(getAssetUrl('audio-worklets/voiceBoostWorklet.js')),
-            };
-          }
-          boostWorkletRef.current.ready
-            .then(() => {
-              const vol = pendingBoostersRef.current.get(participantIdentity);
-              pendingBoostersRef.current.delete(participantIdentity);
-              // Volume dropped back to <= 100%, or the context was replaced, while loading.
-              if (vol === undefined || ctx !== boostAudioContextRef.current || ctx.state === 'closed') return;
-
-              const stream = new MediaStream([mediaTrack]);
-              const source = ctx.createMediaStreamSource(stream);
-              // Evens out quiet speakers, applies the user's gain, then a lookahead limiter catches
-              // the peaks (a fast compressor here modulates the gain and sounds robotic).
-              const leveler = new AudioWorkletNode(ctx, 'voice-leveler');
-              const gain = ctx.createGain();
-              const limiter = new AudioWorkletNode(ctx, 'voice-limiter', {
-                processorOptions: { ceilingDb: -1, lookaheadMs: 5, releaseMs: 120 },
-              });
-              source.connect(leveler);
-              leveler.connect(gain);
-              gain.connect(limiter);
-              limiter.connect(ctx.destination);
-              const booster: AudioBooster = { source, leveler, gain, limiter, stream };
-              audioBoostersRef.current.set(participantIdentity, booster);
-              applyBoost(booster, ctx, vol);
-              document
-                .querySelectorAll(`audio[data-participant="${participantIdentity}"][data-source="microphone"]`)
-                .forEach((node) => {
-                  try {
-                    (node as HTMLAudioElement).volume = 0;
-                    (node as HTMLAudioElement).muted = true;
-                  } catch {}
-                });
-            })
-            .catch((err) => {
-              pendingBoostersRef.current.delete(participantIdentity);
-              boostWorkletRef.current = null;
-              console.warn('Failed to apply audio boost:', err);
-            });
-        } catch (err) {
-          pendingBoostersRef.current.delete(participantIdentity);
-          console.warn('Failed to apply audio boost:', err);
-        }
-      } else {
-        // Normal volume (0% to 100%) or deafened:
-        disposeBooster(participantIdentity);
-
-        audioElements.forEach((el) => {
-          try {
-            el.volume = isDeafenedRef.current ? 0 : nativeVol;
-            el.muted = nativeVol === 0 || isDeafenedRef.current;
-          } catch {}
-        });
-      }
-    },
-    [getBoostAudioContext, disposeBooster]
-  );
-
-  // Helper to apply WebRTC playoutDelayHint & jitterBufferTarget to an individual track's receiver
-  const applyReceiverPlayoutBuffer = useCallback((track: Track, bufferMs: number = DEFAULT_STREAM_BUFFER_MS) => {
-    try {
-      const isScreen =
-        track.source === Track.Source.ScreenShare ||
-        track.source === Track.Source.ScreenShareAudio;
-
-      // Screen share video & game audio get the adaptive stream buffer.
-      // Voice chat (microphone) stays at low latency (<= 150ms) to preserve natural conversation.
-      const targetMs = isScreen ? bufferMs : Math.min(bufferMs, MAX_VOICE_BUFFER_MS);
-      const targetSec = targetMs / 1000;
-
-      const receiver = (track as any).receiver as RTCRtpReceiver | undefined;
-      if (receiver) {
-        if ('playoutDelayHint' in receiver) {
-          receiver.playoutDelayHint = targetSec;
-        }
-        if ('jitterBufferTarget' in receiver) {
-          (receiver as any).jitterBufferTarget = targetMs;
-        }
-      }
-    } catch (err) {
-      console.warn('Failed to apply receiver buffer delay hint:', err);
-    }
-  }, []);
-
-  // Helper to update all active receivers across the Room & PeerConnection
-  const applyBufferToAllReceivers = useCallback((bufferMs: number = DEFAULT_STREAM_BUFFER_MS) => {
-    const room = roomRef.current;
-    if (!room) return;
-
-    // 1. Through PeerConnection subscriber receivers
-    try {
-      const subPC =
-        (room.engine as any)?.pcManager?.subscriber?.pc ||
-        (room.engine as any)?.pcManager?.subscriber ||
-        (room.engine as any)?.subscriber?.pc;
-
-      if (subPC && typeof subPC.getReceivers === 'function') {
-        const receivers = subPC.getReceivers() as RTCRtpReceiver[];
-        const bufferSec = bufferMs / 1000;
-        receivers.forEach((receiver) => {
-          if (receiver.track?.kind === 'audio') return; // mic/screen audio handled per track below
-          if ('playoutDelayHint' in receiver) {
-            receiver.playoutDelayHint = bufferSec;
-          }
-          if ('jitterBufferTarget' in receiver) {
-            (receiver as any).jitterBufferTarget = bufferMs;
-          }
-        });
-      }
-    } catch (e) {
-      console.warn('Failed to update pc receivers buffer:', e);
-    }
-
-    // 2. Through remote participants published tracks
-    room.remoteParticipants.forEach((p) => {
-      p.trackPublications.forEach((pub) => {
-        if (pub.track) {
-          applyReceiverPlayoutBuffer(pub.track, bufferMs);
-        }
-      });
-    });
-  }, [applyReceiverPlayoutBuffer]);
-
-  const setPlayoutBufferMs = useCallback((bufferMs: number) => {
-    const clamped = Math.max(MIN_STREAM_BUFFER_MS, Math.min(MAX_STREAM_BUFFER_MS, bufferMs));
-    playoutBufferMsRef.current = clamped;
-    setPlayoutBufferMsState(clamped);
-    applyBufferToAllReceivers(clamped);
-  }, [applyBufferToAllReceivers]);
-
-  // Screen shares are never received until the viewer picks them (bandwidth), while voice and
-  // everything else keeps auto-subscribing: the room joins with autoSubscribe off, so this is the
-  // single place that decides what each remote publication should be doing.
-  const watchedShareIdsRef = useRef<Set<string>>(new Set());
-  const syncSubscriptions = useCallback((room: Room) => {
-    room.remoteParticipants.forEach((p) => {
-      p.trackPublications.forEach((pub) => {
-        const isShare =
-          pub.source === Track.Source.ScreenShare || pub.source === Track.Source.ScreenShareAudio;
-        const wanted = isShare ? watchedShareIdsRef.current.has(p.identity) : true;
-        if (pub.isDesired !== wanted) pub.setSubscribed(wanted);
-      });
-    });
-  }, []);
-
-  // Update screen shares list from room participants
-  const updateScreenShares = useCallback((room: Room) => {
-    const list: ScreenShareItem[] = [];
-
-    // Local screen share
-    if (room.localParticipant) {
-      const localVideoPub = room.localParticipant.getTrackPublication(Track.Source.ScreenShare);
-      const localAudioPub = room.localParticipant.getTrackPublication(Track.Source.ScreenShareAudio);
-      if (localVideoPub && localVideoPub.track) {
-        list.push({
-          id: room.localParticipant.identity,
-          participantIdentity: room.localParticipant.identity,
-          participantName: room.localParticipant.name || room.localParticipant.identity,
-          videoTrack: localVideoPub.track,
-          videoPublication: localVideoPub,
-          audioTrack: localAudioPub?.track,
-          isLocal: true,
-          isWatching: true,
-          resolution: formatResolution(localVideoPub.dimensions),
-        });
-      }
-    }
-
-    // Remote screen shares
-    room.remoteParticipants.forEach((p) => {
-      const videoPub = p.getTrackPublication(Track.Source.ScreenShare);
-      const audioPub = p.getTrackPublication(Track.Source.ScreenShareAudio);
-      // Listed as soon as it is published, even unsubscribed, so the viewer can choose to watch it.
-      if (videoPub) {
-        list.push({
-          id: p.identity,
-          participantIdentity: p.identity,
-          participantName: p.name || p.identity,
-          videoTrack: videoPub.track ?? null,
-          videoPublication: videoPub,
-          audioTrack: audioPub?.track,
-          isLocal: false,
-          isWatching: watchedShareIdsRef.current.has(p.identity),
-          resolution: formatResolution(videoPub.dimensions),
-        });
-      }
-    });
-
-    setScreenShares(list);
-
-    // Keep remoteScreenTrack / localScreenTrack synced for backwards compatibility
-    const local = list.find((s) => s.isLocal);
-    const remote = list.find((s) => !s.isLocal && s.videoTrack);
-    setLocalScreenTrack(local?.videoTrack || null);
-    setRemoteScreenTrack(remote?.videoTrack || null);
-    if (list.length > 0) {
-      setHostName(list[0].participantName);
-    }
-  }, []);
-
-  // Update participant list with real-time VAD voice status
+  // Participant list with real-time voice activity (VAD) and deafen status.
   const updateParticipantList = useCallback((room: Room) => {
+    const vad = vadRef.current;
     const list: ParticipantInfo[] = [];
 
     // Local participant
     if (room.localParticipant) {
-      const localVad = vadSpeakingMapRef.current.get(room.localParticipant.identity);
+      const localVad = vad?.isSpeaking(room.localParticipant.identity);
       const isSpeaking = room.localParticipant.isMicrophoneEnabled
         ? (localVad !== undefined ? localVad : room.localParticipant.isSpeaking)
         : false;
@@ -566,7 +88,7 @@ export function useLiveKit({ url, token, onDisconnected, restore }: UseLiveKitOp
 
     // Remote participants
     room.remoteParticipants.forEach((p) => {
-      const remoteVad = vadSpeakingMapRef.current.get(p.identity);
+      const remoteVad = vad?.isSpeaking(p.identity);
       const isSpeaking = remoteVad !== undefined ? remoteVad : p.isSpeaking;
 
       list.push({
@@ -580,316 +102,16 @@ export function useLiveKit({ url, token, onDisconnected, restore }: UseLiveKitOp
     });
 
     setParticipants(list);
-  }, []);
+  }, [isDeafenedRef]);
+
+  // Polls every 40ms and re-renders the participant list only when someone starts/stops speaking.
+  if (!vadRef.current) vadRef.current = new VoiceActivityDetector((room) => updateParticipantList(room));
+  const vad = vadRef.current;
 
   const broadcastDeafened = useCallback((room: Room, deafened: boolean) => {
     const payload = new TextEncoder().encode(JSON.stringify({ type: 'deafen', deafened }));
     room.localParticipant.publishData(payload, { reliable: true }).catch(() => {});
   }, []);
-
-  // Real-time audio activity detector (runs every 40ms, updates React ONLY on state change)
-  const checkAudioActivity = useCallback(() => {
-    const room = roomRef.current;
-    if (!room || room.state !== ConnectionState.Connected) return;
-
-    const now = Date.now();
-    let stateChanged = false;
-
-    // The local mic's mediaStreamTrack switches to the processed (suppressed) track whenever a
-    // processor is set/restarted, so the indicator must follow it instead of the raw capture.
-    const local = room.localParticipant;
-    const localMicTrack = local?.getTrackPublication(Track.Source.Microphone)?.track?.mediaStreamTrack;
-    if (local?.isMicrophoneEnabled && localMicTrack) {
-      registerVadTrack(local.identity, localMicTrack);
-    }
-
-    vadNodesRef.current.forEach((node, identity) => {
-      if (node.track.readyState === 'ended') {
-        unregisterVadTrack(identity);
-        stateChanged = true;
-        return;
-      }
-
-      // If local participant and mic is disabled, force not speaking
-      if (identity === room.localParticipant?.identity && !room.localParticipant.isMicrophoneEnabled) {
-        if (vadSpeakingMapRef.current.get(identity)) {
-          vadSpeakingMapRef.current.set(identity, false);
-          stateChanged = true;
-        }
-        return;
-      }
-
-      node.analyser.getByteFrequencyData(node.buffer as any);
-      let sum = 0;
-      let max = 0;
-      for (let i = 0; i < node.buffer.length; i++) {
-        const val = node.buffer[i];
-        sum += val;
-        if (val > max) max = val;
-      }
-      const avg = sum / node.buffer.length;
-
-      // Sensitivity: avg > 8 or peak frequency > 35 indicates speech
-      const isAboveThreshold = avg > 8 || max > 35;
-      if (isAboveThreshold) {
-        vadLastSpokeAtRef.current.set(identity, now);
-      }
-
-      const lastSpoke = vadLastSpokeAtRef.current.get(identity) || 0;
-      const shouldBeSpeaking = now - lastSpoke < 350; // 350ms smooth hold time
-      const currentSpeaking = vadSpeakingMapRef.current.get(identity) || false;
-
-      if (shouldBeSpeaking !== currentSpeaking) {
-        vadSpeakingMapRef.current.set(identity, shouldBeSpeaking);
-        stateChanged = true;
-      }
-    });
-
-    if (stateChanged) {
-      updateParticipantList(room);
-    }
-  }, [registerVadTrack, unregisterVadTrack, updateParticipantList]);
-
-  // WebRTC Real-time Stats Collector for both Host (publisher) and Viewer (subscriber)
-  const collectStats = useCallback(async () => {
-    const room = roomRef.current;
-    if (!room || room.state !== ConnectionState.Connected) return;
-
-    try {
-      const pubPromise = (room.engine as any)?.pcManager?.publisher?.getStats?.();
-      const subPromise = (room.engine as any)?.pcManager?.subscriber?.getStats?.();
-
-      const [pubResult, subResult] = await Promise.allSettled([pubPromise, subPromise]);
-      const reports: RTCStatsReport[] = [];
-      if (pubResult.status === 'fulfilled' && pubResult.value) reports.push(pubResult.value);
-      if (subResult.status === 'fulfilled' && subResult.value) reports.push(subResult.value);
-
-      if (reports.length === 0) return;
-
-      let rtt = 0;
-      let packetLoss = 0;
-      let fps = 0;
-      let width = 0;
-      let height = 0;
-      let codec = '';
-      let totalBytes = 0;
-      let outboundBytes = 0; // sum across simulcast layers
-      let totalFrames = 0;
-      let jitter = 0;
-      let measuredBufferDelay: number | undefined;
-      let bufferDelaySum = 0;
-      let bufferEmittedCount = 0;
-      let qualityLimitationReason: string | undefined;
-      let encodeTimeMs: number | undefined;
-      let captureFps: number | undefined;
-      let captureSize: string | undefined;
-      const layerList: string[] = [];
-      let targetBitrateKbps: number | undefined;
-      let totalNack = 0;
-      let totalPli = 0;
-      let totalFreezes = 0;
-      let totalDropped = 0;
-      const now = Date.now();
-
-      reports.forEach((rtcReport) => {
-        rtcReport.forEach((report: any) => {
-          // 1. Connection RTT (Latência)
-          if (report.type === 'candidate-pair' && (report.state === 'succeeded' || report.nominated)) {
-            if (report.currentRoundTripTime !== undefined) {
-              rtt = Math.round(report.currentRoundTripTime * 1000);
-            }
-          }
-
-          // 2. Remote Inbound (Packet Loss and RTT from remote feedback)
-          if (report.type === 'remote-inbound-rtp' && (report.kind === 'video' || report.mediaType === 'video')) {
-            if (report.roundTripTime !== undefined && rtt === 0) {
-              rtt = Math.round(report.roundTripTime * 1000);
-            }
-            if (report.fractionLost !== undefined && report.fractionLost > 0) {
-              packetLoss = Math.max(packetLoss, (report.fractionLost / 256) * 100);
-            }
-            if (report.packetsLost !== undefined && report.packetsReceived) {
-              const total = report.packetsLost + report.packetsReceived;
-              if (total > 0) {
-                packetLoss = Math.max(packetLoss, (report.packetsLost / total) * 100);
-              }
-            }
-          }
-
-          // 3. Inbound RTP (Viewer receiving video)
-          if (report.type === 'inbound-rtp' && (report.kind === 'video' || report.mediaType === 'video')) {
-            if (report.framesPerSecond) fps = Math.max(fps, Math.round(report.framesPerSecond));
-            if (report.frameWidth) width = Math.max(width, report.frameWidth);
-            if (report.frameHeight) height = Math.max(height, report.frameHeight);
-            if (report.framesDecoded || report.framesReceived) {
-              totalFrames = Math.max(totalFrames, report.framesDecoded || report.framesReceived);
-            }
-            if (report.bytesReceived) {
-              totalBytes = Math.max(totalBytes, report.bytesReceived);
-            }
-            if (report.jitter !== undefined) {
-              jitter = Math.round(report.jitter * 1000);
-            }
-            if (report.nackCount) totalNack += report.nackCount;
-            if (report.pliCount) totalPli += report.pliCount;
-            if (report.freezeCount) totalFreezes += report.freezeCount;
-            if (report.framesDropped) totalDropped += report.framesDropped;
-            if (report.jitterBufferDelay !== undefined && report.jitterBufferEmittedCount) {
-              // Cumulative counters: the per-window delta below gives the *current* delay.
-              bufferDelaySum += report.jitterBufferDelay;
-              bufferEmittedCount += report.jitterBufferEmittedCount;
-              measuredBufferDelay = Math.round(
-                (report.jitterBufferDelay / report.jitterBufferEmittedCount) * 1000
-              );
-            }
-            if (report.packetsLost !== undefined && report.packetsReceived) {
-              const total = report.packetsLost + report.packetsReceived;
-              if (total > 0) {
-                packetLoss = Math.max(packetLoss, (report.packetsLost / total) * 100);
-              }
-            }
-            if (report.codecId) {
-              const codecReport = rtcReport.get(report.codecId);
-              if (codecReport && codecReport.mimeType) {
-                codec = codecReport.mimeType.replace('video/', '').toUpperCase();
-              }
-            }
-          }
-
-          // 3b. Capture source (Host): real frame rate coming out of getDisplayMedia
-          if (report.type === 'media-source' && report.kind === 'video') {
-            if (report.framesPerSecond) captureFps = Math.round(report.framesPerSecond);
-            if (report.width && report.height) captureSize = `${report.width}x${report.height}`;
-          }
-
-          // 4. Outbound RTP (Host sending video)
-          if (report.type === 'outbound-rtp' && (report.kind === 'video' || report.mediaType === 'video')) {
-            if (report.framesPerSecond) fps = Math.max(fps, Math.round(report.framesPerSecond));
-            if (report.frameWidth) width = Math.max(width, report.frameWidth);
-            if (report.frameHeight) height = Math.max(height, report.frameHeight);
-            if (report.framesSent || report.framesEncoded) {
-              totalFrames = Math.max(totalFrames, report.framesSent || report.framesEncoded);
-            }
-            if (report.bytesSent) {
-              outboundBytes += report.bytesSent;
-            }
-            layerList.push(
-              `${report.rid ?? 'f'}:${report.frameWidth ?? 0}x${report.frameHeight ?? 0}@${Math.round(report.framesPerSecond ?? 0)}${report.active === false ? ' pausada' : ''}`
-            );
-            if (report.targetBitrate) {
-              targetBitrateKbps = Math.round(report.targetBitrate / 1000);
-            }
-            if (report.nackCount) totalNack += report.nackCount;
-            if (report.pliCount) totalPli += report.pliCount;
-            if (report.qualityLimitationReason) {
-              qualityLimitationReason = report.qualityLimitationReason;
-            }
-            if (report.totalEncodeTime && report.framesEncoded) {
-              encodeTimeMs = Math.round((report.totalEncodeTime / report.framesEncoded) * 1000 * 10) / 10;
-            }
-            if (report.codecId) {
-              const codecReport = rtcReport.get(report.codecId);
-              if (codecReport && codecReport.mimeType) {
-                codec = codecReport.mimeType.replace('video/', '').toUpperCase();
-              }
-            }
-          }
-        });
-      });
-
-      totalBytes = Math.max(totalBytes, outboundBytes);
-
-      // Calculate Bitrate and FPS from deltas if not directly reported
-      let bitrate = 0;
-      if (prevStatsRef.current && totalBytes > 0) {
-        const timeDiffSec = (now - prevStatsRef.current.timestamp) / 1000;
-        const bytesDiff = totalBytes - prevStatsRef.current.bytes;
-        const framesDiff = totalFrames - prevStatsRef.current.frames;
-
-        if (timeDiffSec > 0.4 && bytesDiff >= 0) {
-          bitrate = Math.round((bytesDiff * 8) / timeDiffSec / 1000);
-        }
-
-        if (fps === 0 && timeDiffSec > 0.4 && framesDiff > 0) {
-          fps = Math.round(framesDiff / timeDiffSec);
-        }
-      }
-
-      const freezeDelta = prevStatsRef.current ? Math.max(0, totalFreezes - prevStatsRef.current.freezes) : 0;
-      const droppedDelta = prevStatsRef.current ? Math.max(0, totalDropped - prevStatsRef.current.dropped) : 0;
-      const nackDelta = Math.max(0, totalNack - prevCountersRef.current.nack);
-      const pliDelta = Math.max(0, totalPli - prevCountersRef.current.pli);
-      prevCountersRef.current = { nack: totalNack, pli: totalPli };
-      prevStatsRef.current = {
-        bytes: totalBytes,
-        frames: totalFrames,
-        timestamp: now,
-        freezes: totalFreezes,
-        dropped: totalDropped,
-      };
-
-      // Current jitter-buffer delay: average over the last sampling window, not since stream start.
-      if (measuredBufferDelay !== undefined) {
-        const prev = prevBufferRef.current;
-        if (prev && bufferEmittedCount > prev.count) {
-          measuredBufferDelay = Math.round(
-            ((bufferDelaySum - prev.delay) / (bufferEmittedCount - prev.count)) * 1000
-          );
-        }
-        prevBufferRef.current = { delay: bufferDelaySum, count: bufferEmittedCount };
-      }
-
-      // Adaptive playout buffer (viewer only). Latency is the priority: grow slowly, only on a
-      // sustained problem (2 consecutive bad windows), cap low, and shrink back quickly.
-      const isViewing = measuredBufferDelay !== undefined;
-      if (isViewing) {
-        const current = playoutBufferMsRef.current;
-        // Not freezeCount: screen capture is event-driven, so a static screen looks like a freeze.
-        const bad = nackDelta > 10 || jitter > Math.max(60, current * 0.5);
-        if (bad) {
-          calmSamplesRef.current = 0;
-          badSamplesRef.current += 1;
-          if (badSamplesRef.current >= 2 && current < MAX_STREAM_BUFFER_MS) {
-            console.debug(`[buffer] +50ms -> ${current + 50}ms (nack=${nackDelta} jitter=${jitter}ms)`);
-            setPlayoutBufferMs(current + 50);
-          }
-        } else {
-          badSamplesRef.current = 0;
-          if (++calmSamplesRef.current >= 5 && current > DEFAULT_STREAM_BUFFER_MS) {
-            calmSamplesRef.current = 0;
-            console.debug(`[buffer] -50ms -> ${current - 50}ms`);
-            setPlayoutBufferMs(current - 50);
-          }
-        }
-      }
-
-      setStats({
-        bitrateKbps: bitrate,
-        rttMs: rtt,
-        packetLossPercent: parseFloat(packetLoss.toFixed(1)),
-        fps,
-        width,
-        height,
-        codec: codec || '—',
-        jitterMs: jitter,
-        bufferDelayMs: measuredBufferDelay,
-        playoutBufferMs: playoutBufferMsRef.current,
-        bytesReceivedOrSent: totalBytes,
-        qualityLimitationReason,
-        captureFps,
-        captureSize,
-        layers: layerList.length ? layerList.join(' | ') : undefined,
-        targetBitrateKbps,
-        nackCount: nackDelta,
-        pliCount: pliDelta,
-        encodeTimeMs,
-        freezeCount: freezeDelta,
-        framesDropped: droppedDelta,
-      });
-    } catch {
-      // Ignore stats collection error during renegotiations
-    }
-  }, [setPlayoutBufferMs]);
 
   const setMicEnabled = useCallback(
     async (enabled: boolean): Promise<boolean> => {
@@ -912,7 +134,7 @@ export function useLiveKit({ url, token, onDisconnected, restore }: UseLiveKitOp
             }
           }
         } else {
-          unregisterVadTrack(room.localParticipant.identity);
+          vad.unregister(room.localParticipant.identity);
         }
         updateParticipantList(room);
         return true;
@@ -921,7 +143,7 @@ export function useLiveKit({ url, token, onDisconnected, restore }: UseLiveKitOp
         return false;
       }
     },
-    [applyNoiseSuppression, unregisterVadTrack, updateParticipantList]
+    [vad, isNoiseSuppressionEnabledRef, applyNoiseSuppression, updateParticipantList]
   );
 
   // Connect to room
@@ -960,16 +182,7 @@ export function useLiveKit({ url, token, onDisconnected, restore }: UseLiveKitOp
       updateParticipantList(room);
       updateScreenShares(room);
 
-      setMessages((prev) => [
-        ...prev,
-        {
-          id: `system-welcome-${Date.now()}`,
-          sender: 'Sistema',
-          text: 'Você entrou na sala',
-          timestamp: Date.now(),
-          isSystem: true,
-        },
-      ]);
+      addSystemMessage(`system-welcome-${Date.now()}`, 'Você entrou na sala');
 
       playJoinSound();
 
@@ -977,47 +190,16 @@ export function useLiveKit({ url, token, onDisconnected, restore }: UseLiveKitOp
       room.startAudio().catch(() => {});
       setCanPlaybackAudio(room.canPlaybackAudio);
 
-      // Start real-time Client-Side VAD (< 20ms response)
-      try {
-        getVadAudioContext();
-        room.remoteParticipants.forEach((p) => {
-          const micPub = p.getTrackPublication(Track.Source.Microphone);
-          if (micPub?.track?.mediaStreamTrack) {
-            registerVadTrack(p.identity, micPub.track.mediaStreamTrack);
-          }
-        });
-        if (vadIntervalRef.current) clearInterval(vadIntervalRef.current);
-        vadIntervalRef.current = window.setInterval(checkAudioActivity, 40);
-      } catch (vadErr) {
-        console.warn('Failed to start VAD on connect:', vadErr);
-      }
-
-      if (statsIntervalRef.current) clearInterval(statsIntervalRef.current);
-      statsIntervalRef.current = window.setInterval(collectStats, 1000);
+      vad.start(room);
+      startStats();
     };
 
     const handleDisconnected = () => {
       if (!isSubscribed) return;
       setConnectionState(ConnectionState.Disconnected);
-      setIsScreenSharing(false);
-      setRemoteScreenTrack(null);
-      setLocalScreenTrack(null);
-      setScreenShares([]);
-      if (statsIntervalRef.current) clearInterval(statsIntervalRef.current);
-
-      if (vadIntervalRef.current) {
-        clearInterval(vadIntervalRef.current);
-        vadIntervalRef.current = null;
-      }
-      vadNodesRef.current.forEach((node) => {
-        try {
-          node.source.disconnect();
-          node.analyser.disconnect();
-        } catch {}
-      });
-      vadNodesRef.current.clear();
-      vadSpeakingMapRef.current.clear();
-      vadLastSpokeAtRef.current.clear();
+      resetScreenShares();
+      stopStats();
+      vad.stop();
 
       if (isExplicitDisconnectRef.current) {
         onDisconnectedRef.current?.();
@@ -1030,7 +212,7 @@ export function useLiveKit({ url, token, onDisconnected, restore }: UseLiveKitOp
       syncSubscriptions(room);
       updateParticipantList(room);
       updateScreenShares(room);
-      applyBufferToAllReceivers(playoutBufferMsRef.current);
+      applyPlayoutBufferToAll(playoutBufferMsRef.current);
     };
 
     const handleAudioPlaybackStatusChanged = () => {
@@ -1038,7 +220,6 @@ export function useLiveKit({ url, token, onDisconnected, restore }: UseLiveKitOp
       setCanPlaybackAudio(room.canPlaybackAudio);
     };
 
-    // ATTACH REMOTE TRACKS (AUDIO & VIDEO)
     const handleTrackSubscribed = (
       track: Track,
       _publication: any,
@@ -1047,51 +228,13 @@ export function useLiveKit({ url, token, onDisconnected, restore }: UseLiveKitOp
       if (!isSubscribed) return;
 
       // Apply playout buffer hint to remote track for smooth 60 FPS playback
-      applyReceiverPlayoutBuffer(track, playoutBufferMsRef.current);
+      applyPlayoutBuffer(track, playoutBufferMsRef.current);
 
       // Automatically attach and play remote audio (Microphone & Screen Audio)
       if (track.kind === Track.Kind.Audio) {
-        const el = track.attach();
-        const isScreenAudio = track.source === Track.Source.ScreenShareAudio;
-        el.setAttribute('data-livekit-track', track.sid || track.kind);
-        el.setAttribute('data-participant', participant.identity);
-        el.setAttribute('data-source', isScreenAudio ? 'screen_share_audio' : 'microphone');
-
-        // Deafening disables the incoming tracks (toggleDeafen); tracks that arrive afterwards,
-        // such as someone joining later, must start disabled too or they would be heard.
-        if (isDeafenedRef.current && track.mediaStreamTrack) {
-          track.mediaStreamTrack.enabled = false;
-        }
-
-        if (isScreenAudio) {
-          const streamVol = streamVolumesRef.current[participant.identity] !== undefined
-            ? streamVolumesRef.current[participant.identity]
-            : 1;
-          const clampedStreamVol = Math.max(0, Math.min(1, streamVol));
-
-          if ('setVolume' in track) {
-            try {
-              (track as any).setVolume(clampedStreamVol);
-            } catch {}
-          }
-          if (el) {
-            try {
-              (el as HTMLAudioElement).volume = clampedStreamVol;
-              (el as HTMLAudioElement).muted = clampedStreamVol === 0 || isDeafenedRef.current;
-            } catch {}
-          }
-        } else {
-          // Voice Microphone track: check individual userVolumesRef or fallback to currentVolumeRef
-          const voiceVol = userVolumesRef.current[participant.identity] !== undefined
-            ? userVolumesRef.current[participant.identity]
-            : currentVolumeRef.current;
-
-          applyParticipantVolume(participant.identity, voiceVol, track);
-
-          // Register in real-time VAD for 0ms voice activity feedback
-          if (track.mediaStreamTrack) {
-            registerVadTrack(participant.identity, track.mediaStreamTrack);
-          }
+        attachRemoteAudio(track, participant.identity);
+        if (track.source !== Track.Source.ScreenShareAudio && track.mediaStreamTrack) {
+          vad.register(participant.identity, track.mediaStreamTrack);
         }
       }
 
@@ -1103,14 +246,11 @@ export function useLiveKit({ url, token, onDisconnected, restore }: UseLiveKitOp
       if (!isSubscribed) return;
 
       if (track.kind === Track.Kind.Audio) {
-        track.detach();
         const participantId = participant?.identity;
-        if (participantId) {
-          if (track.source !== Track.Source.ScreenShareAudio) {
-            unregisterVadTrack(participantId);
-          }
-          disposeBooster(participantId);
+        if (participantId && track.source !== Track.Source.ScreenShareAudio) {
+          vad.unregister(participantId);
         }
+        detachRemoteAudio(track, participantId);
       }
 
       updateParticipantList(room);
@@ -1120,55 +260,16 @@ export function useLiveKit({ url, token, onDisconnected, restore }: UseLiveKitOp
     const handleDataReceived = (payload: Uint8Array, participant?: RemoteParticipant) => {
       if (!isSubscribed) return;
       try {
-        const decoded = new TextDecoder().decode(payload);
-        const data = JSON.parse(decoded);
+        const data = JSON.parse(new TextDecoder().decode(payload));
 
-        if (data.type === 'chat') {
-          const id = acceptMessageId(data.id);
-          setMessages((prev) => [
-            ...prev,
-            ...(prev.some((m) => m.id === id)
-              ? []
-              : [
-                  {
-                    id,
-                    sender: participant?.name || participant?.identity || data.sender || 'Amigo',
-                    senderIdentity: participant?.identity,
-                    text: data.text,
-                    timestamp: Date.now(),
-                    isHost: data.isHost,
-                  },
-                ]),
-          ]);
-        } else if (data.type === 'chat-edit' || data.type === 'chat-delete') {
-          // Only the author may change a message: the sender identity comes from LiveKit,
-          // so a peer cannot touch someone else's message by guessing its id.
-          if (!participant || typeof data.id !== 'string') return;
-          const target = messagesRef.current.find(
-            (m) => m.id === data.id && m.senderIdentity === participant.identity
-          );
-          if (!target) return;
-          if (data.type === 'chat-delete') {
-            if (target.imageUrl) URL.revokeObjectURL(target.imageUrl);
-            setMessages((prev) => prev.filter((m) => m !== target));
-          } else {
-            const text = typeof data.text === 'string' ? data.text.trim() : '';
-            if (!text && !target.imageUrl) return;
-            const next = target.imageUrl ? text.slice(0, MAX_CAPTION_LENGTH) : text;
-            setMessages((prev) => prev.map((m) => (m === target ? { ...m, text: next, edited: true } : m)));
-          }
-        } else if (data.type === 'deafen') {
+        if (data.type === 'deafen') {
           if (participant) {
             if (data.deafened) deafenedPeersRef.current.add(participant.identity);
             else deafenedPeersRef.current.delete(participant.identity);
             updateParticipantList(room);
           }
-        } else if (data.type === 'reaction') {
-          setReaction({
-            emoji: data.emoji,
-            sender: participant?.name || participant?.identity || 'Amigo',
-            timestamp: Date.now(),
-          });
+        } else {
+          handleChatData(data, participant);
         }
       } catch (err) {
         console.error('Failed to parse received data channel payload', err);
@@ -1183,16 +284,7 @@ export function useLiveKit({ url, token, onDisconnected, restore }: UseLiveKitOp
       updateParticipantList(room);
       updateScreenShares(room);
       const name = participant.name || participant.identity || 'Um usuário';
-      setMessages((prev) => [
-        ...prev,
-        {
-          id: `system-join-${Date.now()}-${Math.random()}`,
-          sender: 'Sistema',
-          text: `${name} entrou na sala`,
-          timestamp: Date.now(),
-          isSystem: true,
-        },
-      ]);
+      addSystemMessage(`system-join-${Date.now()}-${Math.random()}`, `${name} entrou na sala`);
 
       // Play join notification sound if not self and not deafened
       if (participant.identity !== room.localParticipant?.identity && !isDeafenedRef.current) {
@@ -1203,21 +295,12 @@ export function useLiveKit({ url, token, onDisconnected, restore }: UseLiveKitOp
     const handleParticipantDisconnected = (participant: RemoteParticipant) => {
       if (!isSubscribed) return;
       deafenedPeersRef.current.delete(participant.identity);
-      watchedShareIdsRef.current.delete(participant.identity);
-      unregisterVadTrack(participant.identity);
+      unwatch(participant.identity);
+      vad.unregister(participant.identity);
       updateParticipantList(room);
       updateScreenShares(room);
       const name = participant.name || participant.identity || 'Um usuário';
-      setMessages((prev) => [
-        ...prev,
-        {
-          id: `system-leave-${Date.now()}-${Math.random()}`,
-          sender: 'Sistema',
-          text: `${name} saiu da sala`,
-          timestamp: Date.now(),
-          isSystem: true,
-        },
-      ]);
+      addSystemMessage(`system-leave-${Date.now()}-${Math.random()}`, `${name} saiu da sala`);
 
       // Play leave notification sound if not self and not deafened
       if (participant.identity !== room.localParticipant?.identity && !isDeafenedRef.current) {
@@ -1237,15 +320,14 @@ export function useLiveKit({ url, token, onDisconnected, restore }: UseLiveKitOp
       updateScreenShares(room);
     });
     room.on(RoomEvent.TrackUnpublished, (pub, participant) => {
-      // A stream that ends and comes back is a new stream: the viewer chooses again.
-      if (pub.source === Track.Source.ScreenShare) watchedShareIdsRef.current.delete(participant.identity);
+      if (pub.source === Track.Source.ScreenShare) unwatch(participant.identity);
       updateScreenShares(room);
     });
     room.on(RoomEvent.LocalTrackPublished, () => updateScreenShares(room));
     room.on(RoomEvent.LocalTrackUnpublished, (pub) => {
       updateScreenShares(room);
       if (pub.source === Track.Source.Microphone) {
-        unregisterVadTrack(room.localParticipant?.identity);
+        vad.unregister(room.localParticipant?.identity);
       }
     });
     room.on(RoomEvent.ParticipantConnected, handleParticipantConnected);
@@ -1253,38 +335,7 @@ export function useLiveKit({ url, token, onDisconnected, restore }: UseLiveKitOp
     room.on(RoomEvent.ActiveSpeakersChanged, () => updateParticipantList(room));
     room.on(RoomEvent.DataReceived, handleDataReceived);
 
-    room.registerByteStreamHandler(CHAT_IMAGE_TOPIC, async (reader, { identity }) => {
-      const { size, attributes } = reader.info;
-      const mimeType = attributes?.mime ?? '';
-      // Never trust the sender: check type and size before touching the bytes.
-      if (!isAcceptedMime(mimeType) || (size ?? 0) > MAX_RECEIVED_BYTES) return;
-      try {
-        const chunks = await reader.readAll();
-        if (!isSubscribed) return;
-        const url = URL.createObjectURL(new Blob(chunks as BlobPart[], { type: mimeType }));
-        chatImageUrlsRef.current.push(url);
-        const sender = room.remoteParticipants.get(identity);
-        const id = acceptMessageId(attributes?.id);
-        setMessages((prev) => [
-          ...prev,
-          ...(prev.some((m) => m.id === id)
-            ? []
-            : [
-                {
-                  id,
-                  sender: sender?.name || identity,
-                  senderIdentity: identity,
-                  text: (attributes?.caption ?? '').slice(0, MAX_CAPTION_LENGTH),
-                  imageUrl: url,
-                  timestamp: Date.now(),
-                  isHost: attributes?.isHost === '1',
-                },
-              ]),
-        ]);
-      } catch (err) {
-        console.error('Failed to receive chat image', err);
-      }
-    });
+    room.registerByteStreamHandler(CHAT_IMAGE_TOPIC, createImageHandler(room, () => isSubscribed));
 
     room
       .connect(url, token, { autoSubscribe: false })
@@ -1307,55 +358,44 @@ export function useLiveKit({ url, token, onDisconnected, restore }: UseLiveKitOp
     return () => {
       isSubscribed = false;
       stopKeepAlive();
-      if (statsIntervalRef.current) clearInterval(statsIntervalRef.current);
-      if (vadIntervalRef.current) {
-        clearInterval(vadIntervalRef.current);
-        vadIntervalRef.current = null;
-      }
-      vadNodesRef.current.forEach((node) => {
-        try {
-          node.source.disconnect();
-          node.analyser.disconnect();
-        } catch {}
-      });
-      vadNodesRef.current.clear();
-      vadSpeakingMapRef.current.clear();
-      vadLastSpokeAtRef.current.clear();
-      if (vadContextRef.current && vadContextRef.current.state !== 'closed') {
-        vadContextRef.current.close().catch(() => {});
-        vadContextRef.current = null;
-      }
+      stopStats();
+      vad.dispose();
       room.off(RoomEvent.Connected, handleConnected);
       room.off(RoomEvent.Disconnected, handleDisconnected);
       room.off(RoomEvent.AudioPlaybackStatusChanged, handleAudioPlaybackStatusChanged);
       room.off(RoomEvent.TrackSubscribed, handleTrackSubscribed);
       room.off(RoomEvent.TrackUnsubscribed, handleTrackUnsubscribed);
       room.unregisterByteStreamHandler(CHAT_IMAGE_TOPIC);
-      chatImageUrlsRef.current.forEach((u) => URL.revokeObjectURL(u));
-      chatImageUrlsRef.current = [];
-      if (activeProcessorRef.current) {
-        activeProcessorRef.current.destroy().catch(() => {});
-        activeProcessorRef.current = null;
-      }
-      audioBoostersRef.current.forEach((_, participantId) => disposeBooster(participantId));
-      if (boostAudioContextRef.current && boostAudioContextRef.current.state !== 'closed') {
-        boostAudioContextRef.current.close().catch(() => {});
-        boostAudioContextRef.current = null;
-      }
+      releaseImages();
+      destroyNoiseSuppression();
+      disposeAudio();
       room.disconnect();
     };
   }, [
     url,
     token,
-    collectStats,
+    vad,
     updateParticipantList,
-    updateScreenShares,
-    checkAudioActivity,
-    getVadAudioContext,
-    registerVadTrack,
-    unregisterVadTrack,
     setMicEnabled,
     broadcastDeafened,
+    isDeafenedRef,
+    attachRemoteAudio,
+    detachRemoteAudio,
+    disposeAudio,
+    destroyNoiseSuppression,
+    syncSubscriptions,
+    updateScreenShares,
+    unwatch,
+    resetScreenShares,
+    addSystemMessage,
+    handleChatData,
+    createImageHandler,
+    releaseImages,
+    applyPlayoutBuffer,
+    applyPlayoutBufferToAll,
+    playoutBufferMsRef,
+    startStats,
+    stopStats,
   ]);
 
   // Unlock browser audio autoplay policy
@@ -1365,212 +405,12 @@ export function useLiveKit({ url, token, onDisconnected, restore }: UseLiveKitOp
     try {
       await room.startAudio();
       setCanPlaybackAudio(room.canPlaybackAudio);
-      if (vadContextRef.current?.state === 'suspended') {
-        await vadContextRef.current.resume().catch(() => {});
-      }
+      await vad.resume();
     } catch (e) {
       console.error('Failed to unlock audio playback:', e);
     }
   };
 
-  // Start or stop receiving one participant's screen share (video + its audio).
-  const setScreenShareWatching = useCallback((participantIdentity: string, watching: boolean) => {
-    const room = roomRef.current;
-    if (!room) return;
-    if (watching) watchedShareIdsRef.current.add(participantIdentity);
-    else watchedShareIdsRef.current.delete(participantIdentity);
-    syncSubscriptions(room);
-    updateScreenShares(room);
-  }, [syncSubscriptions, updateScreenShares]);
-
-  // Set individual stream audio volume (ONLY affects ScreenShareAudio, keeping Microphone voice intact)
-  const setStreamVolume = useCallback((participantIdentity: string, volume: number) => {
-    const clamped = Math.max(0, Math.min(1, volume));
-    setStreamVolumes((prev) => ({ ...prev, [participantIdentity]: clamped }));
-
-    const room = roomRef.current;
-    if (!room) return;
-
-    // Local participant does not need audio playback adjustment
-    if (room.localParticipant?.identity === participantIdentity) return;
-
-    const participant = room.remoteParticipants.get(participantIdentity);
-    if (participant) {
-      try {
-        participant.setVolume(clamped, Track.Source.ScreenShareAudio);
-      } catch {}
-      participant.audioTrackPublications.forEach((pub) => {
-        if (pub.source === Track.Source.ScreenShareAudio && pub.track && 'setVolume' in pub.track) {
-          try {
-            (pub.track as any).setVolume(clamped);
-          } catch {}
-        }
-      });
-    }
-
-    document
-      .querySelectorAll(`audio[data-participant="${participantIdentity}"][data-source="screen_share_audio"]`)
-      .forEach((el) => {
-        try {
-          (el as HTMLAudioElement).volume = clamped;
-          (el as HTMLAudioElement).muted = clamped === 0 || isDeafenedRef.current;
-        } catch {}
-      });
-  }, []);
-
-  // Set individual participant microphone audio volume (ONLY affects local hearing of that participant's voice)
-  // Supports volume range from 0 to 2.0 (0% to 200%, where 1.0 is 100% normal)
-  const setUserVolume = useCallback((participantIdentity: string, volume: number) => {
-    const clamped = Math.max(0, Math.min(2, volume));
-    setUserVolumes((prev) => {
-      const updated = { ...prev, [participantIdentity]: clamped };
-      try {
-        localStorage.setItem(USER_VOLUMES_STORAGE_KEY, JSON.stringify(updated));
-      } catch {}
-      return updated;
-    });
-
-    applyParticipantVolume(participantIdentity, clamped);
-  }, [applyParticipantVolume]);
-
-  // Set global audio volume for all remote participants and audio elements
-  const setGlobalVolume = (volume: number) => {
-    const clamped = Math.max(0, Math.min(1, volume));
-    currentVolumeRef.current = clamped;
-    const room = roomRef.current;
-    if (!room) return;
-
-    room.remoteParticipants.forEach((p) => {
-      // Set volume for both microphone and screen share audio tracks
-      p.setVolume(clamped, Track.Source.Microphone);
-      p.setVolume(clamped, Track.Source.ScreenShareAudio);
-
-      // Also set volume directly on track instances
-      p.audioTrackPublications.forEach((pub) => {
-        if (pub.track && 'setVolume' in pub.track) {
-          (pub.track as any).setVolume(clamped);
-        }
-      });
-    });
-
-    // Also update attached audio elements in DOM
-    document.querySelectorAll('audio').forEach((el) => {
-      (el as HTMLAudioElement).volume = clamped;
-      (el as HTMLAudioElement).muted = clamped === 0 || isDeafenedRef.current;
-    });
-  };
-
-  // Start Screen Sharing: codec/bitrate/SVC are derived from the device's encoder support (see streamProfile)
-  const startScreenShare = async (config?: Partial<StreamQualityConfig>) => {
-    const room = roomRef.current;
-    if (!room) return;
-
-    try {
-      const targetFps = config?.frameRate || 60;
-      const resolution = config?.resolution || '1080p';
-      const shouldIncludeAudio = config?.includeAudio ?? true;
-      const shouldIsolateRoomAudio = config?.isolateRoomAudio ?? true;
-
-      const profile = await buildScreenShareProfile(resolution, targetFps, {
-        codec: config?.codec,
-        bitrateKbps: config?.bitrateKbps,
-      });
-      const { width, height } = getResolutionSize(resolution);
-
-      await room.localParticipant.setScreenShareEnabled(
-        true,
-        {
-          audio: shouldIncludeAudio
-            ? {
-                autoGainControl: false,
-                echoCancellation: false,
-                noiseSuppression: false,
-                channelCount: 2,
-                sampleRate: 48000,
-                restrictOwnAudio: shouldIsolateRoomAudio,
-              }
-            : false,
-          selfBrowserSurface: 'exclude',
-          surfaceSwitching: 'include',
-          systemAudio: 'include',
-          suppressLocalAudioPlayback: false,
-          resolution: { width, height, frameRate: targetFps },
-          contentHint: config?.contentHint || 'motion',
-        },
-        {
-          audioPreset: {
-            maxBitrate: 192000,
-            priority: 'high',
-          },
-          dtx: false,
-          red: true,
-          simulcast: !!profile.simulcastLayers,
-          screenShareSimulcastLayers: profile.simulcastLayers,
-          videoCodec: profile.codec,
-          scalabilityMode: profile.scalabilityMode,
-          // Backup codec costs a second encode on the host; only AV1 has decoders missing in the wild.
-          backupCodec: profile.codec === 'av1',
-          degradationPreference: profile.degradationPreference,
-          // livekit-client reads `screenShareEncoding` (not `videoEncoding`) for screen shares;
-          // omitting it falls back to its 15 fps / 2.5 Mbps preset.
-          screenShareEncoding: {
-            maxBitrate: profile.maxBitrate,
-            maxFramerate: targetFps,
-            priority: 'high',
-          },
-        }
-      );
-
-      // Force 'music' contentHint on screen audio track for full cinema/music dynamic range
-      const audioPub = room.localParticipant.getTrackPublication(Track.Source.ScreenShareAudio);
-      if (audioPub?.track?.mediaStreamTrack) {
-        audioPub.track.mediaStreamTrack.contentHint = 'music';
-      }
-
-      const videoTrackPub = room.localParticipant.getTrackPublication(Track.Source.ScreenShare);
-      if (videoTrackPub && videoTrackPub.track) {
-        setLocalScreenTrack(videoTrackPub.track);
-        setIsScreenSharing(true);
-        setIsLocalScreenAudioMuted(false);
-        setHostName(room.localParticipant.name || room.localParticipant.identity);
-        startKeepAlive();
-      }
-      updateScreenShares(room);
-    } catch (err) {
-      console.error('Failed to start screen share:', err);
-      setIsScreenSharing(false);
-      setIsLocalScreenAudioMuted(false);
-      stopKeepAlive();
-    }
-  };
-
-  const stopScreenShare = async () => {
-    stopKeepAlive();
-    const room = roomRef.current;
-    if (!room) return;
-
-    await room.localParticipant.setScreenShareEnabled(false);
-
-    setIsScreenSharing(false);
-    setIsLocalScreenAudioMuted(false);
-    setLocalScreenTrack(null);
-    updateScreenShares(room);
-  };
-
-  // Toggle local screen share audio (Host mutes/unmutes outgoing screen sound without muting their mic)
-  const toggleLocalScreenAudio = () => {
-    const room = roomRef.current;
-    if (!room || !room.localParticipant) return;
-
-    const audioPub = room.localParticipant.getTrackPublication(Track.Source.ScreenShareAudio);
-    if (audioPub && audioPub.track && audioPub.track.mediaStreamTrack) {
-      const nextMute = !isLocalScreenAudioMuted;
-      audioPub.track.mediaStreamTrack.enabled = !nextMute;
-      setIsLocalScreenAudioMuted(nextMute);
-    }
-  };
-
-  // Toggle Microphone
   // Only user-initiated toggles (button or hotkey) chime; the automatic start on connect does not.
   const toggleMic = async () => {
     const nextState = !isMicEnabled;
@@ -1579,247 +419,65 @@ export function useLiveKit({ url, token, onDisconnected, restore }: UseLiveKitOp
     else playLeaveSound(0.2);
   };
 
-  // Toggle Noise Suppression (AI RNNoise)
-  const toggleNoiseSuppression = useCallback(async () => {
-    const next = !isNoiseSuppressionEnabled;
-    setIsNoiseSuppressionEnabledState(next);
-    isNoiseSuppressionEnabledRef.current = next;
-    try {
-      localStorage.setItem(NOISE_SUPPRESSION_KEY, String(next));
-    } catch {}
-
-    const room = roomRef.current;
-    if (!room) return;
-
-    const micPub = room.localParticipant.getTrackPublication(Track.Source.Microphone);
-    const micTrack = micPub?.track as LocalAudioTrack | undefined;
-    if (micTrack) {
-      await applyNoiseSuppression(micTrack, next);
-    }
-  }, [isNoiseSuppressionEnabled, applyNoiseSuppression]);
-
-  // Toggle Deafen
   const toggleDeafen = () => {
-    const nextDeafen = !isDeafened;
-    setIsDeafened(nextDeafen);
-    isDeafenedRef.current = nextDeafen;
+    const nextDeafen = !audio.isDeafened;
+    audio.setDeafened(nextDeafen);
     if (nextDeafen) playLeaveSound(0.2);
     else playJoinSound(0.2);
 
     const room = roomRef.current;
     if (!room) return;
-
     broadcastDeafened(room, nextDeafen);
     updateParticipantList(room);
-
-    room.remoteParticipants.forEach((p) => {
-      p.audioTrackPublications.forEach((pub) => {
-        if (pub.track && pub.track.mediaStreamTrack) {
-          pub.track.mediaStreamTrack.enabled = !nextDeafen;
-        }
-      });
-    });
-
-    audioBoostersRef.current.forEach((booster, participantId) => {
-      try {
-        const ctx = boostAudioContextRef.current;
-        if (ctx) {
-          if (nextDeafen) {
-            booster.gain.gain.setTargetAtTime(0, ctx.currentTime, 0.05);
-          } else {
-            const vol = userVolumesRef.current[participantId] ?? 1.0;
-            booster.gain.gain.setTargetAtTime(vol, ctx.currentTime, 0.05);
-          }
-        }
-      } catch {}
-    });
-
-    document.querySelectorAll('audio').forEach((el) => {
-      const audioElement = el as HTMLAudioElement;
-      if (nextDeafen) {
-        audioElement.muted = true;
-      } else {
-        const participantId = audioElement.getAttribute('data-participant');
-        const source = audioElement.getAttribute('data-source');
-        if (source === 'screen_share_audio') {
-          const vol = participantId ? streamVolumesRef.current[participantId] ?? 1 : 1;
-          const clamped = Math.min(1, Math.max(0, vol));
-          audioElement.volume = clamped;
-          audioElement.muted = clamped === 0;
-        } else {
-          const vol = participantId ? userVolumesRef.current[participantId] ?? currentVolumeRef.current : 1;
-          if (vol > 1.0) {
-            audioElement.volume = 0;
-            audioElement.muted = true;
-          } else {
-            const clamped = Math.min(1, Math.max(0, vol));
-            audioElement.volume = clamped;
-            audioElement.muted = clamped === 0;
-          }
-        }
-      }
-    });
-  };
-
-  // Send Live Chat Message
-  const sendMessage = async (text: string) => {
-    const room = roomRef.current;
-    if (!room || !text.trim()) return;
-
-    const msg: ChatMessage = {
-      id: newMessageId(),
-      sender: room.localParticipant.name || room.localParticipant.identity,
-      senderIdentity: room.localParticipant.identity,
-      isOwn: true,
-      text: text.trim(),
-      timestamp: Date.now(),
-      isHost: isScreenSharing,
-    };
-
-    const payload = new TextEncoder().encode(
-      JSON.stringify({
-        type: 'chat',
-        id: msg.id,
-        text: msg.text,
-        sender: msg.sender,
-        isHost: isScreenSharing,
-      })
-    );
-
-    await room.localParticipant.publishData(payload, { reliable: true });
-    setMessages((prev) => [...prev, msg]);
-  };
-
-  // Send an image (with optional caption) as one chat message over a LiveKit byte stream.
-  // Throws a user-facing Error on invalid files.
-  const sendImage = async (file: File, caption = '') => {
-    const room = roomRef.current;
-    if (!room) return;
-
-    const prepared = await prepareChatImage(file);
-    const text = caption.trim().slice(0, MAX_CAPTION_LENGTH);
-    const id = newMessageId();
-    await room.localParticipant.sendBytes(new Uint8Array(await prepared.arrayBuffer()), {
-      topic: CHAT_IMAGE_TOPIC,
-      attributes: { id, mime: prepared.type, caption: text, isHost: isScreenSharing ? '1' : '0' },
-    });
-
-    const url = URL.createObjectURL(prepared);
-    chatImageUrlsRef.current.push(url);
-    setMessages((prev) => [
-      ...prev,
-      {
-        id,
-        sender: room.localParticipant.name || room.localParticipant.identity,
-        senderIdentity: room.localParticipant.identity,
-        isOwn: true,
-        text,
-        imageUrl: url,
-        timestamp: Date.now(),
-        isHost: isScreenSharing,
-      },
-    ]);
-  };
-
-  // Edit one of our own messages; peers re-check authorship on their side.
-  const editMessage = async (id: string, text: string) => {
-    const room = roomRef.current;
-    const target = messagesRef.current.find((m) => m.id === id && m.isOwn);
-    if (!room || !target) return;
-    const trimmed = text.trim();
-    const next = target.imageUrl ? trimmed.slice(0, MAX_CAPTION_LENGTH) : trimmed;
-    if (next === target.text || (!next && !target.imageUrl)) return;
-
-    const payload = new TextEncoder().encode(JSON.stringify({ type: 'chat-edit', id, text: next }));
-    await room.localParticipant.publishData(payload, { reliable: true });
-    setMessages((prev) => prev.map((m) => (m === target ? { ...m, text: next, edited: true } : m)));
-  };
-
-  const deleteMessage = async (id: string) => {
-    const room = roomRef.current;
-    const target = messagesRef.current.find((m) => m.id === id && m.isOwn);
-    if (!room || !target) return;
-
-    const payload = new TextEncoder().encode(JSON.stringify({ type: 'chat-delete', id }));
-    await room.localParticipant.publishData(payload, { reliable: true });
-    if (target.imageUrl) URL.revokeObjectURL(target.imageUrl);
-    setMessages((prev) => prev.filter((m) => m !== target));
-  };
-
-  // Send Reaction / Emoji
-  const sendReaction = async (emoji: string) => {
-    const room = roomRef.current;
-    if (!room) return;
-
-    const payload = new TextEncoder().encode(
-      JSON.stringify({
-        type: 'reaction',
-        emoji,
-      })
-    );
-
-    await room.localParticipant.publishData(payload, { reliable: false });
-    setReaction({
-      emoji,
-      sender: room.localParticipant.name || room.localParticipant.identity,
-      timestamp: Date.now(),
-    });
   };
 
   const handleManualDisconnect = () => {
     isExplicitDisconnectRef.current = true;
     playLeaveSound();
     stopKeepAlive();
-    if (activeProcessorRef.current) {
-      activeProcessorRef.current.destroy().catch(() => {});
-      activeProcessorRef.current = null;
-    }
-    audioBoostersRef.current.forEach((_, participantId) => disposeBooster(participantId));
-    if (boostAudioContextRef.current && boostAudioContextRef.current.state !== 'closed') {
-      boostAudioContextRef.current.close().catch(() => {});
-      boostAudioContextRef.current = null;
-    }
+    destroyNoiseSuppression();
+    disposeAudio();
     roomRef.current?.disconnect();
   };
 
   return {
     room: roomRef.current,
     connectionState,
-    isScreenSharing,
-    isLocalScreenAudioMuted,
+    isScreenSharing: screen.isScreenSharing,
+    isLocalScreenAudioMuted: screen.isLocalScreenAudioMuted,
     isMicEnabled,
-    isDeafened,
-    isNoiseSuppressionEnabled,
+    isDeafened: audio.isDeafened,
+    isNoiseSuppressionEnabled: noise.isEnabled,
     isNoiseSuppressionSupported: isNoiseSuppressionSupported(),
     canPlaybackAudio,
     unlockAudio,
-    setGlobalVolume,
-    setStreamVolume,
-    setScreenShareWatching,
-    streamVolumes,
-    setUserVolume,
-    userVolumes,
-    screenShares,
-    messages,
+    setGlobalVolume: audio.setGlobalVolume,
+    setStreamVolume: audio.setStreamVolume,
+    setScreenShareWatching: screen.setScreenShareWatching,
+    streamVolumes: audio.streamVolumes,
+    setUserVolume: audio.setUserVolume,
+    userVolumes: audio.userVolumes,
+    screenShares: screen.screenShares,
+    messages: chat.messages,
     participants,
-    remoteScreenTrack,
-    localScreenTrack,
-    stats,
-    playoutBufferMs,
-    setPlayoutBufferMs,
-    reaction,
-    hostName,
-    startScreenShare,
-    stopScreenShare,
-    toggleLocalScreenAudio,
+    remoteScreenTrack: screen.remoteScreenTrack,
+    localScreenTrack: screen.localScreenTrack,
+    stats: streamStats.stats,
+    playoutBufferMs: playout.playoutBufferMs,
+    setPlayoutBufferMs: playout.setPlayoutBufferMs,
+    reaction: chat.reaction,
+    hostName: screen.hostName,
+    startScreenShare: screen.startScreenShare,
+    stopScreenShare: screen.stopScreenShare,
+    toggleLocalScreenAudio: screen.toggleLocalScreenAudio,
     toggleMic,
     toggleDeafen,
-    toggleNoiseSuppression,
-    sendMessage,
-    sendImage,
-    editMessage,
-    deleteMessage,
-    sendReaction,
+    toggleNoiseSuppression: noise.toggle,
+    sendMessage: chat.sendMessage,
+    sendImage: chat.sendImage,
+    editMessage: chat.editMessage,
+    deleteMessage: chat.deleteMessage,
+    sendReaction: chat.sendReaction,
     disconnect: handleManualDisconnect,
   };
 }
