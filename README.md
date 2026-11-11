@@ -39,12 +39,12 @@ flowchart LR
 
 ## 🚀 Como Executar
 
-### Opção 1: Usando Docker Compose (Recomendado para Produção/Turnkey)
+### Opção 1: Docker Compose (stack local completa)
 
-Com apenas um comando, todos os serviços (LiveKit SFU + API + Frontend) sobem automaticamente:
+LiveKit SFU + API + Frontend sobem juntos a partir de `infra/local/`:
 
 ```bash
-docker compose up -d
+npm run docker:up
 ```
 
 - **Frontend / Player**: `http://localhost:3000`
@@ -53,7 +53,7 @@ docker compose up -d
 
 Para parar:
 ```bash
-docker compose down
+npm run docker:down
 ```
 
 ---
@@ -103,7 +103,7 @@ Pré-requisitos de desenvolvimento: Rust (MSVC), Visual Studio Build Tools e Web
    - Conecte você e seus amigos na mesma rede VPN privada e acesse pelo IP do Tailscale com latência direta peer-to-peer.
 
 3. **Deploy em VPS (Hetzner / Oracle Cloud Free Tier / AWS)**:
-   - Execute o `docker compose up -d` na VPS e aponte seu domínio.
+   - A configuração de produção (LiveKit, MediaMTX e Caddy) está em `infra/vps/`; veja o README de lá.
 
 ---
 
@@ -111,30 +111,22 @@ Pré-requisitos de desenvolvimento: Rust (MSVC), Visual Studio Build Tools e Web
 
 ```
 quick-tesla/
-├── client/                     # Aplicação Frontend (Vite + React 19 + Tailwind CSS)
+├── client/                     # Front web (Vite + React 19 + Tailwind), publicado na Vercel
+│   ├── public/audio-worklets/       # Worklets e WASM de áudio (RNNoise, DeepFilterNet, gate/boost de voz)
 │   ├── src/
-│   │   ├── components/
-│   │   │   ├── ChatPanel.tsx        # Chat ao vivo, reações e lista de amigos
-│   │   │   ├── ControlsBar.tsx      # Barra de controles (Mic, Áudio, Compartilhamento)
-│   │   │   ├── Lobby.tsx            # Criação/Entrada de salas e teste de microfone
-│   │   │   ├── ScreenShareModal.tsx # Seletor de 60 FPS, 1080p/4K, Bitrate e Áudio
-│   │   │   ├── StreamHUD.tsx        # Diagnósticos técnicos de WebRTC ao vivo
-│   │   │   └── VideoPlayer.tsx      # Player de vídeo com PiP, tela cheia e som
-│   │   ├── hooks/
-│   │   │   └── useLiveKit.ts        # Gerenciador WebRTC com LiveKit
-│   │   ├── types.ts                 # Tipos e definições
-│   │   ├── App.tsx                  # Componente raiz unificado
-│   │   └── index.css                # Estilos modernos escuros
-│   ├── Dockerfile
-│   └── nginx.conf
-├── desktop/                    # App desktop Windows (Tauri/Rust): captura, encoder GPU, SRT e atalho global
+│   │   ├── components/              # Telas e modais (Lobby, ChatPanel, ControlsBar, StreamTile, WhepTile…)
+│   │   ├── hooks/                   # useLiveKit (sala), useClip, useHotkeys, useNativeStream, useWhepStats…
+│   │   ├── utils/                   # api, supressão de ruído, gravação de clipes, perfil de stream…
+│   │   ├── types.ts
+│   │   └── App.tsx
+│   └── vercel.json                  # Rewrite de /api para a VPS e headers de segurança
+├── server/                     # API (Express): tokens LiveKit, salas, streams do MediaMTX e clipes
+│   └── src/                         # index.ts (rotas), auth.ts, clips.ts, clipBuffer.ts
+├── desktop/                    # App Windows (Tauri/Rust): captura, encoder GPU, SRT e atalhos globais
 │   └── src-tauri/src/               # capture.rs (ffmpeg), audio.rs (WASAPI), sources.rs, encoders.rs, hotkey.rs
-├── server/                     # Backend de Token e Orquestração de Salas
-│   ├── src/
-│   │   └── index.ts                 # Endpoints /api/token, /api/rooms e autenticação JWT
-│   ├── Dockerfile
-│   └── package.json
-├── docker-compose.yml          # Orquestração do LiveKit SFU + API + Frontend
-├── livekit.yaml                # Configuração de alta performance e baixa latência do LiveKit
+├── infra/
+│   ├── local/                       # docker-compose + livekit.yaml para desenvolvimento
+│   └── vps/                         # Espelho da produção: LiveKit, MediaMTX, Caddy e scripts
+├── .github/workflows/          # Deploy do backend na VPS e release do app desktop
 └── package.json                # Scripts centralizados de desenvolvimento
 ```

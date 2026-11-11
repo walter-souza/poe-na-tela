@@ -34,11 +34,11 @@ const VOICE_GATE_OPTIONS = {
 const RNNOISE_GATE_OPTIONS = { ...VOICE_GATE_OPTIONS, minOpenDb: -50 };
 
 const WORKLET_MODULES = [
-  'rnnoise/voiceGateWorklet.js',
-  'rnnoise/voiceBoostWorklet.js',
-  'rnnoise/voiceSteadyWorklet.js',
-  'rnnoise/voiceDeclickWorklet.js',
-  'rnnoise/voiceOnsetWorklet.js',
+  'audio-worklets/voiceGateWorklet.js',
+  'audio-worklets/voiceBoostWorklet.js',
+  'audio-worklets/voiceSteadyWorklet.js',
+  'audio-worklets/voiceDeclickWorklet.js',
+  'audio-worklets/voiceOnsetWorklet.js',
 ];
 
 export function getAssetUrl(path: string): string {
@@ -77,7 +77,7 @@ async function addModules(ctx: AudioContext, paths: string[]): Promise<void> {
 function loadDeepFilterNet(): Promise<WebAssembly.Module> {
   if (!dfnModuleCache) {
     dfnModuleCache = (async () => {
-      const response = await fetch(getAssetUrl('rnnoise/deepfilternet3.wasm'));
+      const response = await fetch(getAssetUrl('audio-worklets/deepfilternet3.wasm'));
       if (!response.ok) throw new Error(`DeepFilterNet3 WASM: HTTP ${response.status}`);
       try {
         return await WebAssembly.compileStreaming(response.clone());
@@ -179,7 +179,7 @@ export class NoiseSuppressionProcessor implements TrackProcessor<Track.Kind.Audi
     const ctx = this.audioContext!;
     const [wasmModule] = await Promise.all([
       loadDeepFilterNet(),
-      addModules(ctx, ['rnnoise/deepFilterNetWorklet.js']),
+      addModules(ctx, ['audio-worklets/deepFilterNetWorklet.js']),
     ]);
 
     const denoiser = new AudioWorkletNode(ctx, 'voice-clarity-processor', {
@@ -222,11 +222,11 @@ export class NoiseSuppressionProcessor implements TrackProcessor<Track.Kind.Audi
     const ctx = this.audioContext!;
     if (!rnnoiseWasmCache) {
       rnnoiseWasmCache = loadRnnoise({
-        url: getAssetUrl('rnnoise/rnnoise.wasm'),
-        simdUrl: getAssetUrl('rnnoise/rnnoise_simd.wasm'),
+        url: getAssetUrl('audio-worklets/rnnoise.wasm'),
+        simdUrl: getAssetUrl('audio-worklets/rnnoise_simd.wasm'),
       });
     }
-    const [wasmBinary] = await Promise.all([rnnoiseWasmCache, addModules(ctx, ['rnnoise/rnnoiseWorklet.js'])]);
+    const [wasmBinary] = await Promise.all([rnnoiseWasmCache, addModules(ctx, ['audio-worklets/rnnoiseWorklet.js'])]);
     this.rnnoiseNode = new RnnoiseWorkletNode(ctx, { maxChannels: 1, wasmBinary });
     this.sourceNode!.connect(this.rnnoiseNode);
     const gate = new AudioWorkletNode(ctx, 'voice-gate', {

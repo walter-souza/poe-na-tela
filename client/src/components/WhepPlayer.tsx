@@ -2,7 +2,7 @@ import React, { useEffect, useRef, useState, useCallback } from 'react';
 import { Tv, Volume2, VolumeX, Maximize, RefreshCw, Radio } from 'lucide-react';
 
 interface WhepPlayerProps {
-  whepUrl: string; // Ex: https://stream.194.61.238.98.sslip.io/jogatina/whep
+  whepUrl: string; // Montada pelo backend (STREAM_URL), ex.: https://stream.exemplo.com/jogatina/whep
   streamTitle?: string;
   isMuted?: boolean;
 }

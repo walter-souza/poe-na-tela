@@ -342,7 +342,7 @@ export function useLiveKit({ url, token, onDisconnected, restore }: UseLiveKitOp
           if (!boostWorkletRef.current || boostWorkletRef.current.ctx !== ctx) {
             boostWorkletRef.current = {
               ctx,
-              ready: ctx.audioWorklet.addModule(getAssetUrl('rnnoise/voiceBoostWorklet.js')),
+              ready: ctx.audioWorklet.addModule(getAssetUrl('audio-worklets/voiceBoostWorklet.js')),
             };
           }
           boostWorkletRef.current.ready
