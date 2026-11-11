@@ -39,3 +39,6 @@ Thumbs.db
 *.njsproj
 *.sln
 *.sw?
+
+# Prototipos locais (audios, videos e mockups de teste)
+prototypes/

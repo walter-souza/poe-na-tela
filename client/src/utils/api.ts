@@ -59,15 +59,6 @@ export function getRoomInfoUrl(roomName: string): string {
   return `${endpoint}/${encodeURIComponent(roomName)}`;
 }
 
-export function getWhepUrl(roomName: string): string {
-  const envUrl = import.meta.env.VITE_STREAM_URL;
-  if (envUrl && typeof envUrl === 'string' && envUrl.trim().length > 0) {
-    return `${envUrl.replace(/\/$/, '')}/${encodeURIComponent(roomName)}/whep`;
-  }
-  // Fallback padrão seguro (HTTPS) apontando para o proxy reverso do MediaMTX
-  return `https://stream.194.61.238.98.sslip.io/${encodeURIComponent(roomName)}/whep`;
-}
-
 export const OBS_SRT_LATENCY_US = 250000;
 
 /**

@@ -7,7 +7,6 @@ rtc:
   port_range_start: 50000
   port_range_end: 50100
   use_external_ip: false
-  enable_dynacast: true
 
 keys:
   devkey: secret
