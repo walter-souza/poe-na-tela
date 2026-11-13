@@ -1,0 +1,17 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "marcar-estalos",
+      "runtimeExecutable": "npx",
+      "runtimeArgs": ["--yes", "http-server@14.1.1", "prototypes/supressao-ruido", "-p", "8765", "-c-1", "--silent"],
+      "port": 8765
+    },
+    {
+      "name": "client-dev",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["--prefix", "client", "run", "dev"],
+      "port": 3000
+    }
+  ]
+}
