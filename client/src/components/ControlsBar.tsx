@@ -10,7 +10,6 @@ import {
   Sliders,
   PhoneOff,
   Layers,
-  Sparkles,
   Share2,
   Check,
   Wand2,
@@ -22,6 +21,7 @@ import {
 import type { ClipStatus } from '../hooks/useClip';
 import { getObsSrtUrl } from '../utils/api';
 import { ObsGuideModal } from './ObsGuideModal';
+import { Logo } from './Logo';
 
 interface ControlsBarProps {
   isMicEnabled: boolean;
@@ -95,8 +95,14 @@ export const ControlsBar: React.FC<ControlsBarProps> = ({
     setCopiedObs(true);
     setTimeout(() => setCopiedObs(false), 2000);
   };
+  const iconBtn =
+    'grid place-items-center w-10 h-10 shrink-0 rounded-full text-gray-200 transition duration-200 hover:bg-white/10 hover:-translate-y-0.5 active:scale-95 disabled:cursor-wait';
+  const on = 'bg-indigo-400 text-[#05201c] hover:bg-indigo-300';
+  const alert = 'bg-live/15 text-live hover:bg-live/25';
+  const sep = <span className="w-px h-5 bg-[#413e36] mx-1 shrink-0" aria-hidden="true" />;
+
   return (
-    <div className="relative h-16 md:h-20 bg-[#0d0f17] border-t border-white/10 px-2 sm:px-4 md:px-6 flex items-center justify-between shadow-2xl select-none safe-area-bottom">
+    <div className="relative bg-[#100f0d] border-t border-[#2c2a25] px-2 sm:px-4 md:px-6 py-2.5 flex items-center justify-between gap-3 select-none safe-area-bottom">
       {clipNotice && (
         <div
           role="status"
@@ -105,159 +111,122 @@ export const ControlsBar: React.FC<ControlsBarProps> = ({
           {clipNotice}
         </div>
       )}
-      {/* Left Info / App branding (Visible on tablet/desktop) */}
-      <div className="hidden md:flex items-center gap-3">
-        <div className="w-9 h-9 rounded-xl bg-gradient-to-tr from-indigo-600 to-violet-500 flex items-center justify-center text-white shadow-lg shadow-indigo-500/20">
-          <Sparkles className="w-5 h-5" />
-        </div>
-        <div>
-          <div className="font-bold text-sm text-white flex items-center gap-1.5">
-            <span>Põe na Tela</span>
-            <span className="text-[10px] bg-indigo-500/20 text-indigo-300 font-semibold px-2 py-0.5 rounded-md border border-indigo-500/30">
-              Ultra-Baixa Latência
-            </span>
-          </div>
-          <div className="text-[11px] text-gray-400">Streaming em tempo real com amigos</div>
-        </div>
+
+      {/* Marca (tablet/desktop) */}
+      <div className="hidden lg:flex flex-1 items-center min-w-0">
+        <Logo className="!text-base" />
       </div>
 
-      {/* Center Main Stream Actions */}
-      <div className="flex items-center gap-1.5 sm:gap-2 md:gap-3">
-        {/* Microfone */}
+      {/* Barra de controles */}
+      <div className="flex items-center gap-0.5 p-1.5 rounded-full bg-[#171613] border border-[#2c2a25] overflow-x-auto max-w-full no-scrollbar">
         <button
           onClick={onToggleMic}
-          title={isMicEnabled ? 'Microfone Ativo' : 'Microfone Mudo'}
-          className={`flex items-center gap-2 p-2.5 sm:px-4 sm:py-2.5 rounded-2xl font-medium text-xs transition shadow-lg ${
-            isMicEnabled
-              ? 'bg-emerald-600 hover:bg-emerald-500 text-white shadow-emerald-600/30'
-              : 'bg-rose-600/20 hover:bg-rose-600/30 border border-rose-500/30 text-rose-300'
-          }`}
+          title={isMicEnabled ? 'Microfone ativo' : 'Microfone mudo'}
+          aria-pressed={isMicEnabled}
+          aria-label={isMicEnabled ? 'Silenciar microfone' : 'Ativar microfone'}
+          className={`${iconBtn} ${isMicEnabled ? on : alert}`}
         >
-          {isMicEnabled ? <Mic className="w-4 h-4" /> : <MicOff className="w-4 h-4" />}
-          <span className="hidden md:inline">{isMicEnabled ? 'Microfone Ativo' : 'Microfone Mudo'}</span>
+          {isMicEnabled ? <Mic className="w-[18px] h-[18px]" /> : <MicOff className="w-[18px] h-[18px]" />}
         </button>
 
-        {onOpenHotkeySettings && (
-          <button
-            onClick={onOpenHotkeySettings}
-            title="Atalhos globais de microfone e áudio (funcionam com o jogo em foco)"
-            className="p-2.5 rounded-2xl border bg-white/5 hover:bg-white/10 border-white/10 text-gray-400 hover:text-white transition"
-          >
-            <Keyboard className="w-4 h-4" />
-          </button>
-        )}
+        <button
+          onClick={onToggleDeafen}
+          title={isDeafened ? 'Áudio desativado (ensurdecido)' : 'Áudio ativo'}
+          aria-pressed={isDeafened}
+          aria-label={isDeafened ? 'Reativar áudio' : 'Desativar áudio'}
+          className={`${iconBtn} ${isDeafened ? alert : ''}`}
+        >
+          {isDeafened ? <HeadphoneOff className="w-[18px] h-[18px]" /> : <Headphones className="w-[18px] h-[18px]" />}
+        </button>
 
-        {/* Supressão de Ruído (IA RNNoise) */}
         {onToggleNoiseSuppression && (
           <button
             onClick={onToggleNoiseSuppression}
             title={
               isNoiseSuppressionEnabled
-                ? 'Supressão de Ruído por IA Ativa (Elimina teclas mecânicas e cliques)'
-                : 'Supressão de Ruído Desativada'
+                ? 'Supressão de ruído por IA ativa (elimina teclas mecânicas e cliques)'
+                : 'Supressão de ruído desativada'
             }
-            className={`flex items-center gap-1.5 p-2.5 sm:px-3 sm:py-2.5 rounded-2xl border transition shadow-lg ${
-              isNoiseSuppressionEnabled
-                ? 'bg-violet-600/30 border-violet-500/50 text-violet-300 hover:bg-violet-600/40 shadow-violet-600/20'
-                : 'bg-white/5 hover:bg-white/10 border-white/10 text-gray-400 hover:text-gray-200'
-            }`}
+            aria-pressed={Boolean(isNoiseSuppressionEnabled)}
+            aria-label="Supressão de ruído"
+            className={`${iconBtn} ${isNoiseSuppressionEnabled ? on : ''}`}
           >
-            <Wand2 className="w-4 h-4" />
-            <span className="hidden xl:inline text-xs font-medium">
-              {isNoiseSuppressionEnabled ? 'IA Ruído' : 'Sem IA'}
-            </span>
+            <Wand2 className="w-[18px] h-[18px]" />
           </button>
         )}
 
-        {/* Deafen (Áudio) */}
+        {onOpenHotkeySettings && (
+          <button
+            onClick={onOpenHotkeySettings}
+            title="Atalhos globais de microfone e áudio (funcionam com o jogo em foco)"
+            aria-label="Atalhos globais"
+            className={`${iconBtn} text-gray-400 hover:text-gray-100`}
+          >
+            <Keyboard className="w-[18px] h-[18px]" />
+          </button>
+        )}
+
+        {sep}
+
+        {/* Transmitir / parar tela */}
         <button
-          onClick={onToggleDeafen}
-          className={`p-2.5 rounded-2xl border transition ${
-            isDeafened
-              ? 'bg-rose-600/20 border-rose-500/30 text-rose-300'
-              : 'bg-white/5 hover:bg-white/10 border-white/10 text-gray-300 hover:text-white'
+          onClick={isScreenSharing ? onToggleScreenShare : onOpenScreenShareConfig}
+          title={isScreenSharing ? 'Parar transmissão' : 'Transmitir tela'}
+          className={`inline-flex items-center gap-2 h-10 shrink-0 rounded-full px-3 md:px-4 text-sm font-semibold transition duration-200 hover:-translate-y-0.5 active:scale-95 ${
+            isScreenSharing ? 'bg-live text-[#1c0903] hover:bg-[#ff7050]' : 'bg-sand text-[#17130a] hover:bg-[#f0e5c6]'
           }`}
-          title={isDeafened ? 'Áudio Desativado (Ensordecer)' : 'Áudio Ativo'}
         >
-          {isDeafened ? <HeadphoneOff className="w-4 h-4" /> : <Headphones className="w-4 h-4" />}
+          {isScreenSharing ? <StopCircle className="w-[18px] h-[18px]" /> : <ScreenShare className="w-[18px] h-[18px]" />}
+          <span className="hidden md:inline">{isScreenSharing ? 'Parar' : 'Transmitir'}</span>
         </button>
 
-        {/* Compartilhar / Parar Tela */}
-        <div className="flex items-center bg-indigo-600/20 border border-indigo-500/30 rounded-2xl p-0.5">
+        {!isScreenSharing && (
           <button
-            onClick={isScreenSharing ? onToggleScreenShare : onOpenScreenShareConfig}
-            title={isScreenSharing ? 'Parar Transmissão' : 'Transmitir Tela'}
-            className={`flex items-center gap-1.5 sm:gap-2 p-2 sm:px-4 sm:py-2 rounded-xl font-semibold text-xs transition ${
-              isScreenSharing
-                ? 'bg-rose-600 hover:bg-rose-500 text-white shadow-lg shadow-rose-600/30'
-                : 'bg-indigo-600 hover:bg-indigo-500 text-white shadow-lg shadow-indigo-600/30'
-            }`}
+            onClick={onOpenScreenShareConfig}
+            title="Configurar qualidade (FPS, bitrate, resolução)"
+            aria-label="Configurar qualidade da transmissão"
+            className={`${iconBtn} text-gray-400 hover:text-gray-100`}
           >
-            {isScreenSharing ? <StopCircle className="w-4 h-4" /> : <ScreenShare className="w-4 h-4" />}
-            <span className="hidden md:inline">{isScreenSharing ? 'Parar Transmissão' : 'Transmitir Tela'}</span>
+            <Sliders className="w-[18px] h-[18px]" />
           </button>
+        )}
 
-          {!isScreenSharing && (
-            <button
-              onClick={onOpenScreenShareConfig}
-              title="Configurar Qualidade (FPS, Bitrate, Resolução)"
-              className="p-1.5 sm:p-2 hover:bg-white/10 rounded-xl text-indigo-300 hover:text-white transition"
-            >
-              <Sliders className="w-4 h-4" />
-            </button>
-          )}
-        </div>
-
-        {/* Transmitir via OBS Studio (Copiar Link SRT 60 FPS) */}
         <button
           onClick={handleCopyObsLink}
-          title="Copiar Link de Transmissão para OBS Studio (SRT 60 FPS com sala e usuário configurados)"
-          className={`flex items-center gap-1.5 p-2 sm:px-3 sm:py-2.5 rounded-2xl border text-xs font-semibold transition shadow-lg ${
-            copiedObs
-              ? 'bg-emerald-600/30 border-emerald-500/50 text-emerald-300 shadow-emerald-600/20'
-              : 'bg-white/5 hover:bg-white/10 border-white/10 text-gray-300 hover:text-white'
-          }`}
+          title="Copiar link de transmissão para o OBS Studio (SRT 60 FPS com sala e usuário configurados)"
+          aria-label="Copiar link do OBS"
+          className={`${iconBtn} ${copiedObs ? on : ''}`}
         >
-          {copiedObs ? (
-            <Check className="w-4 h-4 text-emerald-400" />
-          ) : (
-            <Tv className="w-4 h-4 text-purple-400" />
-          )}
-          <span className="hidden lg:inline">
-            {copiedObs ? 'Link OBS Copiado!' : 'Link OBS'}
-          </span>
+          {copiedObs ? <Check className="w-[18px] h-[18px]" /> : <Tv className="w-[18px] h-[18px]" />}
         </button>
 
         <button
           onClick={() => setIsObsGuideOpen(true)}
           title="Guia: como transmitir com o OBS em 60 FPS"
-          className="flex items-center p-2 sm:px-2.5 sm:py-2.5 rounded-2xl border border-white/10 bg-white/5 hover:bg-white/10 text-gray-400 hover:text-white transition"
+          aria-label="Guia do OBS"
+          className={`${iconBtn} text-gray-400 hover:text-gray-100`}
         >
-          <HelpCircle className="w-4 h-4" />
+          <HelpCircle className="w-[18px] h-[18px]" />
         </button>
-      </div>
 
-      {/* Right Controls */}
-      <div className="flex items-center gap-1.5 sm:gap-2">
+        {sep}
+
         {/* Clipe: configuração da sala (vale para todos). Qualquer participante liga/desliga. */}
         <button
           onClick={onToggleClip}
           aria-pressed={clipEnabled}
+          aria-label={clipEnabled ? 'Desligar clipe' : 'Ligar clipe'}
           title={
             clipEnabled
               ? `Clipe LIGADO na sala: as vozes de todos ficam num buffer de memória de 60s no servidor (nada vai para disco) e o vídeo da stream fica só em cada dispositivo. Clique para desligar (o buffer é descartado).`
               : `Clipe desligado: nada é gravado. Clique para ligar para todos na sala.`
           }
-          className={`flex items-center gap-1.5 p-2 sm:px-3 sm:py-2.5 rounded-2xl border text-xs font-semibold transition disabled:cursor-default ${
-            clipEnabled
-              ? 'bg-white/10 border-white/15 text-gray-200 enabled:hover:bg-white/15'
-              : 'bg-white/5 border-white/10 text-gray-400 enabled:hover:bg-white/10 enabled:hover:text-white'
-          }`}
+          className={`${iconBtn} relative ${clipEnabled ? 'text-gray-100' : 'text-gray-500 hover:text-gray-200'}`}
         >
-          <span className={`w-1.5 h-1.5 rounded-full ${clipEnabled ? 'bg-emerald-400' : 'bg-gray-500'}`} />
-          <span className="hidden lg:inline">
-            {clipEnabled ? 'Clipe ligado' : 'Ligar clipe'}
-          </span>
+          <Clapperboard className="w-[18px] h-[18px]" />
+          <span
+            className={`absolute right-2 top-2 w-1.5 h-1.5 rounded-full ${clipEnabled ? 'bg-emerald-400' : 'bg-gray-600'}`}
+          />
         </button>
 
         {clipEnabled && (
@@ -265,20 +234,20 @@ export const ControlsBar: React.FC<ControlsBarProps> = ({
             onClick={onClip}
             disabled={clipStatus === 'processing'}
             title="Clipar os últimos 30s (stream em destaque + vozes da sala) e ver antes de baixar"
-            className={`flex items-center gap-1.5 p-2 sm:px-3 sm:py-2.5 rounded-2xl border text-xs font-semibold transition disabled:cursor-wait ${
+            className={`inline-flex items-center gap-2 h-10 shrink-0 rounded-full px-3 text-sm font-medium transition duration-200 hover:-translate-y-0.5 disabled:cursor-wait ${
               clipStatus === 'local'
-                ? 'bg-emerald-600/30 border-emerald-500/50 text-emerald-300'
+                ? 'bg-emerald-400/20 text-emerald-300'
                 : clipStatus === 'empty'
-                  ? 'bg-amber-600/20 border-amber-500/40 text-amber-300'
-                  : 'bg-white/5 enabled:hover:bg-white/10 border-white/10 text-gray-300 enabled:hover:text-white'
+                  ? 'bg-amber-400/15 text-amber-300'
+                  : 'text-gray-200 hover:bg-white/10'
             }`}
           >
             {clipStatus === 'local' ? (
-              <Check className="w-4 h-4" />
+              <Check className="w-[18px] h-[18px]" />
             ) : (
-              <Clapperboard className={`w-4 h-4 text-gray-300 ${clipStatus === 'processing' ? 'animate-pulse' : ''}`} />
+              <Clapperboard className={`w-[18px] h-[18px] ${clipStatus === 'processing' ? 'animate-pulse' : ''}`} />
             )}
-            <span className="hidden lg:inline">
+            <span className="hidden xl:inline">
               {clipStatus === 'processing'
                 ? 'Montando…'
                 : clipStatus === 'local'
@@ -290,51 +259,56 @@ export const ControlsBar: React.FC<ControlsBarProps> = ({
           </button>
         )}
 
-        {/* Convidar Amigos */}
+        {sep}
+
         <button
           onClick={handleCopyInvite}
-          title="Copiar Link de Convite da Sala"
-          className="flex items-center gap-1.5 p-2 sm:px-3 sm:py-2.5 rounded-2xl bg-white/5 hover:bg-white/10 border border-white/10 text-xs text-gray-300 hover:text-white transition"
+          title="Copiar link de convite da sala"
+          aria-label="Copiar link de convite"
+          className={`${iconBtn} lg:hidden ${copied ? on : ''}`}
         >
-          {copied ? <Check className="w-4 h-4 text-emerald-400" /> : <Share2 className="w-4 h-4 text-indigo-400" />}
-          <span className="hidden sm:inline font-medium">{copied ? 'Copiado!' : 'Convidar'}</span>
+          {copied ? <Check className="w-[18px] h-[18px]" /> : <Share2 className="w-[18px] h-[18px]" />}
         </button>
 
-        {/* Toggle HUD */}
         <button
           onClick={onToggleHUD}
-          title="Painel de Estatísticas Técnicas"
-          className={`p-2 sm:p-2.5 rounded-2xl border transition ${
-            isHUDOpen
-              ? 'bg-indigo-600 border-indigo-500 text-white'
-              : 'bg-white/5 hover:bg-white/10 border-white/10 text-gray-300 hover:text-white'
-          }`}
+          title="Painel de estatísticas técnicas"
+          aria-pressed={isHUDOpen}
+          aria-label="Estatísticas técnicas"
+          className={`${iconBtn} ${isHUDOpen ? on : ''}`}
         >
-          <Layers className="w-4 h-4" />
+          <Layers className="w-[18px] h-[18px]" />
         </button>
 
-        {/* Toggle Chat */}
         <button
           onClick={onToggleChat}
-          title={isChatOpen ? 'Ocultar Chat' : 'Exibir Chat'}
-          className={`flex items-center gap-1.5 sm:gap-2 p-2 sm:px-3.5 sm:py-2.5 rounded-2xl border text-xs font-semibold transition ${
-            isChatOpen
-              ? 'bg-indigo-600 border-indigo-500 text-white shadow-lg shadow-indigo-600/30'
-              : 'bg-white/5 hover:bg-white/10 border-white/10 text-gray-300 hover:text-white'
-          }`}
+          title={isChatOpen ? 'Ocultar chat' : 'Exibir chat'}
+          aria-pressed={isChatOpen}
+          aria-label={isChatOpen ? 'Ocultar chat' : 'Exibir chat'}
+          className={`${iconBtn} ${isChatOpen ? on : ''}`}
         >
-          <MessageSquare className="w-4 h-4" />
-          <span className="hidden md:inline">{isChatOpen ? 'Ocultar Chat' : 'Exibir Chat'}</span>
+          <MessageSquare className="w-[18px] h-[18px]" />
         </button>
 
-        {/* Leave Room */}
         <button
           onClick={onLeave}
-          title="Sair da Sala"
-          className="flex items-center gap-1.5 sm:gap-2 p-2 sm:px-3.5 sm:py-2.5 rounded-2xl bg-rose-600/10 hover:bg-rose-600 border border-rose-500/20 hover:border-rose-500 text-rose-300 hover:text-white font-semibold text-xs transition"
+          title="Sair da sala"
+          className="ml-1 inline-flex items-center gap-2 h-10 shrink-0 rounded-full px-3 md:px-4 text-sm font-semibold bg-live text-[#1c0903] hover:bg-[#ff7050] transition duration-200 hover:-translate-y-0.5 active:scale-95"
         >
-          <PhoneOff className="w-4 h-4" />
+          <PhoneOff className="w-[18px] h-[18px]" />
           <span className="hidden sm:inline">Sair</span>
+        </button>
+      </div>
+
+      {/* Convidar */}
+      <div className="hidden lg:flex flex-1 justify-end">
+        <button
+          onClick={handleCopyInvite}
+          title="Copiar link de convite da sala"
+          className="inline-flex items-center gap-2 h-9 px-3.5 rounded-full border border-[#2c2a25] bg-[#171613] text-sm text-gray-300 hover:text-gray-100 hover:border-[#413e36] transition hover:-translate-y-0.5"
+        >
+          {copied ? <Check className="w-4 h-4 text-emerald-400" /> : <Share2 className="w-4 h-4" />}
+          {copied ? 'Copiado!' : 'Convidar'}
         </button>
       </div>
 

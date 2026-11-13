@@ -25,7 +25,7 @@ export const MaintenanceScreen: React.FC<MaintenanceScreenProps> = ({
   };
 
   return (
-    <div className="min-h-screen min-h-[100dvh] w-screen bg-[#07080d] flex flex-col items-center justify-between p-4 sm:p-8 text-gray-100 relative overflow-x-hidden overflow-y-auto select-none">
+    <div className="min-h-screen min-h-[100dvh] w-screen bg-[#0c0b09] flex flex-col items-center justify-between p-4 sm:p-8 text-gray-100 relative overflow-x-hidden overflow-y-auto select-none">
       {/* Background ambient lighting */}
       <div className="absolute top-1/4 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[550px] h-[550px] bg-indigo-600/10 rounded-full blur-[140px] pointer-events-none" />
       <div className="absolute bottom-10 right-10 w-[350px] h-[350px] bg-violet-600/10 rounded-full blur-[120px] pointer-events-none" />
@@ -60,7 +60,7 @@ export const MaintenanceScreen: React.FC<MaintenanceScreenProps> = ({
         {/* Animated Icon Container */}
         <div className="relative mx-auto w-24 h-24 mb-6 flex items-center justify-center">
           <div className="absolute inset-0 rounded-3xl bg-gradient-to-tr from-indigo-600/30 to-violet-600/30 blur-xl animate-pulse" />
-          <div className="w-24 h-24 rounded-3xl bg-[#11131c] border border-white/15 flex items-center justify-center shadow-2xl relative">
+          <div className="w-24 h-24 rounded-3xl bg-[#171613] border border-white/15 flex items-center justify-center shadow-2xl relative">
             <Wrench className="w-11 h-11 text-indigo-400 animate-bounce" />
           </div>
         </div>
@@ -76,7 +76,7 @@ export const MaintenanceScreen: React.FC<MaintenanceScreenProps> = ({
         </p>
 
         {/* Features list in progress */}
-        <div className="bg-[#11131c]/90 border border-white/10 rounded-2xl p-4 mb-8 text-left space-y-2.5 backdrop-blur-md shadow-xl text-xs text-gray-300">
+        <div className="bg-[#171613]/90 border border-white/10 rounded-2xl p-4 mb-8 text-left space-y-2.5 backdrop-blur-md shadow-xl text-xs text-gray-300">
           <div className="flex items-center gap-2.5 text-gray-200 font-semibold border-b border-white/10 pb-2">
             <span className="w-2 h-2 rounded-full bg-emerald-400" />
             <span>O que estamos aprimorando:</span>

@@ -30,7 +30,7 @@ export const NativeStreamStatus: React.FC<NativeStreamStatusProps> = ({ state, s
 
   return (
     <div
-      className={`absolute bottom-3 left-3 z-30 max-w-sm px-3 py-2 rounded-xl bg-[#11131c]/90 border backdrop-blur-md text-xs shadow-2xl ${tone}`}
+      className={`absolute bottom-3 left-3 z-30 max-w-sm px-3 py-2 rounded-xl bg-[#171613]/90 border backdrop-blur-md text-xs shadow-2xl ${tone}`}
     >
       <div className="flex items-center gap-2 font-semibold">
         <Icon className={`w-3.5 h-3.5 ${state === 'live' ? 'animate-pulse' : ''}`} />

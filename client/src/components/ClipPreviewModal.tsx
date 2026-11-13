@@ -24,7 +24,7 @@ export const ClipPreviewModal: React.FC<ClipPreviewModalProps> = ({ clip, onDisc
       aria-modal="true"
       aria-label="Pré-visualização do clipe"
     >
-      <div className="w-full max-w-3xl overflow-hidden rounded-2xl border border-white/10 bg-[#0d0f17] shadow-2xl">
+      <div className="w-full max-w-3xl overflow-hidden rounded-2xl border border-white/10 bg-[#13120f] shadow-2xl">
         <div className="flex items-center gap-2 border-b border-white/10 px-4 py-3">
           <Clapperboard className="h-4 w-4 text-rose-400" />
           <h2 className="text-sm font-bold text-white">Seu clipe</h2>

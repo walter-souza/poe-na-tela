@@ -66,9 +66,9 @@ export const StreamPicker: React.FC<PickerProps> = ({ items, onWatch }) => (
       {items.map((item) => (
         <div
           key={item.id}
-          className="bg-[#11131c] border border-white/10 hover:border-indigo-400/50 rounded-2xl overflow-hidden flex flex-col transition"
+          className="bg-[#171613] border border-white/10 hover:border-indigo-400/50 rounded-2xl overflow-hidden flex flex-col transition"
         >
-          <div className="relative aspect-video bg-gradient-to-br from-indigo-950 via-[#14162a] to-violet-950 flex items-center justify-center">
+          <div className="relative aspect-video bg-gradient-to-br from-indigo-950 via-[#1e1c18] to-violet-950 flex items-center justify-center">
             <div className="absolute top-2 left-2 flex items-center gap-1.5 bg-red-600/90 px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider text-white">
               <span className="w-1.5 h-1.5 rounded-full bg-white animate-pulse" />
               Ao vivo
@@ -112,7 +112,7 @@ export const StreamPicker: React.FC<PickerProps> = ({ items, onWatch }) => (
 
 /** Live streams the viewer is not receiving, kept one click away while others are playing. */
 export const AvailableStrip: React.FC<PickerProps> = ({ items, onWatch }) => (
-  <div className="bg-[#11131c]/85 border border-white/10 rounded-2xl px-3 py-2.5 shrink-0">
+  <div className="bg-[#171613]/85 border border-white/10 rounded-2xl px-3 py-2.5 shrink-0">
     <div className="flex items-center justify-between text-[11px] uppercase tracking-wider text-gray-400 mb-2">
       <span>Disponíveis · não assistindo</span>
       <span>{items.length}</span>
@@ -121,7 +121,7 @@ export const AvailableStrip: React.FC<PickerProps> = ({ items, onWatch }) => (
       {items.map((item) => (
         <div
           key={item.id}
-          className="shrink-0 min-w-[250px] flex items-center gap-2.5 bg-[#181a26] border border-white/10 rounded-xl px-2.5 py-2"
+          className="shrink-0 min-w-[250px] flex items-center gap-2.5 bg-[#201e1a] border border-white/10 rounded-xl px-2.5 py-2"
         >
           <Avatar name={item.name} className="w-7 h-7 text-xs" />
           <div className="flex-1 min-w-0">
@@ -163,7 +163,7 @@ export const StreamPanel: React.FC<PanelProps> = ({ items, currentKbps, onToggle
   const pct = Math.min(100, (currentKbps / METER_MAX_KBPS) * 100);
 
   return (
-    <div className="absolute top-12 sm:top-14 right-2 sm:right-3 z-40 w-[320px] max-w-[calc(100%-1rem)] bg-[#11131c] border border-white/10 rounded-2xl shadow-2xl p-3">
+    <div className="absolute top-12 sm:top-14 right-2 sm:right-3 z-40 w-[320px] max-w-[calc(100%-1rem)] bg-[#171613] border border-white/10 rounded-2xl shadow-2xl p-3">
       <h3 className="text-sm font-bold text-white">Transmissões ao vivo</h3>
       <p className="text-[11px] text-gray-400 mb-2">Você só recebe vídeo das que estiverem ligadas.</p>
       <div className="flex flex-col">
@@ -215,7 +215,7 @@ export const StreamPanel: React.FC<PanelProps> = ({ items, currentKbps, onToggle
         {anyWatching && (
           <button
             onClick={onStopAll}
-            className="mt-2.5 w-full py-1.5 rounded-xl bg-[#181a26] hover:text-rose-300 hover:border-rose-400/40 border border-white/10 text-xs text-gray-200 transition cursor-pointer"
+            className="mt-2.5 w-full py-1.5 rounded-xl bg-[#201e1a] hover:text-rose-300 hover:border-rose-400/40 border border-white/10 text-xs text-gray-200 transition cursor-pointer"
           >
             Parar todas
           </button>
@@ -232,7 +232,7 @@ interface ToastProps {
 }
 
 export const NewStreamToast: React.FC<ToastProps> = ({ item, onWatch, onClose }) => (
-  <div className="absolute bottom-4 left-1/2 -translate-x-1/2 z-40 flex items-center gap-3 bg-[#11131c] border border-indigo-400/50 rounded-2xl pl-3.5 pr-2 py-2.5 shadow-2xl animate-fadeIn max-w-[calc(100%-1rem)]">
+  <div className="absolute bottom-4 left-1/2 -translate-x-1/2 z-40 flex items-center gap-3 bg-[#171613] border border-indigo-400/50 rounded-2xl pl-3.5 pr-2 py-2.5 shadow-2xl animate-fadeIn max-w-[calc(100%-1rem)]">
     <Radio className="w-4 h-4 text-indigo-400 shrink-0" />
     <div className="min-w-0 text-sm">
       <b className="text-white">{item.name}</b> <span className="text-gray-300">começou a transmitir</span>

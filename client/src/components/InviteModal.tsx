@@ -133,7 +133,7 @@ export const InviteModal: React.FC<InviteModalProps> = ({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/85 backdrop-blur-md animate-fadeIn select-none">
-      <div className="bg-[#11131c] border border-indigo-500/20 rounded-3xl w-full max-w-lg shadow-2xl overflow-hidden text-gray-200">
+      <div className="bg-[#171613] border border-indigo-500/20 rounded-3xl w-full max-w-lg shadow-2xl overflow-hidden text-gray-200">
         {/* Header */}
         <div className="px-4 sm:px-6 py-4 sm:py-5 border-b border-white/10 bg-gradient-to-r from-indigo-950/40 to-violet-950/20 flex items-center justify-between">
           <div className="flex items-center gap-2.5 sm:gap-3">

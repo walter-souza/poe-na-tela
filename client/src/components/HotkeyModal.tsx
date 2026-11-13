@@ -64,7 +64,7 @@ export const HotkeyModal: React.FC<HotkeyModalProps> = ({ isOpen, hotkeys, error
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-fadeIn">
-      <div className="bg-[#13151f] border border-white/10 rounded-2xl w-full max-w-md shadow-2xl overflow-hidden text-gray-200">
+      <div className="bg-[#1b1915] border border-white/10 rounded-2xl w-full max-w-md shadow-2xl overflow-hidden text-gray-200">
         <div className="flex items-center justify-between px-5 py-4 border-b border-white/10 bg-white/5">
           <div className="flex items-center gap-3">
             <div className="p-2 bg-indigo-500/20 text-indigo-400 rounded-xl">

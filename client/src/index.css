@@ -1,21 +1,78 @@
 @import "tailwindcss";
+@import "@fontsource-variable/instrument-sans";
+@import "@fontsource-variable/bricolage-grotesque";
+
+/*
+ * Identidade visual v3: base neutra quente + luz de tally laranja.
+ * As paletas indigo/violet/purple/gray do Tailwind são redefinidas aqui, então
+ * todo componente existente (modais, chat, controles) já herda as novas cores.
+ */
+@theme {
+  --font-sans: 'Instrument Sans Variable', system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --font-display: 'Bricolage Grotesque Variable', 'Instrument Sans Variable', system-ui, sans-serif;
+
+  /* destaque de ação/foco: verde-água (antes indigo) */
+  --color-indigo-50: #e8fbf8;
+  --color-indigo-100: #c6f5ee;
+  --color-indigo-200: #98ebdf;
+  --color-indigo-300: #66ddcd;
+  --color-indigo-400: #3fd0c0;
+  --color-indigo-500: #25b7a8;
+  --color-indigo-600: #1c9186;
+  --color-indigo-700: #1a7169;
+  --color-indigo-800: #195a54;
+  --color-indigo-900: #174b46;
+  --color-indigo-950: #082c29;
+
+  /* secundário: âmbar (antes violet/purple) */
+  --color-violet-300: #f7dc94;
+  --color-violet-400: #f5b83d;
+  --color-violet-500: #e0a02a;
+  --color-violet-600: #b9811f;
+  --color-violet-700: #8f6418;
+  --color-purple-300: #f7dc94;
+  --color-purple-400: #f5b83d;
+  --color-purple-500: #e0a02a;
+  --color-purple-600: #b9811f;
+  --color-purple-700: #8f6418;
+
+  /* neutros quentes (antes cinza azulado) */
+  --color-gray-50: #f7f4ec;
+  --color-gray-100: #f0ece2;
+  --color-gray-200: #e1dccf;
+  --color-gray-300: #c9c3b3;
+  --color-gray-400: #9a9487;
+  --color-gray-500: #6f6a5f;
+  --color-gray-600: #4d4a42;
+  --color-gray-700: #3a3830;
+  --color-gray-800: #26241f;
+  --color-gray-900: #1a1815;
+  --color-gray-950: #100f0d;
+
+  --color-live: #ff5a36;
+  --color-sand: #e6d9b8;
+  --color-teal-tally: #3fd0c0;
+}
 
 :root {
-  --background: #090a0f;
-  --surface: #11131a;
-  --surface-hover: #1b1e2a;
-  --card: #151822;
-  --accent: #6366f1;
-  --accent-glow: rgba(99, 102, 241, 0.35);
-  --text-primary: #f3f4f6;
-  --text-secondary: #9ca3af;
+  --background: #100f0d;
+  --surface: #171613;
+  --surface-hover: #201e1a;
+  --card: #1e1c18;
+  --accent: #3fd0c0;
+  --live: #ff5a36;
+  --accent-glow: rgba(63, 208, 192, 0.3);
+  --text-primary: #f0ece2;
+  --text-secondary: #9a9487;
+  --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
 }
 
 body {
   margin: 0;
   background-color: var(--background);
   color: var(--text-primary);
-  font-family: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+  font-family: var(--font-sans);
+  font-feature-settings: 'tnum';
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   overflow-x: hidden;
@@ -28,25 +85,25 @@ body {
 }
 
 ::-webkit-scrollbar-track {
-  background: #0b0d13;
+  background: #100f0d;
 }
 
 ::-webkit-scrollbar-thumb {
-  background: #272c3d;
+  background: #3a3830;
   border-radius: 9999px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: #4f46e5;
+  background: #3fd0c0;
 }
 
 /* Video container animations */
 @keyframes pulse-glow {
   0%, 100% {
-    box-shadow: 0 0 15px rgba(99, 102, 241, 0.2);
+    box-shadow: 0 0 15px rgba(63, 208, 192, 0.18);
   }
   50% {
-    box-shadow: 0 0 25px rgba(99, 102, 241, 0.45);
+    box-shadow: 0 0 25px rgba(63, 208, 192, 0.4);
   }
 }
 
@@ -86,3 +143,219 @@ body {
   padding-top: max(0.5rem, env(safe-area-inset-top, 0px));
 }
 
+
+/* ---------- Identidade v3: peças reutilizáveis ---------- */
+
+/* palavra do título com moldura âmbar e luz de tally */
+.brand-frame {
+  position: relative;
+  display: inline-block;
+  padding: 0 0.14em;
+  margin: 0 -0.05em;
+}
+.brand-frame::before {
+  content: '';
+  position: absolute;
+  inset: 0.06em 0 0.02em;
+  border: 0.045em solid #f5b83d;
+  border-radius: 0.2em;
+  background: rgba(245, 184, 61, 0.1);
+}
+.brand-frame::after {
+  content: '';
+  position: absolute;
+  right: -0.12em;
+  top: -0.02em;
+  width: 0.26em;
+  height: 0.26em;
+  border-radius: 50%;
+  background: var(--live);
+  box-shadow: 0 0 0 0.08em #100f0d;
+}
+
+/* miniatura de sala ao vivo */
+.room-tile {
+  transition: transform 0.35s var(--ease-out), border-color 0.25s, box-shadow 0.35s;
+}
+.room-tile:hover,
+.room-tile:focus-visible {
+  transform: translateY(-3px);
+  border-color: #3fd0c0;
+  box-shadow: 0 18px 40px -20px #3fd0c0;
+}
+.room-tile-go {
+  transition: background 0.2s, color 0.2s, border-color 0.2s;
+}
+.room-tile:hover .room-tile-go,
+.room-tile:focus-visible .room-tile-go {
+  background: #3fd0c0;
+  border-color: #3fd0c0;
+  color: #05201c;
+}
+
+/* lista de salas salvas */
+.saved-row {
+  position: relative;
+  isolation: isolate;
+  border-top: 1px solid #2c2a25;
+}
+.saved-row::before {
+  content: '';
+  position: absolute;
+  z-index: -1;
+  inset: 3px -10px;
+  border-radius: 12px;
+  background: #201e1a;
+  border: 1px solid #413e36;
+  opacity: 0;
+  transform: scale(0.97);
+  transition: opacity 0.25s, transform 0.4s var(--ease-out);
+}
+.saved-row::after {
+  content: '';
+  position: absolute;
+  left: -10px;
+  top: 50%;
+  width: 3px;
+  height: 0;
+  border-radius: 2px;
+  background: #3fd0c0;
+  transform: translateY(-50%);
+  transition: height 0.35s var(--ease-out);
+}
+.saved-row:hover,
+.saved-row:focus-within {
+  border-top-color: transparent;
+}
+.saved-row:hover + .saved-row,
+.saved-row:hover + .saved-add {
+  border-top-color: transparent;
+}
+.saved-row:hover::before,
+.saved-row:focus-within::before {
+  opacity: 1;
+  transform: none;
+}
+.saved-row:hover::after,
+.saved-row:focus-within::after {
+  height: 22px;
+}
+.saved-row-main {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  padding: 13px 40px 13px 4px;
+  text-align: left;
+  transition: padding 0.35s var(--ease-out);
+}
+.saved-row:hover .saved-row-main,
+.saved-row:focus-within .saved-row-main {
+  padding-left: 14px;
+}
+.saved-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #625e54;
+  transition: background 0.2s, transform 0.3s var(--ease-out);
+}
+.saved-row:hover .saved-dot {
+  background: #3fd0c0;
+  transform: scale(1.3);
+}
+.saved-name {
+  font-weight: 500;
+  color: #9a9487;
+  transition: color 0.2s;
+}
+.saved-row:hover .saved-name {
+  color: #f0ece2;
+}
+.saved-status {
+  margin-left: auto;
+  font-size: 13px;
+  color: #9a9487;
+  transition: opacity 0.2s, transform 0.3s var(--ease-out);
+}
+.saved-go {
+  position: absolute;
+  right: 4px;
+  top: 50%;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  font-weight: 500;
+  color: #3fd0c0;
+  opacity: 0;
+  transform: translate(-8px, -50%);
+  transition: opacity 0.25s, transform 0.35s var(--ease-out);
+}
+.saved-row:hover .saved-status,
+.saved-row:focus-within .saved-status {
+  opacity: 0;
+  transform: translateX(8px);
+}
+.saved-row:hover .saved-go,
+.saved-row:focus-within .saved-go {
+  opacity: 1;
+  transform: translate(0, -50%);
+}
+.saved-remove {
+  position: absolute;
+  right: -2px;
+  top: 50%;
+  transform: translateY(-50%);
+  padding: 6px;
+  border-radius: 8px;
+  color: #6f6a5f;
+  opacity: 0;
+  transition: opacity 0.2s, color 0.2s;
+}
+.saved-row:hover .saved-remove,
+.saved-row:focus-within .saved-remove {
+  opacity: 1;
+}
+.saved-remove:hover {
+  color: #fb7185;
+}
+.saved-add {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 13px 4px;
+  border-top: 1px solid #2c2a25;
+  color: #9a9487;
+}
+.saved-add input {
+  flex: 1;
+  min-width: 0;
+  background: none;
+  border: 0;
+  color: #f0ece2;
+}
+.saved-add input::placeholder {
+  color: #9a9487;
+}
+.saved-add input:focus {
+  outline: 0;
+}
+.saved-add:focus-within {
+  color: #3fd0c0;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .room-tile,
+  .saved-row::before,
+  .saved-row::after,
+  .saved-row-main,
+  .saved-go,
+  .saved-status {
+    transition: none;
+  }
+}
+
+.no-scrollbar { scrollbar-width: none; }
+.no-scrollbar::-webkit-scrollbar { display: none; }

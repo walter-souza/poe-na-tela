@@ -213,7 +213,7 @@ export const StreamTile: React.FC<StreamTileProps> = ({
       }`}
     >
       {stream.isLocal && isPreviewPaused ? (
-        <div className="w-full h-full flex flex-col items-center justify-center bg-[#0d1017] text-center p-6 select-none animate-fadeIn">
+        <div className="w-full h-full flex flex-col items-center justify-center bg-[#13120f] text-center p-6 select-none animate-fadeIn">
           <div className="w-16 h-16 rounded-2xl bg-indigo-500/10 border border-indigo-500/20 flex items-center justify-center text-indigo-400 mb-3 shadow-lg shadow-indigo-500/10">
             <Radio className="w-8 h-8 animate-pulse text-indigo-400" />
           </div>

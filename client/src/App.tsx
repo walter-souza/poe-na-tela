@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, type Dispatch, type SetStateAction } from 'react';
-import { MessageSquare, RefreshCw, Tv } from 'lucide-react';
+import { MessageSquare, RefreshCw } from 'lucide-react';
 import { useLiveKit } from './hooks/useLiveKit';
 import { useNativeStream } from './hooks/useNativeStream';
 import { useHotkeys } from './hooks/useHotkeys';
@@ -16,6 +16,7 @@ import { ChatPanel } from './components/ChatPanel';
 import { ScreenShareModal } from './components/ScreenShareModal';
 import { MaintenanceScreen } from './components/MaintenanceScreen';
 import { Lobby } from './components/Lobby';
+import { LogoMark } from './components/Logo';
 import { InviteModal } from './components/InviteModal';
 import { getHealthUrl, getTokenUrl } from './utils/api';
 import type { StreamQualityConfig } from './types';
@@ -222,7 +223,7 @@ export function App() {
 
   if (isResuming && !session) {
     return (
-      <div className="min-h-screen min-h-[100dvh] w-screen bg-[#07080d] flex flex-col items-center justify-center gap-3 text-gray-100 select-none">
+      <div className="min-h-screen min-h-[100dvh] w-screen bg-[#0c0b09] flex flex-col items-center justify-center gap-3 text-gray-100 select-none">
         <RefreshCw className="w-6 h-6 text-indigo-400 animate-spin" />
         <p className="text-sm font-semibold">Aplicativo atualizado</p>
         <p className="text-xs text-gray-400">Voltando para a sala {initialResume?.join.roomName}…</p>
@@ -397,7 +398,7 @@ function StreamRoom({
   };
 
   return (
-    <div className="h-screen h-[100dvh] w-screen flex flex-col bg-[#090a0f] text-gray-100 overflow-hidden select-none">
+    <div className="h-screen h-[100dvh] w-screen flex flex-col bg-[#100f0d] text-gray-100 overflow-hidden select-none">
       <div className="flex-1 flex overflow-hidden relative">
         <div className="flex-1 flex flex-col p-1 sm:p-3 md:p-4 min-w-0 relative">
           <VideoPlayer
@@ -420,8 +421,8 @@ function StreamRoom({
 
           {/* Centered Room Name at top */}
           <div className="absolute top-2 sm:top-6 inset-x-0 mx-auto w-fit z-20 pointer-events-none flex items-center justify-center px-2">
-            <div className="pointer-events-auto flex items-center gap-1.5 sm:gap-2 px-2.5 sm:px-3.5 py-1.5 sm:py-2 rounded-2xl bg-[#11131c]/90 border border-white/15 text-white text-[11px] sm:text-xs font-semibold shadow-2xl backdrop-blur-md select-none">
-              <Tv className="w-3.5 h-3.5 text-indigo-400 shrink-0" />
+            <div className="pointer-events-auto flex items-center gap-1.5 sm:gap-2 px-2.5 sm:px-3.5 py-1.5 sm:py-2 rounded-full bg-[#171613]/85 border border-[#2c2a25] text-white text-[11px] sm:text-xs font-semibold shadow-2xl backdrop-blur-md select-none">
+              <LogoMark className="w-4 h-3.5 text-gray-100 shrink-0" />
               <span className="text-gray-400 font-medium hidden sm:inline">Sala:</span>
               <span className="font-bold text-white tracking-wide max-w-[100px] xs:max-w-[140px] sm:max-w-xs md:max-w-md truncate">
                 {session.roomName}
@@ -430,7 +431,7 @@ function StreamRoom({
           </div>
 
           {updateAvailable && (
-            <div className="absolute top-12 sm:top-20 inset-x-0 mx-auto w-fit max-w-[calc(100%-1rem)] z-30 flex items-center gap-2 sm:gap-3 px-3 py-2 rounded-2xl bg-[#11131c]/95 border border-indigo-500/40 text-[11px] sm:text-xs text-gray-200 shadow-2xl backdrop-blur-md">
+            <div className="absolute top-12 sm:top-20 inset-x-0 mx-auto w-fit max-w-[calc(100%-1rem)] z-30 flex items-center gap-2 sm:gap-3 px-3 py-2 rounded-full bg-[#171613]/95 border border-indigo-400/40 text-[11px] sm:text-xs text-gray-200 shadow-2xl backdrop-blur-md">
               <RefreshCw className="w-3.5 h-3.5 text-indigo-400 shrink-0" />
               <span>
                 {updateCountdown !== null
@@ -450,12 +451,12 @@ function StreamRoom({
             <button
               onClick={() => setIsChatOpen(true)}
               title="Exibir Chat e Participantes"
-              className="absolute top-2 right-2 sm:top-6 sm:right-6 z-30 flex items-center gap-1.5 sm:gap-2 px-2.5 sm:px-3.5 py-1.5 sm:py-2.5 rounded-2xl bg-[#11131c]/90 hover:bg-[#181a26] border border-white/15 text-white text-xs font-semibold shadow-2xl backdrop-blur-md transition-all hover:scale-105 active:scale-95 group cursor-pointer"
+              className="absolute top-2 right-2 sm:top-6 sm:right-6 z-30 flex items-center gap-1.5 sm:gap-2 px-2.5 sm:px-3.5 py-1.5 sm:py-2.5 rounded-full bg-[#171613]/85 hover:bg-[#201e1a] border border-[#2c2a25] text-white text-xs font-semibold shadow-2xl backdrop-blur-md transition-all hover:scale-105 active:scale-95 group cursor-pointer"
             >
               <MessageSquare className="w-4 h-4 text-indigo-400 group-hover:text-indigo-300 transition-colors" />
               <span className="hidden sm:inline">Exibir Chat</span>
               {messages.length > 0 && (
-                <span className="bg-indigo-600 text-[10px] px-1.5 py-0.2 rounded-full font-bold">
+                <span className="bg-indigo-400 text-[#05201c] text-[10px] px-1.5 py-0.2 rounded-full font-bold">
                   {messages.length}
                 </span>
               )}

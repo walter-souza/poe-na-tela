@@ -1,19 +1,8 @@
 import React, { useState, useEffect, useRef } from 'react';
-import {
-  Sparkles,
-  Tv,
-  Lock,
-  User,
-  ArrowRight,
-  Mic,
-  Star,
-  Plus,
-  Trash2,
-  Users,
-  Play,
-  Wand2,
-} from 'lucide-react';
+import { ArrowRight, Lock, Mic, Plus, Star, Trash2, Users } from 'lucide-react';
 import { PasswordModal } from './PasswordModal';
+import { Logo } from './Logo';
+import { PointerBackground } from './PointerBackground';
 import { sanitizeRoomName, sanitizeUserName } from '../utils/sanitize';
 import type { FavoriteRoom, ActiveRoomInfo } from '../types';
 import { getRoomsUrl, getRoomInfoUrl } from '../utils/api';
@@ -27,6 +16,36 @@ interface LobbyProps {
 
 const USERNAME_STORAGE_KEY = 'poe-na-tela-username';
 const FAVORITES_STORAGE_KEY = 'poe-na-tela-favorites';
+
+
+// Miniatura gerada a partir do nome da sala: cada canal ganha sempre as mesmas cores.
+const SCENES: Array<[string, string, string, string]> = [
+  ['#0c3a3f', '#1f8a82', '#f0a24c', '#ffe08a'],
+  ['#3a1408', '#c2501f', '#f5b83d', '#fff0b8'],
+  ['#10264d', '#2f6fd1', '#8cc3ff', '#e8f3ff'],
+];
+const hashName = (name: string) => [...name].reduce((a, c) => (a * 31 + c.charCodeAt(0)) >>> 0, 7);
+
+const RoomScene: React.FC<{ name: string }> = ({ name }) => {
+  const h = hashName(name);
+  const p = SCENES[h % SCENES.length];
+  const id = `scene-${h}`;
+  return (
+    <svg viewBox="0 0 1600 1000" preserveAspectRatio="xMidYMid slice" className="w-full h-full block transition-transform duration-700 ease-[var(--ease-out)] group-hover:scale-105" aria-hidden="true">
+      <defs>
+        <linearGradient id={id} x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0" stopColor={p[0]} />
+          <stop offset=".6" stopColor={p[1]} />
+          <stop offset="1" stopColor={p[2]} />
+        </linearGradient>
+      </defs>
+      <rect width="1600" height="1000" fill={`url(#${id})`} />
+      <circle cx={900 + (h % 5) * 80} cy="560" r="115" fill={p[3]} />
+      <polygon points="0,700 220,480 380,610 560,420 800,680 1000,540 1250,700 1600,500 1600,1000 0,1000" fill="#0003" />
+      <polygon points="0,800 300,640 520,760 840,600 1180,790 1600,640 1600,1000 0,1000" fill="#0006" />
+    </svg>
+  );
+};
 
 export const Lobby: React.FC<LobbyProps> = ({ onJoin, isLoading, error }) => {
   const [roomName, setRoomName] = useState('');
@@ -299,318 +318,279 @@ export const Lobby: React.FC<LobbyProps> = ({ onJoin, isLoading, error }) => {
     ? favorites.some((f) => f.name.toLowerCase() === sanitizeRoomName(roomName).toLowerCase())
     : false;
 
+
+  const liveRooms = Object.values(activeRooms)
+    .filter((r) => r.numParticipants > 0)
+    .sort((a, b) => b.numParticipants - a.numParticipants)
+    .slice(0, 4);
+  const savedOffline = favorites.filter((f) => !(activeRooms[f.name.toLowerCase()]?.numParticipants > 0));
+  const initial = (userName.trim()[0] || '?').toUpperCase();
+  const fieldCls =
+    'w-full h-[46px] px-3.5 bg-[#100f0d] border border-[#2c2a25] rounded-xl text-sm text-gray-100 placeholder-gray-600 hover:border-[#413e36] focus:outline-none focus:border-indigo-400 focus:ring-4 focus:ring-indigo-400/15 transition';
+
   return (
-    <div className="min-h-screen min-h-[100dvh] bg-[#090a0f] text-gray-100 flex flex-col justify-start lg:justify-center items-center p-3.5 sm:p-6 py-6 sm:py-8 lg:py-6 relative overflow-x-hidden overflow-y-auto lg:overflow-hidden">
-      {/* Background Glows */}
-      <div className="absolute top-1/4 left-1/4 w-96 h-96 bg-indigo-600/10 rounded-full blur-3xl pointer-events-none" />
-      <div className="absolute bottom-1/4 right-1/4 w-96 h-96 bg-purple-600/10 rounded-full blur-3xl pointer-events-none" />
+    <div className="relative min-h-screen min-h-[100dvh] bg-[#100f0d] text-gray-100 overflow-x-hidden overflow-y-auto">
+      <PointerBackground />
 
-      {/* Header Branding */}
-      <div className="w-full max-w-5xl text-center mb-5 sm:mb-6 z-10">
-        <div className="inline-flex items-center justify-center w-12 h-12 sm:w-14 sm:h-14 rounded-2xl bg-gradient-to-tr from-indigo-600 to-violet-500 shadow-xl shadow-indigo-600/30 mb-2.5 sm:mb-3 glow-active">
-          <Sparkles className="w-6 h-6 sm:w-7 sm:h-7 text-white" />
+      <header className="relative z-10 flex items-center justify-between px-5 sm:px-8 lg:px-16 py-5">
+        <Logo />
+        <div className="flex items-center gap-2.5 pl-1.5 pr-4 py-1.5 rounded-full border border-[#2c2a25] bg-[#171613]/70 text-sm text-gray-400">
+          <span className="grid place-items-center w-7 h-7 rounded-full bg-indigo-400 text-[#05201c] font-display font-semibold text-[13px]">
+            {initial}
+          </span>
+          <span className="max-w-[140px] truncate">{userName || 'Convidado'}</span>
         </div>
-        <h1 className="text-2xl sm:text-4xl font-black text-white tracking-tight">Põe na Tela!</h1>
-        <p className="text-xs sm:text-sm text-gray-400 mt-1 max-w-md mx-auto">
-          Põe na tela, comandante! Transmissão de tela para amigos com ultra-baixa latência
-        </p>
-      </div>
+      </header>
 
-      {/* Main Container Grid (Standardized Fixed Height Layout) */}
-      <div className="w-full max-w-5xl relative z-10 grid grid-cols-1 lg:grid-cols-12 gap-5 sm:gap-6 items-start pb-8 lg:pb-0">
-        {/* Left Side: Room Entry Form (7 cols - Standard Fixed Height) */}
-        <div className="lg:col-span-7 bg-[#11131a]/90 backdrop-blur-xl border border-white/10 rounded-3xl p-5 sm:p-7 shadow-2xl flex flex-col justify-between lg:h-[510px]">
-          {error && (
-            <div className="p-3 bg-rose-500/10 border border-rose-500/30 rounded-xl text-xs text-rose-300 flex items-center gap-2 mb-2">
-              <span className="font-bold">Erro:</span>
-              <span>{error}</span>
-            </div>
-          )}
+      <main className="relative z-10 grid grid-cols-1 lg:grid-cols-[5fr_6fr] gap-8 lg:gap-16 px-5 sm:px-8 lg:px-16 pt-2 pb-12 max-w-[1320px] mx-auto items-start">
+        {/* Esquerda: entrada */}
+        <section>
+          <div className="inline-flex items-center gap-2 mb-4 pl-2.5 pr-3 py-1 rounded-full border border-live/25 bg-live/15 text-[13px] text-orange-200">
+            <span className={`w-1.5 h-1.5 rounded-full bg-live ${liveRooms.length ? 'animate-pulse' : 'opacity-50'}`} />
+            {liveRooms.length === 0
+              ? 'Nenhuma sala ao vivo agora'
+              : liveRooms.length === 1
+                ? '1 sala ao vivo agora'
+                : `${liveRooms.length} salas ao vivo agora`}
+          </div>
 
-          <form onSubmit={handleSubmit} className="space-y-3.5 flex-1 flex flex-col justify-between">
-            {/* Room Name Input with Favorite Star Toggle */}
-            <div>
-              <label className="block text-xs font-semibold uppercase tracking-wider text-gray-400 mb-1.5">
-                Nome da Sala / Canal
-              </label>
-              <div className="relative flex items-center">
-                <input
-                  type="text"
-                  required
-                  placeholder="ex: jogatina-da-noite"
-                  value={roomName}
-                  onChange={(e) => setRoomName(e.target.value)}
-                  className="w-full bg-black/40 border border-white/10 rounded-xl pl-4 pr-20 py-2.5 text-sm text-white placeholder-gray-500 focus:outline-none focus:border-indigo-500 transition"
-                />
-                <div className="absolute right-2 flex items-center gap-1">
+          <h1 className="font-display font-semibold tracking-[-0.045em] leading-none text-[clamp(2.6rem,5.4vw,4.75rem)]">
+            Põe na <span className="brand-frame">tela</span>
+          </h1>
+          <p className="mt-4 mb-7 max-w-[38ch] text-base text-gray-400">
+            Seu jogo na tela dos amigos, com menos de 200 ms de atraso.
+          </p>
+
+          <form
+            onSubmit={handleSubmit}
+            className="grid gap-3.5 p-5 rounded-[18px] bg-[#171613] border border-[#2c2a25] shadow-[0_30px_60px_-30px_rgba(0,0,0,0.6),inset_0_1px_0_rgba(255,255,255,0.04)]"
+          >
+            {error && (
+              <div role="alert" className="px-3 py-2.5 rounded-xl border border-rose-500/30 bg-rose-500/10 text-xs text-rose-300">
+                <span className="font-semibold">Erro:</span> {error}
+              </div>
+            )}
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <label className="grid gap-1.5 min-w-0">
+                <span className="text-xs text-gray-400">Sala</span>
+                <span className="relative block">
+                  <input
+                    type="text"
+                    required
+                    placeholder="jogatina-da-noite"
+                    value={roomName}
+                    onChange={(e) => setRoomName(e.target.value)}
+                    autoComplete="off"
+                    className={`${fieldCls} pr-11`}
+                  />
                   {roomName.trim() && (
                     <button
                       type="button"
                       onClick={toggleFavoriteCurrentRoom}
-                      title={isCurrentRoomFavorited ? 'Remover dos Favoritos' : 'Salvar nos Favoritos'}
-                      className={`p-1.5 rounded-lg transition cursor-pointer ${
-                        isCurrentRoomFavorited
-                          ? 'text-amber-400 bg-amber-400/10 hover:bg-amber-400/20'
-                          : 'text-gray-500 hover:text-amber-400 hover:bg-white/5'
+                      title={isCurrentRoomFavorited ? 'Remover dos favoritos' : 'Salvar nos favoritos'}
+                      aria-label={isCurrentRoomFavorited ? 'Remover dos favoritos' : 'Salvar nos favoritos'}
+                      className={`absolute right-1.5 top-1/2 -translate-y-1/2 p-1.5 rounded-lg transition cursor-pointer ${
+                        isCurrentRoomFavorited ? 'text-violet-400' : 'text-gray-500 hover:text-violet-400'
                       }`}
                     >
-                      <Star className={`w-4 h-4 ${isCurrentRoomFavorited ? 'fill-amber-400' : ''}`} />
+                      <Star className={`w-4 h-4 ${isCurrentRoomFavorited ? 'fill-violet-400' : ''}`} />
                     </button>
                   )}
-                  <div className="p-1.5 text-gray-500 pointer-events-none">
-                    <Tv className="w-4 h-4" />
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            {/* Display Name */}
-            <div>
-              <label className="block text-xs font-semibold uppercase tracking-wider text-gray-400 mb-1.5">
-                Seu Nome de Exibição
+                </span>
               </label>
-              <div className="relative">
+              <label className="grid gap-1.5 min-w-0">
+                <span className="text-xs text-gray-400">Seu nome</span>
                 <input
                   type="text"
                   required
                   placeholder="Seu nome ou nick"
                   value={userName}
                   onChange={(e) => handleUserNameChange(e.target.value)}
-                  className="w-full bg-black/40 border border-white/10 rounded-xl px-4 py-2.5 text-sm text-white placeholder-gray-500 focus:outline-none focus:border-indigo-500 transition"
+                  autoComplete="off"
+                  className={fieldCls}
                 />
-                <User className="w-4 h-4 text-gray-500 absolute right-3.5 top-3" />
-              </div>
+              </label>
             </div>
 
-            {/* Passcode (Optional) */}
-            <div>
-              <label className="block text-xs font-semibold uppercase tracking-wider text-gray-400 mb-1.5">
-                Senha da Sala (Opcional)
-              </label>
-              <div className="relative">
+            <label className="grid gap-1.5">
+              <span className="text-xs text-gray-400">
+                Senha da sala <em className="not-italic text-gray-600">(opcional)</em>
+              </span>
+              <span className="relative block">
                 <input
                   type="password"
-                  placeholder="Deixe em branco para sala aberta"
+                  placeholder="Deixe vazio para sala aberta"
                   value={passcode}
                   onChange={(e) => setPasscode(e.target.value)}
-                  className="w-full bg-black/40 border border-white/10 rounded-xl px-4 py-2.5 text-sm text-white placeholder-gray-500 focus:outline-none focus:border-indigo-500 transition"
+                  autoComplete="off"
+                  className={`${fieldCls} pr-10`}
                 />
-                <Lock className="w-4 h-4 text-gray-500 absolute right-3.5 top-3" />
-              </div>
-            </div>
+                <Lock className="w-4 h-4 text-gray-600 absolute right-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+              </span>
+            </label>
 
-            {/* Mic Test & Noise Suppression */}
-            <div className="p-2.5 bg-white/5 rounded-2xl border border-white/5 space-y-2">
-              <div className="flex items-center justify-between text-xs">
-                <span className="text-gray-400 flex items-center gap-1.5 font-medium">
-                  <Mic className="w-3.5 h-3.5 text-indigo-400" />
-                  Teste de Microfone
-                </span>
-                <button
-                  type="button"
-                  onClick={isMicTesting ? stopMicTest : startMicTest}
-                  className="text-indigo-400 hover:text-indigo-300 font-semibold cursor-pointer"
+            <div className="flex items-center gap-3 flex-wrap">
+              <button
+                type="button"
+                onClick={isMicTesting ? stopMicTest : startMicTest}
+                className={`inline-flex items-center gap-2.5 h-10 pl-3 pr-4 rounded-full border text-sm transition cursor-pointer ${
+                  isMicTesting ? 'border-indigo-400 bg-[#201e1a]' : 'border-[#413e36] hover:border-indigo-400'
+                }`}
+              >
+                <Mic className="w-[18px] h-[18px]" />
+                <span
+                  className="flex items-center gap-0.5 h-4 overflow-hidden transition-[width] duration-500 ease-[var(--ease-out)]"
+                  style={{ width: isMicTesting ? 44 : 0 }}
+                  aria-hidden="true"
                 >
-                  {isMicTesting ? 'Parar Teste' : 'Testar Voz'}
-                </button>
-              </div>
+                  {[0.55, 0.85, 1, 0.7, 0.95, 0.6, 0.8].map((f, i) => (
+                    <i
+                      key={i}
+                      className="block w-[3px] h-full rounded-sm bg-indigo-400 transition-transform duration-100"
+                      style={{ transform: `scaleY(${Math.max(0.18, Math.min(1, (micLevel / 100) * f * 1.6))})` }}
+                    />
+                  ))}
+                </span>
+                {isMicTesting ? 'Ouvindo' : 'Testar microfone'}
+              </button>
 
-              {isMicTesting && (
-                <div className="w-full bg-black/50 h-1.5 rounded-full overflow-hidden">
-                  <div
-                    className="h-full bg-emerald-500 transition-all duration-75"
-                    style={{ width: `${micLevel}%` }}
+              <button
+                type="button"
+                role="switch"
+                aria-checked={isNoiseSuppressionEnabled}
+                onClick={toggleNoiseSuppressionInLobby}
+                title="Elimina ruído de teclado mecânico, cliques e ruído de fundo"
+                className={`ml-auto inline-flex items-center gap-2 text-sm cursor-pointer ${
+                  isNoiseSuppressionEnabled ? 'text-gray-100' : 'text-gray-400'
+                }`}
+              >
+                <span className={`relative w-8 h-[19px] rounded-full transition-colors ${isNoiseSuppressionEnabled ? 'bg-emerald-400' : 'bg-[#413e36]'}`}>
+                  <span
+                    className={`absolute left-0.5 top-0.5 w-[15px] h-[15px] rounded-full transition-transform duration-300 ${
+                      isNoiseSuppressionEnabled ? 'translate-x-[13px] bg-[#10200a]' : 'bg-gray-100'
+                    }`}
                   />
-                </div>
-              )}
-
-              {/* Noise Suppression Toggle */}
-              <div className="pt-1.5 border-t border-white/5 flex items-center justify-between text-xs">
-                <span className="text-gray-400 flex items-center gap-1.5 font-medium">
-                  <Wand2 className="w-3.5 h-3.5 text-violet-400" />
-                  Supressão de Ruído (IA)
                 </span>
-                <button
-                  type="button"
-                  onClick={toggleNoiseSuppressionInLobby}
-                  title="Elimina ruído de teclado mecânico, cliques e ruído de fundo"
-                  className={`text-[11px] px-2.5 py-0.5 rounded-md font-semibold transition cursor-pointer flex items-center gap-1 ${
-                    isNoiseSuppressionEnabled
-                      ? 'bg-violet-600/30 text-violet-300 border border-violet-500/40 shadow-sm shadow-violet-500/20'
-                      : 'bg-white/5 text-gray-400 border border-white/10 hover:text-white'
-                  }`}
-                >
-                  <span className={`w-1.5 h-1.5 rounded-full ${isNoiseSuppressionEnabled ? 'bg-violet-400 animate-pulse' : 'bg-gray-500'}`} />
-                  {isNoiseSuppressionEnabled ? 'Ativada' : 'Desativada'}
-                </button>
-              </div>
+                Cortar ruído
+              </button>
             </div>
 
-            {/* Submit Button */}
             <button
               type="submit"
               disabled={isLoading || !roomName.trim() || !userName.trim()}
-              className="w-full py-3 px-4 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white font-bold rounded-xl shadow-lg shadow-indigo-600/30 transition flex items-center justify-center gap-2 group cursor-pointer"
+              className="group h-[46px] inline-flex items-center justify-center gap-2 rounded-xl bg-live hover:bg-[#ff7050] disabled:opacity-40 disabled:pointer-events-none text-[#1c0903] font-semibold transition hover:-translate-y-0.5 hover:shadow-[0_8px_24px_-8px_rgba(255,90,54,0.6)] active:scale-[0.98] cursor-pointer"
             >
               {isLoading ? (
-                <span>Conectando à sala...</span>
+                'Conectando à sala...'
               ) : (
                 <>
-                  <span>Entrar na Sala</span>
-                  <ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
+                  Entrar na sala
+                  <ArrowRight className="w-[18px] h-[18px] transition-transform group-hover:translate-x-0.5" />
                 </>
               )}
             </button>
           </form>
 
-          {/* Tech Badges */}
-          <div className="pt-3 border-t border-white/10 grid grid-cols-3 gap-1.5 sm:gap-2 text-center text-[10px] sm:text-[11px] text-gray-400 mt-2">
-            <div className="p-1 sm:p-1.5 bg-white/5 rounded-lg border border-white/5">
-              <span className="font-bold text-indigo-300 block">WebRTC SFU</span>
-              <span>&lt;200ms</span>
-            </div>
-            <div className="p-1 sm:p-1.5 bg-white/5 rounded-lg border border-white/5">
-              <span className="font-bold text-emerald-300 block">60 FPS</span>
-              <span>Hardware</span>
-            </div>
-            <div className="p-1 sm:p-1.5 bg-white/5 rounded-lg border border-white/5">
-              <span className="font-bold text-purple-300 block">Stereo Loop</span>
-              <span>Som do Jogo</span>
-            </div>
+          <div className="mt-5 flex flex-wrap gap-x-6 gap-y-1 text-[13px] text-gray-600">
+            <span><b className="font-semibold text-indigo-400">&lt;200 ms</b> de latência</span>
+            <span><b className="font-semibold text-violet-400">60 fps</b></span>
+            <span><b className="font-semibold text-sky-400">Estéreo</b> som do jogo</span>
           </div>
-        </div>
+        </section>
 
-        {/* Right Side: Favorites List (5 cols - Standard Fixed Height Matching Left) */}
-        <div className="lg:col-span-5 bg-[#11131a]/90 backdrop-blur-xl border border-white/10 rounded-3xl p-5 sm:p-6 shadow-2xl flex flex-col lg:h-[510px] space-y-4">
-          {/* Header */}
-          <div className="flex items-center justify-between pb-3 border-b border-white/10 flex-shrink-0">
-            <div className="flex items-center gap-2">
-              <div className="p-2 bg-amber-500/10 text-amber-400 rounded-xl">
-                <Star className="w-4 h-4 fill-amber-400" />
-              </div>
-              <div>
-                <h3 className="font-bold text-sm text-white">Salas Favoritas</h3>
-                <p className="text-[11px] text-gray-400">Acesso rápido com status ao vivo</p>
-              </div>
-            </div>
-            <span className="text-xs bg-white/10 text-gray-300 px-2 py-0.5 rounded-full font-semibold">
-              {favorites.length}
+        {/* Direita: salas */}
+        <aside aria-label="Salas">
+          <div className="flex items-baseline justify-between mb-3">
+            <h2 className="font-display font-semibold text-lg tracking-tight">Ao vivo agora</h2>
+            <span className="text-[13px] text-gray-400">
+              {liveRooms.length} {liveRooms.length === 1 ? 'sala' : 'salas'}
             </span>
           </div>
 
-          {/* Quick Add Favorite Input */}
-          <form onSubmit={handleAddFavoriteInput} className="flex gap-2 flex-shrink-0">
-            <input
-              type="text"
-              placeholder="Adicionar sala favorita..."
-              value={newFavoriteInput}
-              onChange={(e) => setNewFavoriteInput(e.target.value)}
-              className="flex-1 bg-black/40 border border-white/10 rounded-xl px-3 py-2 text-xs text-white placeholder-gray-500 focus:outline-none focus:border-indigo-500 transition"
-            />
-            <button
-              type="submit"
-              disabled={!newFavoriteInput.trim()}
-              className="p-2 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-40 text-white rounded-xl transition shadow cursor-pointer"
-              title="Salvar sala favorita"
-            >
-              <Plus className="w-4 h-4" />
-            </button>
-          </form>
+          {liveRooms.length === 0 ? (
+            <div className="rounded-[18px] border border-dashed border-[#413e36] px-5 py-10 text-center text-sm text-gray-400">
+              Ninguém transmitindo agora. Escolha um nome de sala e seja o primeiro.
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
+              {liveRooms.map((room) => (
+                <button
+                  key={room.name}
+                  type="button"
+                  onClick={() => handleQuickJoinFavorite(room.name)}
+                  className="room-tile group text-left rounded-[18px] overflow-hidden bg-[#171613] border border-[#2c2a25] cursor-pointer"
+                >
+                  <span className="relative block aspect-[16/10] overflow-hidden">
+                    <RoomScene name={room.name} />
+                    <span className="absolute left-2.5 top-2.5 inline-flex items-center gap-1.5 h-6 px-2.5 rounded-full bg-[#100f0d]/75 backdrop-blur text-xs font-medium">
+                      <span className="w-1.5 h-1.5 rounded-full bg-live animate-pulse" />
+                      Ao vivo
+                    </span>
+                    <span className="absolute right-2.5 top-2.5 inline-flex items-center gap-1.5 h-6 px-2.5 rounded-full bg-[#100f0d]/75 backdrop-blur text-xs font-medium">
+                      {room.hasPasscode ? <Lock className="w-3 h-3" /> : <Users className="w-3 h-3" />}
+                      {room.numParticipants}
+                    </span>
+                  </span>
+                  <span className="flex items-center gap-2.5 px-3.5 py-3">
+                    <span className="min-w-0">
+                      <span className="block font-display font-semibold text-base tracking-tight truncate">{room.name}</span>
+                      <span className="block text-[12.5px] text-gray-400">
+                        {room.numParticipants} {room.numParticipants === 1 ? 'pessoa' : 'pessoas'}
+                      </span>
+                    </span>
+                    <span className="room-tile-go ml-auto grid place-items-center w-[34px] h-[34px] rounded-full border border-[#413e36] shrink-0">
+                      <ArrowRight className="w-[18px] h-[18px]" />
+                    </span>
+                  </span>
+                </button>
+              ))}
+            </div>
+          )}
 
-          {/* Favorites List Items (Fills the remaining area in standard height card with internal scroll) */}
-          <div className="flex-1 min-h-[140px] max-h-[320px] lg:max-h-none min-h-0 space-y-2.5 overflow-y-auto pr-1">
-            {favorites.length === 0 ? (
-              <div className="p-6 text-center text-gray-500 text-xs border border-dashed border-white/10 rounded-2xl flex flex-col items-center justify-center space-y-2">
-                <Star className="w-8 h-8 text-amber-500/30 stroke-1" />
-                <p className="font-medium text-gray-400">Nenhuma sala salva ainda</p>
-                <p className="text-[11px] leading-relaxed max-w-xs text-gray-500">
-                  Digite o nome de uma sala e clique na estrela ⭐ para fixá-la nesta lista.
-                </p>
+          <div className="mt-6">
+            <div className="flex items-baseline justify-between mb-3">
+              <h2 className="font-display font-semibold text-lg tracking-tight">Salas salvas</h2>
+              <span className="text-[13px] text-gray-400">{favorites.length}</span>
+            </div>
+
+            {savedOffline.map((fav) => (
+              <div key={fav.name} className="saved-row group">
+                <button type="button" onClick={() => handleQuickJoinFavorite(fav.name)} className="saved-row-main cursor-pointer">
+                  <span className="saved-dot" />
+                  <span className="saved-name">{fav.name}</span>
+                  <span className="saved-status">Fora do ar</span>
+                  <span className="saved-go">
+                    Abrir sala <ArrowRight className="w-[15px] h-[15px]" />
+                  </span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleRemoveFavorite(fav.name)}
+                  title="Remover dos favoritos"
+                  aria-label={`Remover ${fav.name} dos favoritos`}
+                  className="saved-remove cursor-pointer"
+                >
+                  <Trash2 className="w-4 h-4" />
+                </button>
               </div>
-            ) : (
-              favorites.map((fav) => {
-                const activeInfo = activeRooms[fav.name.toLowerCase()];
-                const isLive = Boolean(activeInfo && activeInfo.numParticipants > 0);
-                const hasPasscode = Boolean(activeInfo?.hasPasscode);
+            ))}
 
-                return (
-                  <div
-                    key={fav.name}
-                    className={`p-3 rounded-2xl border transition-all flex items-center justify-between group ${
-                      isLive
-                        ? 'bg-gradient-to-r from-emerald-950/20 to-black/40 border-emerald-500/40 hover:border-emerald-500 shadow-sm'
-                        : 'bg-white/5 border-white/5 hover:border-white/15'
-                    }`}
-                  >
-                    <div className="flex flex-col min-w-0 pr-2">
-                      <div className="flex items-center gap-2">
-                        <span className="font-bold text-xs text-white truncate group-hover:text-indigo-300 transition">
-                          {fav.name}
-                        </span>
-                        {hasPasscode && (
-                          <span title="Protegida por senha" className="text-amber-400 flex-shrink-0">
-                            <Lock className="w-3 h-3" />
-                          </span>
-                        )}
-                      </div>
-
-                      {/* Status indicator */}
-                      <div className="flex items-center gap-2 mt-1">
-                        {isLive ? (
-                          <div className="flex items-center gap-1.5">
-                            <span className="flex h-2 w-2 relative">
-                              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75" />
-                              <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500" />
-                            </span>
-                            <span className="text-[10px] font-bold text-emerald-400 uppercase tracking-wider">
-                              AO VIVO
-                            </span>
-                            <span className="text-[10px] text-gray-400 flex items-center gap-0.5 ml-1">
-                              <Users className="w-3 h-3 text-gray-400" />
-                              <span>{activeInfo.numParticipants}</span>
-                            </span>
-                          </div>
-                        ) : (
-                          <div className="flex items-center gap-1.5 text-gray-500 text-[10px]">
-                            <span className="w-1.5 h-1.5 rounded-full bg-gray-600" />
-                            <span>Offline</span>
-                          </div>
-                        )}
-                      </div>
-                    </div>
-
-                    {/* Actions */}
-                    <div className="flex items-center gap-1.5">
-                      <button
-                        onClick={() => handleQuickJoinFavorite(fav.name)}
-                        className={`px-3 py-1.5 rounded-xl text-xs font-bold transition flex items-center gap-1 cursor-pointer shadow ${
-                          isLive
-                            ? 'bg-emerald-600 hover:bg-emerald-500 text-white shadow-emerald-600/30'
-                            : 'bg-indigo-600/30 hover:bg-indigo-600 border border-indigo-500/30 text-indigo-300 hover:text-white'
-                        }`}
-                        title="Entrar nesta sala"
-                      >
-                        <Play className="w-3 h-3 fill-current" />
-                        <span>Entrar</span>
-                      </button>
-
-                      <button
-                        onClick={() => handleRemoveFavorite(fav.name)}
-                        className="p-1.5 text-gray-500 hover:text-rose-400 hover:bg-rose-500/10 rounded-xl transition cursor-pointer"
-                        title="Remover dos favoritos"
-                      >
-                        <Trash2 className="w-3.5 h-3.5" />
-                      </button>
-                    </div>
-                  </div>
-                );
-              })
-            )}
+            <form onSubmit={handleAddFavoriteInput} className="saved-add">
+              <Plus className="w-[18px] h-[18px] shrink-0" />
+              <input
+                type="text"
+                placeholder="Salvar uma sala"
+                aria-label="Salvar uma sala"
+                value={newFavoriteInput}
+                onChange={(e) => setNewFavoriteInput(e.target.value)}
+                autoComplete="off"
+              />
+            </form>
           </div>
-        </div>
-      </div>
+        </aside>
+      </main>
 
-      {/* Password Prompt Modal */}
       <PasswordModal
         isOpen={Boolean(passwordPromptRoom)}
         roomName={passwordPromptRoom || ''}

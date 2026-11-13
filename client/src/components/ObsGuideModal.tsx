@@ -53,7 +53,7 @@ export const ObsGuideModal: React.FC<ObsGuideModalProps> = ({ isOpen, onClose, o
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/80 backdrop-blur-sm animate-fadeIn">
-      <div className="bg-[#13151f] border border-white/10 rounded-2xl w-full max-w-xl shadow-2xl overflow-hidden text-gray-200">
+      <div className="bg-[#1b1915] border border-white/10 rounded-2xl w-full max-w-xl shadow-2xl overflow-hidden text-gray-200">
         <div className="flex items-center justify-between px-4 sm:px-6 py-3.5 sm:py-4 border-b border-white/10 bg-white/5">
           <div className="flex items-center gap-2.5 sm:gap-3">
             <div className="p-2 bg-purple-500/20 text-purple-300 rounded-xl shrink-0">
